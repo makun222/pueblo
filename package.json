@@ -1,0 +1,45 @@
+{
+  "name": "pueblo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/desktop/main/main.js",
+  "bin": {
+    "pueblo": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.json",
+    "build:renderer": "vite build --config vite.desktop.config.ts",
+    "dev": "node dist/cli/index.js",
+    "dev:renderer": "vite --config vite.desktop.config.ts",
+    "dev:desktop": "npm run build:main && electron .",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.1.1",
+    "commander": "^14.0.0",
+    "electron": "^37.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.5.2",
+    "eslint": "^9.38.0",
+    "jsdom": "^27.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.10",
+    "vitest": "^3.2.4"
+  }
+}
