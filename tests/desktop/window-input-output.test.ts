@@ -24,7 +24,58 @@ beforeEach(() => {
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
-      submitInput: vi.fn().mockResolvedValue(undefined),
+      submitInput: vi.fn().mockResolvedValue({
+        result: undefined,
+        blocks: [],
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        },
+      }),
+      getRuntimeStatus: vi.fn().mockResolvedValue({
+        providerId: 'github-copilot',
+        providerName: 'GitHub Copilot',
+        modelId: 'copilot-chat',
+        modelName: 'GPT-5.4',
+        activeSessionId: 'session-1',
+        contextCount: {
+          estimatedTokens: 12,
+          contextWindowLimit: 32000,
+          utilizationRatio: 0.0004,
+          messageCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          derivedMemoryCount: 0,
+        },
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        backgroundSummaryStatus: {
+          state: 'idle',
+          activeSummarySessionId: null,
+          lastSummaryAt: null,
+          lastSummaryMemoryId: null,
+        },
+      }),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),
@@ -43,6 +94,7 @@ describe('Desktop Window Input/Output', () => {
 
     expect(screen.getByLabelText('input-region')).toBeTruthy();
     expect(screen.getByLabelText('output-region')).toBeTruthy();
+    expect(screen.getByLabelText('runtime-status')).toBeTruthy();
     expect(screen.getByText('pueblo>')).toBeTruthy();
     expect(screen.getByPlaceholderText('Enter command or task...')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
@@ -55,6 +107,30 @@ describe('Desktop Window Input/Output', () => {
     await user.type(screen.getByPlaceholderText('Enter command or task...'), '/ping{enter}');
 
     expect(window.electronAPI.submitInput).toHaveBeenCalledWith('/ping');
+  });
+
+  it('should submit input on send button click', async () => {
+    const user = userEvent.setup();
+    render(createElement(App));
+
+    await user.type(screen.getByPlaceholderText('Enter command or task...'), '/help');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(window.electronAPI.submitInput).toHaveBeenCalledWith('/help');
+    expect(screen.getByText('You')).toBeTruthy();
+    expect(screen.getByText('/help')).toBeTruthy();
+  });
+
+  it('should show an error block when submit fails', async () => {
+    const user = userEvent.setup();
+    window.electronAPI.submitInput = vi.fn().mockRejectedValue(new Error('submit failed'));
+    render(createElement(App));
+
+    await user.type(screen.getByPlaceholderText('Enter command or task...'), '/help');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(screen.getByText('Pueblo')).toBeTruthy();
+    expect(screen.getByText('submit failed')).toBeTruthy();
   });
 
   it('should display output blocks in sequence', () => {
@@ -73,5 +149,12 @@ describe('Desktop Window Input/Output', () => {
     render(createElement(App));
 
     expect(window.electronAPI.onOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it('should show provider and model badges', async () => {
+    render(createElement(App));
+
+    expect(await screen.findByText('GitHub Copilot')).toBeTruthy();
+    expect(await screen.findByText('GPT-5.4')).toBeTruthy();
   });
 });

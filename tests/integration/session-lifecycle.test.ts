@@ -6,6 +6,7 @@ import { SessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
 import { createSqliteDatabase } from '../../src/persistence/sqlite';
 import { runMigrations } from '../../src/persistence/migrate';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -19,7 +20,9 @@ afterEach(() => {
   }
 });
 
-describe('session lifecycle integration', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
+
+describeIfNodeSqlite('session lifecycle integration', () => {
   it('persists create, archive, restore, and delete transitions in sqlite', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-lifecycle-'));
     tempDirs.push(tempDir);
@@ -40,6 +43,30 @@ describe('session lifecycle integration', () => {
     expect(restored.status).toBe('active');
     expect(deleted.status).toBe('deleted');
     expect(sessions.find((session) => session.id === created.id)?.status).toBe('deleted');
+
+    database.close();
+  });
+
+  it('persists selected prompt and memory ids in sqlite', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-selection-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const repository = new SessionRepository({ connection: database.connection });
+    const service = new SessionService(repository);
+
+    const created = service.createSession('Selection session');
+    service.addSelectedPrompt(created.id, 'prompt-1');
+    service.addSelectedPrompt(created.id, 'prompt-2');
+    service.addSelectedMemory(created.id, 'memory-1');
+
+    const restoredService = new SessionService(new SessionRepository({ connection: database.connection }));
+    const restored = restoredService.getSession(created.id);
+
+    expect(restored?.selectedPromptIds).toEqual(['prompt-1', 'prompt-2']);
+    expect(restored?.selectedMemoryIds).toEqual(['memory-1']);
 
     database.close();
   });

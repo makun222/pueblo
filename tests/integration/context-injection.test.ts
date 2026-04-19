@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCliDependencies } from '../../src/cli/index';
 import { createTestAppConfig } from '../helpers/test-config';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -17,7 +18,9 @@ afterEach(() => {
   }
 });
 
-describe('context injection integration', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
+
+describeIfNodeSqlite('context injection integration', () => {
   it('injects selected prompt and memory into task execution context', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-injection-'));
     tempDirs.push(tempDir);

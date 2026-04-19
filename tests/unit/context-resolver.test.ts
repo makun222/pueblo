@@ -1,0 +1,77 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { ContextResolver } from '../../src/agent/context-resolver';
+import { MemoryService } from '../../src/memory/memory-service';
+import { InMemoryMemoryRepository } from '../../src/memory/memory-repository';
+import { PromptService } from '../../src/prompts/prompt-service';
+import { InMemoryPromptRepository } from '../../src/prompts/prompt-repository';
+import { InMemoryProviderAdapter } from '../../src/providers/provider-adapter';
+import { createProviderProfile } from '../../src/providers/provider-profile';
+import { ProviderRegistry } from '../../src/providers/provider-registry';
+import { InMemorySessionRepository } from '../../src/sessions/session-repository';
+import { SessionService } from '../../src/sessions/session-service';
+import { createTestAppConfig } from '../helpers/test-config';
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    const tempDir = tempDirs.pop();
+    if (tempDir && fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+describe('context resolver', () => {
+  it('resolves pueblo profile, session-backed selections, and context counts', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-resolver-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+    fs.writeFileSync(path.join(tempDir, 'pueblo.md'), '# Role\n- focused agent\n# Summary Policy\n- Auto summarize near 75 percent\n');
+
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Resolver session', 'gpt-4.1-mini');
+    const prompt = promptService.createPrompt('Root cause', 'analysis', 'Always inspect the root cause first.');
+    const memory = memoryService.createMemory('Repo fact', 'This repository uses sqlite persistence.', 'project');
+    sessionService.addSelectedPrompt(session.id, prompt.id);
+    sessionService.addSelectedMemory(session.id, memory.id);
+
+    const resolver = new ContextResolver({
+      config: createTestAppConfig({ defaultProviderId: 'openai' }),
+      sessionService,
+      promptService,
+      memoryService,
+      providerRegistry,
+    });
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Inspect the failing workflow',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.puebloProfile.roleDirectives).toEqual(['focused agent']);
+    expect(resolved.taskContext.selectedPromptIds).toEqual([prompt.id]);
+    expect(resolved.taskContext.selectedMemoryIds).toEqual([memory.id]);
+    expect(resolved.runtimeStatus.activeSessionId).toBe(session.id);
+    expect(resolved.runtimeStatus.selectedPromptCount).toBe(1);
+    expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);
+    expect(resolved.runtimeStatus.contextCount.estimatedTokens).toBeGreaterThan(0);
+    expect(resolved.runtimeStatus.contextCount.contextWindowLimit).toBe(16000);
+  });
+});

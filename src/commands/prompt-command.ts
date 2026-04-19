@@ -1,9 +1,11 @@
 import { failureResult, successResult, type CommandResult } from '../shared/result';
 import type { PromptService } from '../prompts/prompt-service';
+import type { SessionService } from '../sessions/session-service';
 
 export interface PromptCommandDependencies {
   readonly promptService: PromptService;
-  readonly selectedPromptIds: Set<string>;
+  readonly sessionService: SessionService;
+  readonly getCurrentSessionId: () => string | null;
 }
 
 export function createPromptListCommand(dependencies: PromptCommandDependencies) {
@@ -34,7 +36,15 @@ export function createPromptSelectCommand(dependencies: PromptCommandDependencie
     }
 
     const prompt = dependencies.promptService.selectPrompt(promptId);
-    dependencies.selectedPromptIds.add(prompt.id);
+    const sessionId = dependencies.getCurrentSessionId();
+
+    if (!sessionId) {
+      return failureResult('SESSION_REQUIRED', 'Create or select a session before selecting a prompt', [
+        'Use /new to create a session, then retry /prompt-sel.',
+      ]);
+    }
+
+    dependencies.sessionService.addSelectedPrompt(sessionId, prompt.id);
     return successResult('PROMPT_SELECTED', 'Prompt selected', prompt);
   };
 }
@@ -47,7 +57,13 @@ export function createPromptDeleteCommand(dependencies: PromptCommandDependencie
       return failureResult('PROMPT_ID_REQUIRED', 'Prompt id is required', ['Use /prompt-del <id>.']);
     }
 
-    dependencies.selectedPromptIds.delete(promptId);
-    return successResult('PROMPT_DELETED', 'Prompt deleted', dependencies.promptService.deletePrompt(promptId));
+    const deleted = dependencies.promptService.deletePrompt(promptId);
+    const sessionId = dependencies.getCurrentSessionId();
+
+    if (sessionId) {
+      dependencies.sessionService.removeSelectedPrompt(sessionId, promptId);
+    }
+
+    return successResult('PROMPT_DELETED', 'Prompt deleted', deleted);
   };
 }

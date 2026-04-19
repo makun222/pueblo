@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
-  "main": "dist/desktop/main/main.js",
+  "main": "dist/desktop/main.js",
   "bin": {
     "pueblo": "dist/cli/index.js"
   },
@@ -14,6 +14,7 @@
     "dev": "node dist/cli/index.js",
     "dev:renderer": "vite --config vite.desktop.config.ts",
     "dev:desktop": "npm run build:main && electron .",
+    "rebuild:electron-native": "electron-rebuild -f -w better-sqlite3",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -28,13 +29,14 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.5.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^24.5.2",
     "eslint": "^9.38.0",
     "jsdom": "^27.0.0",
     "prettier": "^3.6.2",

@@ -3,11 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTaskContext } from '../../src/agent/task-context';
+import { createEmptyPuebloProfile } from '../../src/agent/pueblo-profile';
 import { CommandDispatcher, registerCoreCommands } from '../../src/commands/dispatcher';
 import { verifyPersistence } from '../../src/persistence/health-check';
 import { createSqliteDatabase } from '../../src/persistence/sqlite';
 import { loadAppConfig } from '../../src/shared/config';
 import { createTestAppConfig } from '../helpers/test-config';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -32,7 +34,9 @@ describe('foundation', () => {
     expect(config.databasePath).toContain(path.join('.pueblo', 'pueblo.db'));
   });
 
-  it('bootstraps sqlite and applies foundational migrations', () => {
+  const itIfNodeSqlite = nodeSqliteAvailable ? it : it.skip;
+
+  itIfNodeSqlite('bootstraps sqlite and applies foundational migrations', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-db-'));
     tempDirs.push(tempDir);
     const dbPath = path.join(tempDir, 'pueblo.db');
@@ -76,6 +80,16 @@ describe('foundation', () => {
         defaultSessionId: null,
         providers: [],
       }),
+      puebloProfile: createEmptyPuebloProfile(null),
+      contextCount: {
+        estimatedTokens: 0,
+        contextWindowLimit: null,
+        utilizationRatio: null,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+      },
     });
 
     expect(context.sessionId).toBeNull();

@@ -4,10 +4,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCliDependencies } from '../../src/cli/index';
 import { createTestAppConfig } from '../helpers/test-config';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
-describe.sequential('cli auth login command', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe.sequential : describe.skip;
+
+describeIfNodeSqlite('cli auth login command', () => {
   let previousCwd = process.cwd();
 
   beforeEach(() => {

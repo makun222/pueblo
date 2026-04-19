@@ -7,12 +7,18 @@ interface SessionRow {
   id: string;
   title: string;
   status: Session['status'];
+  session_kind: Session['sessionKind'];
   current_model_id: string | null;
   message_history_json: string;
   selected_prompt_ids_json: string;
   selected_memory_ids_json: string;
+  origin_session_id: string | null;
+  trigger_reason: Session['triggerReason'];
   created_at: string;
   updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
   archived_at: string | null;
 }
 
@@ -113,12 +119,18 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
         UPDATE sessions
         SET title = @title,
             status = @status,
+          session_kind = @session_kind,
             current_model_id = @current_model_id,
             message_history_json = @message_history_json,
             selected_prompt_ids_json = @selected_prompt_ids_json,
             selected_memory_ids_json = @selected_memory_ids_json,
+          origin_session_id = @origin_session_id,
+          trigger_reason = @trigger_reason,
             created_at = @created_at,
             updated_at = @updated_at,
+          started_at = @started_at,
+          completed_at = @completed_at,
+          failed_at = @failed_at,
             archived_at = @archived_at
         WHERE id = @id
         `,
@@ -128,11 +140,13 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       this.run(
         `
         INSERT INTO sessions (
-          id, title, status, current_model_id, message_history_json,
-          selected_prompt_ids_json, selected_memory_ids_json, created_at, updated_at, archived_at
+          id, title, status, session_kind, current_model_id, message_history_json,
+          selected_prompt_ids_json, selected_memory_ids_json, origin_session_id, trigger_reason,
+          created_at, updated_at, started_at, completed_at, failed_at, archived_at
         ) VALUES (
-          @id, @title, @status, @current_model_id, @message_history_json,
-          @selected_prompt_ids_json, @selected_memory_ids_json, @created_at, @updated_at, @archived_at
+          @id, @title, @status, @session_kind, @current_model_id, @message_history_json,
+          @selected_prompt_ids_json, @selected_memory_ids_json, @origin_session_id, @trigger_reason,
+          @created_at, @updated_at, @started_at, @completed_at, @failed_at, @archived_at
         )
         `,
         this.toParams(session),
@@ -161,12 +175,18 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       id: row.id,
       title: row.title,
       status: row.status,
+      sessionKind: row.session_kind,
       currentModelId: row.current_model_id,
       messageHistory: fromJson<string[]>(row.message_history_json),
       selectedPromptIds: fromJson<string[]>(row.selected_prompt_ids_json),
       selectedMemoryIds: fromJson<string[]>(row.selected_memory_ids_json),
+      originSessionId: row.origin_session_id,
+      triggerReason: row.trigger_reason,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      failedAt: row.failed_at,
       archivedAt: row.archived_at,
     });
   }
@@ -176,12 +196,18 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       id: session.id,
       title: session.title,
       status: session.status,
+      session_kind: session.sessionKind,
       current_model_id: session.currentModelId,
       message_history_json: toJson(session.messageHistory),
       selected_prompt_ids_json: toJson(session.selectedPromptIds),
       selected_memory_ids_json: toJson(session.selectedMemoryIds),
+      origin_session_id: session.originSessionId,
+      trigger_reason: session.triggerReason,
       created_at: session.createdAt,
       updated_at: session.updatedAt,
+      started_at: session.startedAt,
+      completed_at: session.completedAt,
+      failed_at: session.failedAt,
       archived_at: session.archivedAt,
     };
   }

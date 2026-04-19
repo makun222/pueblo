@@ -15,6 +15,32 @@ describe('interactive cli session', () => {
         handledInputs.push(input);
         return successResult('HANDLED', `Handled ${input}`);
       },
+      getRuntimeStatus() {
+        return {
+          providerId: null,
+          providerName: null,
+          modelId: null,
+          modelName: null,
+          activeSessionId: null,
+          contextCount: {
+            estimatedTokens: 0,
+            contextWindowLimit: null,
+            utilizationRatio: null,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        };
+      },
       databaseClose() {},
     };
 

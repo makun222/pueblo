@@ -32,4 +32,14 @@ export class PromptService {
 
     return this.repository.save(updated);
   }
+
+  resolvePromptSelection(promptIds: string[]): PromptAsset[] {
+    return promptIds.flatMap((promptId) => {
+      try {
+        return [this.selectPrompt(promptId)];
+      } catch {
+        return [];
+      }
+    });
+  }
 }

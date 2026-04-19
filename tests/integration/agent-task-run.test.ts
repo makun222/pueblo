@@ -9,6 +9,7 @@ import { runMigrations } from '../../src/persistence/migrate';
 import { createInMemoryProviderRegistry, createProviderProfile } from '../../src/providers/provider-profile';
 import { InMemoryProviderAdapter } from '../../src/providers/provider-adapter';
 import { ProviderRegistry } from '../../src/providers/provider-registry';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -26,7 +27,9 @@ afterEach(() => {
   }
 });
 
-describe('agent task persistence integration', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
+
+describeIfNodeSqlite('agent task persistence integration', () => {
   it('runs a provider-backed task and persists task history to sqlite', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-task-'));
     tempDirs.push(tempDir);

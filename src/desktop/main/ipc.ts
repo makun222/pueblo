@@ -4,6 +4,7 @@ import { createCliDependencies } from '../../cli/index';
 import { loadAppConfig } from '../../shared/config';
 import { createOutputBlock, createResultBlocks } from '../../shared/result';
 import { routeInput } from '../../commands/input-router';
+import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 
 export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   const config = loadAppConfig();
@@ -16,6 +17,9 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   runtime.onMessage((message: RuntimeMessage) => {
     mainWindow.webContents.send('output', message.block);
   });
+
+  ipcMain.removeHandler('get-runtime-status');
+  ipcMain.handle('get-runtime-status', async () => resolveRuntimeStatus(cli));
 
   ipcMain.removeHandler('submit-input');
   ipcMain.handle('submit-input', async (event, input: string) => {
@@ -30,6 +34,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
       return {
         result,
         blocks,
+        runtimeStatus: resolveRuntimeStatus(cli),
       };
     } catch (error) {
       const errorBlock = createOutputBlock({
@@ -43,4 +48,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
       throw error;
     }
   });
+}
+
+function resolveRuntimeStatus(
+  cli: ReturnType<typeof createCliDependencies>,
+): DesktopRuntimeStatus {
+  return cli.getRuntimeStatus();
 }

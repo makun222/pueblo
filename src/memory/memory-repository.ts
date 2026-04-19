@@ -11,6 +11,9 @@ interface MemoryRow {
   scope: MemoryRecord['scope'];
   status: MemoryRecord['status'];
   tags_json: string;
+  parent_id: string | null;
+  derivation_type: MemoryRecord['derivationType'];
+  summary_depth: number;
   source_session_id: string | null;
   created_at: string;
   updated_at: string;
@@ -84,6 +87,9 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       scope: memory.scope,
       status: memory.status,
       tags_json: toJson(memory.tags),
+      parent_id: memory.parentId,
+      derivation_type: memory.derivationType,
+      summary_depth: memory.summaryDepth,
       source_session_id: memory.sourceSessionId,
       created_at: memory.createdAt,
       updated_at: memory.updatedAt,
@@ -93,7 +99,8 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       this.run(
         `UPDATE memory_records
          SET type=@type, title=@title, content=@content, scope=@scope, status=@status,
-             tags_json=@tags_json, source_session_id=@source_session_id,
+             tags_json=@tags_json, parent_id=@parent_id, derivation_type=@derivation_type,
+             summary_depth=@summary_depth, source_session_id=@source_session_id,
              created_at=@created_at, updated_at=@updated_at
          WHERE id=@id`,
         params,
@@ -101,9 +108,11 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
     } else {
       this.run(
         `INSERT INTO memory_records (
-          id, type, title, content, scope, status, tags_json, source_session_id, created_at, updated_at
+          id, type, title, content, scope, status, tags_json, parent_id, derivation_type, summary_depth,
+          source_session_id, created_at, updated_at
         ) VALUES (
-          @id, @type, @title, @content, @scope, @status, @tags_json, @source_session_id, @created_at, @updated_at
+          @id, @type, @title, @content, @scope, @status, @tags_json, @parent_id, @derivation_type, @summary_depth,
+          @source_session_id, @created_at, @updated_at
         )`,
         params,
       );
@@ -131,6 +140,9 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       scope: row.scope,
       status: row.status,
       tags: fromJson<string[]>(row.tags_json),
+      parentId: row.parent_id,
+      derivationType: row.derivation_type,
+      summaryDepth: row.summary_depth,
       sourceSessionId: row.source_session_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

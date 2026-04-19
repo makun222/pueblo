@@ -7,6 +7,7 @@ import { runMigrations } from '../../src/persistence/migrate';
 import { AgentTaskRepository } from '../../src/agent/task-repository';
 import { ToolInvocationRepository } from '../../src/tools/tool-invocation-repository';
 import { ToolService } from '../../src/tools/tool-service';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -23,7 +24,9 @@ afterEach(() => {
   }
 });
 
-describe('tool service', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
+
+describeIfNodeSqlite('tool service', () => {
   it('persists tool invocation history for a task', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-tool-service-'));
     tempDirs.push(tempDir);

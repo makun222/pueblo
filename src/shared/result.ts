@@ -105,19 +105,24 @@ export function createOutputBlock(input: OutputBlockInput) {
 }
 
 export function createResultBlocks(result: CommandResult<unknown>) {
-  const blocks = [
-    createOutputBlock({
-      type: result.ok ? 'command-result' : 'error',
-      title: result.code,
-      content: result.message,
-    }),
-  ];
+  const payload = result.data !== undefined ? extractTaskResultPayload(result.data) : null;
+  const blocks = [] as ReturnType<typeof createOutputBlock>[];
+
+  if (!result.ok || !payload) {
+    blocks.push(
+      createOutputBlock({
+        type: result.ok ? 'command-result' : 'error',
+        title: result.code,
+        content: result.message,
+      }),
+    );
+  }
 
   if (result.data !== undefined) {
-    const payload = extractTaskResultPayload(result.data);
-
     if (payload) {
       const outputSummary = payload.outputSummary ?? payload.attribution?.modelOutput ?? JSON.stringify(result.data, null, 2);
+      const modelOutput = payload.attribution?.modelOutput?.trim();
+      const shouldShowModelOutput = Boolean(modelOutput) && modelOutput !== outputSummary.trim();
 
       blocks.push(
         createOutputBlock({
@@ -127,12 +132,12 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         }),
       );
 
-      if (payload.attribution?.modelOutput) {
+      if (shouldShowModelOutput && modelOutput) {
         blocks.push(
           createOutputBlock({
             type: 'system',
             title: 'Model Output',
-            content: payload.attribution.modelOutput,
+            content: modelOutput,
             collapsed: true,
           }),
         );

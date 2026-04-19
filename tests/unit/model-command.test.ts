@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCliDependencies } from '../../src/cli/index';
 import { createTestAppConfig } from '../helpers/test-config';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -17,7 +18,9 @@ afterEach(() => {
   }
 });
 
-describe('model command and task flow', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
+
+describeIfNodeSqlite('model command and task flow', () => {
   it('lists models, selects one, and runs a persisted task', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-cli-'));
     tempDirs.push(tempDir);

@@ -30,4 +30,14 @@ export class MemoryService {
   searchMemories(query: string): MemoryRecord[] {
     return this.queries.searchMemories(query).filter((memory) => memory.status === 'active');
   }
+
+  resolveMemorySelection(memoryIds: string[]): MemoryRecord[] {
+    return memoryIds.flatMap((memoryId) => {
+      try {
+        return [this.selectMemory(memoryId)];
+      } catch {
+        return [];
+      }
+    });
+  }
 }

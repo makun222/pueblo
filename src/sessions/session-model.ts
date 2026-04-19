@@ -4,6 +4,9 @@ export interface CreateSessionInput {
   readonly id: string;
   readonly title: string;
   readonly currentModelId?: string | null;
+  readonly sessionKind?: Session['sessionKind'];
+  readonly originSessionId?: string | null;
+  readonly triggerReason?: Session['triggerReason'];
 }
 
 export function createSessionModel(input: CreateSessionInput): Session {
@@ -13,12 +16,18 @@ export function createSessionModel(input: CreateSessionInput): Session {
     id: input.id,
     title: input.title,
     status: 'active',
+    sessionKind: input.sessionKind ?? 'user',
     currentModelId: input.currentModelId ?? null,
     messageHistory: [],
     selectedPromptIds: [],
     selectedMemoryIds: [],
+    originSessionId: input.originSessionId ?? null,
+    triggerReason: input.triggerReason ?? null,
     createdAt: now,
     updatedAt: now,
+    startedAt: now,
+    completedAt: null,
+    failedAt: null,
     archivedAt: null,
   });
 }

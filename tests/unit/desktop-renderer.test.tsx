@@ -11,7 +11,58 @@ beforeEach(() => {
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
-      submitInput: vi.fn().mockResolvedValue(undefined),
+      submitInput: vi.fn().mockResolvedValue({
+        result: undefined,
+        blocks: [],
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        },
+      }),
+      getRuntimeStatus: vi.fn().mockResolvedValue({
+        providerId: 'github-copilot',
+        providerName: 'GitHub Copilot',
+        modelId: 'copilot-chat',
+        modelName: 'GPT-5.4',
+        activeSessionId: 'session-1',
+        contextCount: {
+          estimatedTokens: 12,
+          contextWindowLimit: 32000,
+          utilizationRatio: 0.0004,
+          messageCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          derivedMemoryCount: 0,
+        },
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        backgroundSummaryStatus: {
+          state: 'idle',
+          activeSummarySessionId: null,
+          lastSummaryAt: null,
+          lastSummaryMemoryId: null,
+        },
+      }),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),

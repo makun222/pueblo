@@ -10,7 +10,7 @@ export function createGitHubCopilotProfile(authState: ProviderProfile['authState
     models: [
       {
         id: 'copilot-chat',
-        name: 'Copilot Chat',
+        name: 'GPT-5.4',
         supportsTools: true,
       },
     ],

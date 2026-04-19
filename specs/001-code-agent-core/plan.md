@@ -88,3 +88,6 @@ tests/
 | 增加桌面壳层 | 用户明确要求启动后弹出窗口并提供输入框/输出框 | 仅增强终端交互循环无法满足弹窗式对话入口需求 |
 | 引入 Electron + React | 需要最小成本构建跨平台单窗口 UI，并直接复用现有 Node 核心 | 纯 Web 界面需要额外服务；Tauri 引入 Rust，超出当前必要范围 |
 | 增加 GitHub Copilot 专用接入层 | 首个版本明确要求 GitHub Copilot 为必选 provider | 仅保留抽象 provider 而不实现 GitHub Copilot，无法满足规格要求 |
+##Plan: Pueblo Context & Memory Design
+
+围绕 pueblo.md、session-backed 上下文选择、近似 token 计数、分层 memory、自动后台 summary session，建立一条统一的上下文解析链。核心目标是把当前分散在 index.ts:300、task-context.ts:1 和命令层里的临时状态，收敛成一个唯一的 Context Resolver。

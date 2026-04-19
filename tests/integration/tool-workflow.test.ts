@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCliDependencies } from '../../src/cli/index';
 import { createTestAppConfig } from '../helpers/test-config';
+import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
 
@@ -17,7 +18,9 @@ afterEach(() => {
   }
 });
 
-describe('tool workflow integration', () => {
+const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
+
+describeIfNodeSqlite('tool workflow integration', () => {
   it('runs task-relevant tools with persisted tool invocation history', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-tool-workflow-'));
     tempDirs.push(tempDir);

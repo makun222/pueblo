@@ -1,9 +1,11 @@
 import { failureResult, successResult, type CommandResult } from '../shared/result';
 import type { MemoryService } from '../memory/memory-service';
+import type { SessionService } from '../sessions/session-service';
 
 export interface MemoryCommandDependencies {
   readonly memoryService: MemoryService;
-  readonly selectedMemoryIds: Set<string>;
+  readonly sessionService: SessionService;
+  readonly getCurrentSessionId: () => string | null;
 }
 
 export function createMemoryListCommand(dependencies: MemoryCommandDependencies) {
@@ -34,7 +36,15 @@ export function createMemorySelectCommand(dependencies: MemoryCommandDependencie
     }
 
     const memory = dependencies.memoryService.selectMemory(memoryId);
-    dependencies.selectedMemoryIds.add(memory.id);
+    const sessionId = dependencies.getCurrentSessionId();
+
+    if (!sessionId) {
+      return failureResult('SESSION_REQUIRED', 'Create or select a session before selecting a memory', [
+        'Use /new to create a session, then retry /memory-sel.',
+      ]);
+    }
+
+    dependencies.sessionService.addSelectedMemory(sessionId, memory.id);
     return successResult('MEMORY_SELECTED', 'Memory selected', memory);
   };
 }

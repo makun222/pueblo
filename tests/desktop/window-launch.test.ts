@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { browserWindowCtor, mockWindow } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const { browserWindowCtor, mockWindow } = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   BrowserWindow: browserWindowCtor,
   app: {
+    getAppPath: vi.fn(() => 'd:/workspace/trends/pueblo'),
     on: vi.fn(),
     whenReady: vi.fn().mockResolvedValue(undefined),
   },
@@ -55,6 +57,9 @@ describe('Desktop Window Launch', () => {
     try {
       createWindow();
       expect(mockWindow.loadFile).toHaveBeenCalledTimes(1);
+      expect(mockWindow.loadFile).toHaveBeenCalledWith(
+        path.join('d:/workspace/trends/pueblo', 'dist', 'desktop', 'renderer', 'index.html'),
+      );
     } finally {
       process.env.NODE_ENV = originalNodeEnv;
     }

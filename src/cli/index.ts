@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { createTaskContext } from '../agent/task-context';
+import { ContextResolver } from '../agent/context-resolver';
 import { AgentTaskRepository } from '../agent/task-repository';
 import { AgentTaskRunner } from '../agent/task-runner';
 import { InputRouter } from '../commands/input-router';
@@ -59,6 +60,7 @@ import { SessionRepository } from '../sessions/session-repository';
 import { SessionService } from '../sessions/session-service';
 import { ToolInvocationRepository } from '../tools/tool-invocation-repository';
 import { ToolService } from '../tools/tool-service';
+import type { DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const config = loadAppConfig();
@@ -111,6 +113,7 @@ async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: stri
 export interface CliDependencies {
   readonly dispatcher: CommandDispatcher;
   readonly submitInput: (input: string) => Promise<import('../shared/result').CommandResult<unknown>>;
+  readonly getRuntimeStatus: () => DesktopRuntimeStatus;
   readonly databaseClose: () => void;
 }
 
@@ -295,13 +298,18 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
   const memoryRepository = new MemoryRepository({ connection: database.connection });
   const promptService = new PromptService(promptRepository);
   const memoryService = new MemoryService(memoryRepository);
-  const selectedPromptIds = new Set<string>();
-  const selectedMemoryIds = new Set<string>();
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
   const toolService = new ToolService({ repository: toolInvocationRepository, cwd: process.cwd() });
   const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService);
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository);
+  const contextResolver = new ContextResolver({
+    config: currentConfig,
+    sessionService,
+    promptService,
+    memoryService,
+    providerRegistry,
+  });
 
   const runTask = async (goal: string, inputContextSummary: string) => {
     const trimmedGoal = goal.trim();
@@ -310,15 +318,15 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
       return failureResult('TASK_GOAL_REQUIRED', 'Task goal is required', ['Provide a task goal and retry.']);
     }
 
-    const providerId = selectionState.providerId
-      ?? currentConfig.defaultProviderId
-      ?? providerRegistry.listProfiles().find((profile) => profile.authState === 'configured')?.id
-      ?? providerRegistry.listProfiles()[0]?.id
-      ?? null;
-    const selectedProfile = providerId
-      ? providerRegistry.listProfiles().find((profile) => profile.id === providerId) ?? null
-      : null;
-    const modelId = selectionState.modelId ?? selectedProfile?.defaultModelId ?? null;
+    const resolvedContext = contextResolver.resolve({
+      activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
+      explicitProviderId: selectionState.providerId,
+      explicitModelId: selectionState.modelId,
+      pendingUserInput: trimmedGoal,
+      cwd: process.cwd(),
+    });
+    const providerId = resolvedContext.taskContext.providerId;
+    const modelId = resolvedContext.taskContext.selectedModelId;
 
     if (!providerId || !modelId) {
       return failureResult('MODEL_SELECTION_REQUIRED', 'Select a provider model before running a task', [
@@ -329,12 +337,18 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
     try {
       const task = await taskRunner.run({
         goal: trimmedGoal,
-        sessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
+        sessionId: resolvedContext.taskContext.sessionId,
         providerId,
         modelId,
-        inputContextSummary,
-        prompts: [...selectedPromptIds].map((promptId) => promptService.selectPrompt(promptId)),
-        memories: [...selectedMemoryIds].map((memoryId) => memoryService.selectMemory(memoryId)),
+        inputContextSummary: JSON.stringify({
+          trigger: inputContextSummary,
+          contextCount: resolvedContext.taskContext.contextCount,
+          puebloProfilePath: resolvedContext.taskContext.puebloProfile.loadedFromPath,
+          selectedPromptIds: resolvedContext.taskContext.selectedPromptIds,
+          selectedMemoryIds: resolvedContext.taskContext.selectedMemoryIds,
+        }),
+        prompts: resolvedContext.taskContext.prompts,
+        memories: resolvedContext.taskContext.memories,
       });
 
       return successResult('TASK_COMPLETED', 'Agent task completed', task);
@@ -354,18 +368,27 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
     runTaskFromText: (text) => runTask(text, 'Plain-text task execution'),
   });
 
-  registerCoreCommands(dispatcher);
-  const handleCurrentSessionChange = (sessionId: string | null): void => {
+  const syncSelectionFromSession = (sessionId: string | null): void => {
     selectionState.sessionId = sessionId;
 
     if (!sessionId) {
+      selectionState.modelId = null;
       return;
     }
 
-    const session = sessionService.getCurrentSession();
-    if (session?.currentModelId) {
-      selectionState.modelId = session.currentModelId;
-    }
+    const resolved = contextResolver.resolve({
+      activeSessionId: sessionId,
+      explicitProviderId: selectionState.providerId,
+      explicitModelId: selectionState.modelId,
+      cwd: process.cwd(),
+    });
+    selectionState.providerId = resolved.runtimeStatus.providerId;
+    selectionState.modelId = resolved.runtimeStatus.modelId;
+  };
+
+  registerCoreCommands(dispatcher);
+  const handleCurrentSessionChange = (sessionId: string | null): void => {
+    syncSelectionFromSession(sessionId);
   };
 
   dispatcher.register('/new', createNewSessionCommand({ sessionService, onCurrentSessionChange: handleCurrentSessionChange }));
@@ -374,14 +397,46 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
   dispatcher.register('/session-archive', createSessionArchiveCommand({ sessionService, onCurrentSessionChange: handleCurrentSessionChange }));
   dispatcher.register('/session-restore', createSessionRestoreCommand({ sessionService, onCurrentSessionChange: handleCurrentSessionChange }));
   dispatcher.register('/session-del', createSessionDeleteCommand({ sessionService, onCurrentSessionChange: handleCurrentSessionChange }));
-  dispatcher.register('/prompt-list', createPromptListCommand({ promptService, selectedPromptIds }));
-  dispatcher.register('/prompt-add', createPromptAddCommand({ promptService, selectedPromptIds }));
-  dispatcher.register('/prompt-sel', createPromptSelectCommand({ promptService, selectedPromptIds }));
-  dispatcher.register('/prompt-del', createPromptDeleteCommand({ promptService, selectedPromptIds }));
-  dispatcher.register('/memory-list', createMemoryListCommand({ memoryService, selectedMemoryIds }));
-  dispatcher.register('/memory-add', createMemoryAddCommand({ memoryService, selectedMemoryIds }));
-  dispatcher.register('/memory-sel', createMemorySelectCommand({ memoryService, selectedMemoryIds }));
-  dispatcher.register('/memory-search', createMemorySearchCommand({ memoryService, selectedMemoryIds }));
+  dispatcher.register('/prompt-list', createPromptListCommand({
+    promptService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/prompt-add', createPromptAddCommand({
+    promptService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/prompt-sel', createPromptSelectCommand({
+    promptService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/prompt-del', createPromptDeleteCommand({
+    promptService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/memory-list', createMemoryListCommand({
+    memoryService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/memory-add', createMemoryAddCommand({
+    memoryService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/memory-sel', createMemorySelectCommand({
+    memoryService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/memory-search', createMemorySearchCommand({
+    memoryService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
   dispatcher.register('/auth-login', async () => {
     const setup = await maybeRunCliStartupSetup(currentConfig);
 
@@ -423,16 +478,20 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
   selectionState.sessionId = currentSession?.id ?? currentConfig.defaultSessionId;
   selectionState.providerId = currentConfig.defaultProviderId;
   selectionState.modelId = currentSession?.currentModelId ?? null;
-  createTaskContext({
-    config: currentConfig,
-    session: currentSession,
-    currentSessionId: selectionState.sessionId,
-  });
+  syncSelectionFromSession(selectionState.sessionId);
 
   return {
     dispatcher,
     submitInput(input: string) {
       return inputRouter.route(input);
+    },
+    getRuntimeStatus() {
+      return contextResolver.resolve({
+        activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
+        explicitProviderId: selectionState.providerId,
+        explicitModelId: selectionState.modelId,
+        cwd: process.cwd(),
+      }).runtimeStatus;
     },
     databaseClose(): void {
       database.close();
