@@ -49,6 +49,8 @@ describe('context resolver', () => {
     const session = sessionService.createSession('Resolver session', 'gpt-4.1-mini');
     const prompt = promptService.createPrompt('Root cause', 'analysis', 'Always inspect the root cause first.');
     const memory = memoryService.createMemory('Repo fact', 'This repository uses sqlite persistence.', 'project');
+    sessionService.addUserMessage(session.id, 'Inspect the failing workflow');
+    sessionService.addAssistantMessage(session.id, 'I will inspect the failing workflow.');
     sessionService.addSelectedPrompt(session.id, prompt.id);
     sessionService.addSelectedMemory(session.id, memory.id);
 
@@ -68,6 +70,11 @@ describe('context resolver', () => {
     expect(resolved.taskContext.puebloProfile.roleDirectives).toEqual(['focused agent']);
     expect(resolved.taskContext.selectedPromptIds).toEqual([prompt.id]);
     expect(resolved.taskContext.selectedMemoryIds).toEqual([memory.id]);
+    expect(resolved.taskContext.sessionMessages).toHaveLength(2);
+    expect(resolved.taskContext.recentMessages).toEqual([
+      'User: Inspect the failing workflow',
+      'Assistant: I will inspect the failing workflow.',
+    ]);
     expect(resolved.runtimeStatus.activeSessionId).toBe(session.id);
     expect(resolved.runtimeStatus.selectedPromptCount).toBe(1);
     expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);

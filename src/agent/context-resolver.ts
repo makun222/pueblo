@@ -10,7 +10,7 @@ import {
   type ProviderProfile,
   type Session,
 } from '../shared/schema';
-import { createTaskContext, type TaskContext } from './task-context';
+import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
 export interface ResolveContextInput {
@@ -100,7 +100,8 @@ export class ContextResolver {
     const prompts = this.dependencies.promptService.resolvePromptSelection(session?.selectedPromptIds ?? []);
     const memories = this.dependencies.memoryService.resolveMemorySelection(session?.selectedMemoryIds ?? []);
     const puebloProfile = this.profileLoader.load(input.cwd ?? process.cwd());
-    const recentMessages = session?.messageHistory ?? [];
+    const sessionMessages = session?.messageHistory ?? [];
+    const recentMessages = sessionMessages.map(formatSessionMessageForContext);
     const contextCount = this.budgetService.compute({
       puebloTexts: [
         ...puebloProfile.roleDirectives,
@@ -136,6 +137,7 @@ export class ContextResolver {
       selectedModelName: selection.model?.name ?? selection.model?.id ?? null,
       prompts,
       memories,
+      sessionMessages,
       recentMessages,
       puebloProfile,
       contextCount,

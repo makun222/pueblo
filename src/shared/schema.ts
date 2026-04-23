@@ -39,6 +39,16 @@ export const providerProfileSchema = z.object({
 export const sessionStatusSchema = z.enum(['active', 'archived', 'deleted']);
 export const sessionKindSchema = z.enum(['user', 'background-summary']);
 export const sessionTriggerReasonSchema = z.enum(['context-threshold', 'manual-summary']);
+export const sessionMessageRoleSchema = z.enum(['user', 'assistant', 'tool', 'system']);
+
+export const sessionMessageSchema = z.object({
+  id: z.string().min(1),
+  role: sessionMessageRoleSchema,
+  content: z.string().min(1),
+  createdAt: z.string().datetime(),
+  taskId: z.string().min(1).nullable(),
+  toolName: z.string().min(1).nullable(),
+});
 
 export const contextCountSchema = z.object({
   estimatedTokens: z.number().int().nonnegative(),
@@ -89,7 +99,7 @@ export const sessionSchema = z.object({
   status: sessionStatusSchema,
   sessionKind: sessionKindSchema.default('user'),
   currentModelId: z.string().min(1).nullable(),
-  messageHistory: z.array(z.string()),
+  messageHistory: z.array(sessionMessageSchema),
   selectedPromptIds: z.array(z.string()),
   selectedMemoryIds: z.array(z.string()),
   originSessionId: z.string().min(1).nullable(),
@@ -235,6 +245,8 @@ export type ProviderProfile = z.infer<typeof providerProfileSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 export type SessionKind = z.infer<typeof sessionKindSchema>;
 export type SessionTriggerReason = z.infer<typeof sessionTriggerReasonSchema>;
+export type SessionMessageRole = z.infer<typeof sessionMessageRoleSchema>;
+export type SessionMessage = z.infer<typeof sessionMessageSchema>;
 export type ContextCount = z.infer<typeof contextCountSchema>;
 export type BackgroundSummaryState = z.infer<typeof backgroundSummaryStateSchema>;
 export type BackgroundSummaryStatus = z.infer<typeof backgroundSummaryStatusSchema>;

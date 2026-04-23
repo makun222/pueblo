@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { RepositoryBase, fromJson, toJson, type RepositoryContext } from '../persistence/repository-base';
-import { sessionSchema, type Session } from '../shared/schema';
+import { sessionMessageSchema, sessionSchema, type Session, type SessionMessage } from '../shared/schema';
 import { createSessionModel } from './session-model';
 
 interface SessionRow {
@@ -177,7 +177,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       status: row.status,
       sessionKind: row.session_kind,
       currentModelId: row.current_model_id,
-      messageHistory: fromJson<string[]>(row.message_history_json),
+      messageHistory: deserializeMessageHistory(row.id, row.message_history_json, row.updated_at),
       selectedPromptIds: fromJson<string[]>(row.selected_prompt_ids_json),
       selectedMemoryIds: fromJson<string[]>(row.selected_memory_ids_json),
       originSessionId: row.origin_session_id,
@@ -211,4 +211,33 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       archived_at: session.archivedAt,
     };
   }
+}
+
+function deserializeMessageHistory(sessionId: string, serializedHistory: string, fallbackTimestamp: string): SessionMessage[] {
+  const parsed = fromJson<unknown[]>(serializedHistory);
+
+  return parsed.flatMap((entry, index) => {
+    const structuredMessage = sessionMessageSchema.safeParse(entry);
+    if (structuredMessage.success) {
+      return [structuredMessage.data];
+    }
+
+    if (typeof entry !== 'string') {
+      return [];
+    }
+
+    const content = entry.trim();
+    if (!content) {
+      return [];
+    }
+
+    return [sessionMessageSchema.parse({
+      id: `${sessionId}-legacy-${index + 1}`,
+      role: 'system',
+      content,
+      createdAt: fallbackTimestamp,
+      taskId: null,
+      toolName: null,
+    })];
+  });
 }

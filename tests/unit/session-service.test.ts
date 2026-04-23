@@ -13,4 +13,29 @@ describe('session service', () => {
     service.archiveSession(created.id);
     expect(service.getCurrentSession()).toBeNull();
   });
+
+  it('appends structured conversation messages to the session history', () => {
+    const repository = new InMemorySessionRepository();
+    const service = new SessionService(repository);
+
+    const created = service.createSession('Session A');
+    service.addUserMessage(created.id, 'Inspect the repo');
+    service.addAssistantMessage(created.id, 'Repository inspection complete');
+
+    const reloaded = service.getSession(created.id);
+
+    expect(reloaded?.messageHistory).toHaveLength(2);
+    expect(reloaded?.messageHistory[0]).toMatchObject({
+      role: 'user',
+      content: 'Inspect the repo',
+      taskId: null,
+      toolName: null,
+    });
+    expect(reloaded?.messageHistory[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Repository inspection complete',
+      taskId: null,
+      toolName: null,
+    });
+  });
 });

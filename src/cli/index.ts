@@ -51,7 +51,14 @@ import { ModelService } from '../providers/model-service';
 import { createProviderProfile } from '../providers/provider-profile';
 import { ProviderRegistry } from '../providers/provider-registry';
 import { loadAppConfig } from '../shared/config';
-import { failureResult, formatCommandResult, formatError, successResult } from '../shared/result';
+import {
+  extractTaskOutputSummaryPayload,
+  extractTaskOutputSummaryText,
+  failureResult,
+  formatCommandResult,
+  formatError,
+  successResult,
+} from '../shared/result';
 import { MemoryRepository } from '../memory/memory-repository';
 import { MemoryService } from '../memory/memory-service';
 import { PromptRepository } from '../prompts/prompt-repository';
@@ -334,26 +341,55 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
       ]);
     }
 
+    let sessionId = resolvedContext.taskContext.sessionId;
+    if (!sessionId) {
+      const session = sessionService.createSession(createSessionTitle(trimmedGoal), modelId);
+      sessionId = session.id;
+      syncSelectionFromSession(sessionId);
+    }
+
+    const executionContext = contextResolver.resolve({
+      activeSessionId: sessionId,
+      explicitProviderId: selectionState.providerId,
+      explicitModelId: selectionState.modelId,
+      pendingUserInput: trimmedGoal,
+      cwd: process.cwd(),
+    });
+
+    sessionService.addUserMessage(sessionId, trimmedGoal);
+
     try {
       const task = await taskRunner.run({
         goal: trimmedGoal,
-        sessionId: resolvedContext.taskContext.sessionId,
+        sessionId,
         providerId,
         modelId,
         inputContextSummary: JSON.stringify({
           trigger: inputContextSummary,
-          contextCount: resolvedContext.taskContext.contextCount,
-          puebloProfilePath: resolvedContext.taskContext.puebloProfile.loadedFromPath,
-          selectedPromptIds: resolvedContext.taskContext.selectedPromptIds,
-          selectedMemoryIds: resolvedContext.taskContext.selectedMemoryIds,
+          contextCount: executionContext.taskContext.contextCount,
+          puebloProfilePath: executionContext.taskContext.puebloProfile.loadedFromPath,
+          selectedPromptIds: executionContext.taskContext.selectedPromptIds,
+          selectedMemoryIds: executionContext.taskContext.selectedMemoryIds,
         }),
-        prompts: resolvedContext.taskContext.prompts,
-        memories: resolvedContext.taskContext.memories,
+        taskContext: executionContext.taskContext,
+        prompts: executionContext.taskContext.prompts,
+        memories: executionContext.taskContext.memories,
       });
+
+      const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
+      for (const toolResult of outputPayload?.toolResults ?? []) {
+        sessionService.addToolMessage(sessionId, toolResult.toolName, `${toolResult.status}: ${toolResult.summary}`, task.id);
+      }
+
+      const assistantOutput = extractTaskOutputSummaryText(task.outputSummary);
+      if (assistantOutput) {
+        sessionService.addAssistantMessage(sessionId, assistantOutput, task.id);
+      }
 
       return successResult('TASK_COMPLETED', 'Agent task completed', task);
     } catch (error) {
       if (error instanceof ProviderError) {
+        sessionService.addAssistantMessage(sessionId, `Task failed: ${error.message}`);
         return failureResult('TASK_RUN_FAILED', error.message, [
           'Use /model to review the active provider configuration.',
           'Use /auth-login to sign in to GitHub Copilot when credentials are missing.',
@@ -497,6 +533,11 @@ export function createCliDependencies(config: AppConfig = loadAppConfig()): CliD
       database.close();
     },
   };
+}
+
+function createSessionTitle(goal: string): string {
+  const trimmed = goal.trim();
+  return trimmed.length <= 60 ? trimmed : `${trimmed.slice(0, 57)}...`;
 }
 
 function shouldRunGitHubCopilotCliSetup(config: AppConfig): boolean {

@@ -70,4 +70,35 @@ describeIfNodeSqlite('session lifecycle integration', () => {
 
     database.close();
   });
+
+  it('persists structured session message history in sqlite', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-messages-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const repository = new SessionRepository({ connection: database.connection });
+    const service = new SessionService(repository);
+
+    const created = service.createSession('Message session');
+    service.addUserMessage(created.id, 'Inspect the workflow');
+    service.addAssistantMessage(created.id, 'Workflow inspection complete', 'task-1');
+
+    const restoredService = new SessionService(new SessionRepository({ connection: database.connection }));
+    const restored = restoredService.getSession(created.id);
+
+    expect(restored?.messageHistory).toHaveLength(2);
+    expect(restored?.messageHistory[0]).toMatchObject({
+      role: 'user',
+      content: 'Inspect the workflow',
+    });
+    expect(restored?.messageHistory[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Workflow inspection complete',
+      taskId: 'task-1',
+    });
+
+    database.close();
+  });
 });

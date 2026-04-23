@@ -6,6 +6,7 @@ import type {
   PromptAsset,
   PuebloProfile,
   Session,
+  SessionMessage,
 } from '../shared/schema';
 
 export interface TaskContext {
@@ -19,6 +20,7 @@ export interface TaskContext {
   readonly selectedMemoryIds: string[];
   readonly prompts: PromptAsset[];
   readonly memories: MemoryRecord[];
+  readonly sessionMessages: SessionMessage[];
   readonly recentMessages: string[];
   readonly puebloProfile: PuebloProfile;
   readonly contextCount: ContextCount;
@@ -35,6 +37,7 @@ export interface TaskContextInput {
   readonly providerName?: string | null;
   readonly selectedModelName?: string | null;
   readonly currentSessionId?: string | null;
+  readonly sessionMessages?: SessionMessage[];
   readonly recentMessages?: string[];
   readonly puebloProfile: PuebloProfile;
   readonly contextCount: ContextCount;
@@ -47,6 +50,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
   const prompts = input.prompts ?? [];
   const memories = input.memories ?? [];
   const selectedModelId = input.selectedModelId ?? session?.currentModelId ?? null;
+  const sessionMessages = input.sessionMessages ?? session?.messageHistory ?? [];
 
   return {
     sessionId: input.currentSessionId ?? session?.id ?? null,
@@ -59,7 +63,8 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     selectedMemoryIds: session?.selectedMemoryIds ?? memories.map((memory) => memory.id),
     prompts,
     memories,
-    recentMessages: input.recentMessages ?? session?.messageHistory ?? [],
+    sessionMessages,
+    recentMessages: input.recentMessages ?? sessionMessages.map(formatSessionMessageForContext),
     puebloProfile: input.puebloProfile,
     contextCount: input.contextCount,
     backgroundSummaryStatus: input.backgroundSummaryStatus ?? {
@@ -70,4 +75,19 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     },
     config: input.config,
   };
+}
+
+export function formatSessionMessageForContext(message: SessionMessage): string {
+  switch (message.role) {
+    case 'user':
+      return `User: ${message.content}`;
+    case 'assistant':
+      return `Assistant: ${message.content}`;
+    case 'tool':
+      return `Tool${message.toolName ? ` (${message.toolName})` : ''}: ${message.content}`;
+    case 'system':
+      return `System: ${message.content}`;
+    default:
+      return message.content;
+  }
 }

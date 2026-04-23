@@ -1,7 +1,17 @@
+import { randomUUID } from 'node:crypto';
 import type { Session } from '../shared/schema';
+import type { SessionMessage, SessionMessageRole } from '../shared/schema';
 import { SessionCommandError } from '../commands/command-errors';
 import { SessionQueries } from './session-queries';
 import type { SessionStore } from './session-repository';
+
+export interface AppendSessionMessageInput {
+  readonly role: SessionMessageRole;
+  readonly content: string;
+  readonly taskId?: string | null;
+  readonly toolName?: string | null;
+  readonly createdAt?: string;
+}
 
 export class SessionService {
   private readonly queries: SessionQueries;
@@ -93,6 +103,53 @@ export class SessionService {
 
   getSession(sessionId: string): Session | null {
     return this.repository.getById(sessionId);
+  }
+
+  appendMessage(sessionId: string, input: AppendSessionMessageInput): Session {
+    const session = this.requireSession(sessionId);
+    const normalizedContent = input.content.trim();
+
+    if (!normalizedContent) {
+      throw new SessionCommandError('Session message content is required');
+    }
+
+    const message: SessionMessage = {
+      id: randomUUID(),
+      role: input.role,
+      content: normalizedContent,
+      createdAt: input.createdAt ?? new Date().toISOString(),
+      taskId: input.taskId ?? null,
+      toolName: input.toolName ?? null,
+    };
+
+    return this.updateSession(session, {
+      messageHistory: [...session.messageHistory, message],
+    });
+  }
+
+  addUserMessage(sessionId: string, content: string, taskId?: string | null): Session {
+    return this.appendMessage(sessionId, {
+      role: 'user',
+      content,
+      taskId,
+    });
+  }
+
+  addAssistantMessage(sessionId: string, content: string, taskId?: string | null): Session {
+    return this.appendMessage(sessionId, {
+      role: 'assistant',
+      content,
+      taskId,
+    });
+  }
+
+  addToolMessage(sessionId: string, toolName: string, content: string, taskId?: string | null): Session {
+    return this.appendMessage(sessionId, {
+      role: 'tool',
+      content,
+      taskId,
+      toolName,
+    });
   }
 
   addSelectedPrompt(sessionId: string, promptId: string): Session {

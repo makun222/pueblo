@@ -1,4 +1,12 @@
-import type { ProviderAdapter, ProviderRunRequest, ProviderRunResult } from './provider-adapter';
+import {
+  createLegacyStepContext,
+  type ProviderAdapter,
+  type ProviderMessage,
+  type ProviderRunRequest,
+  type ProviderRunResult,
+  type ProviderStepContext,
+  type ProviderStepResult,
+} from './provider-adapter';
 import { ProviderAuthError, ProviderError } from './provider-errors';
 import type { GitHubCopilotTokenType } from './github-copilot-auth';
 
@@ -53,7 +61,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     this.integrationId = options.integrationId ?? 'vscode-chat';
   }
 
-  async runTask(request: ProviderRunRequest): Promise<ProviderRunResult> {
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
     if (!this.options.token.trim()) {
       throw new ProviderAuthError('github-copilot', 'GitHub Copilot token is missing');
     }
@@ -67,11 +75,11 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
       );
     }
 
-    let response = await this.sendChatRequest(request, this.options.token);
+    let response = await this.sendChatRequest(context, this.options.token);
 
     if (!response.ok && tokenType === 'github-auth-token' && shouldFallbackToExchange(response.status)) {
       const exchangedToken = await this.resolveExchangedAccessToken();
-      response = await this.sendChatRequest(request, exchangedToken);
+      response = await this.sendChatRequest(context, exchangedToken);
     }
 
     if (!response.ok) {
@@ -83,7 +91,20 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     const outputSummary = extractGitHubCopilotOutput(payload);
 
     return {
+      type: 'final',
       outputSummary,
+    };
+  }
+
+  async runTask(request: ProviderRunRequest): Promise<ProviderRunResult> {
+    const stepResult = await this.runStep(createLegacyStepContext(request));
+
+    if (stepResult.type !== 'final') {
+      throw new ProviderError('GitHub Copilot returned a tool call in compatibility mode');
+    }
+
+    return {
+      outputSummary: stepResult.outputSummary,
     };
   }
 
@@ -97,7 +118,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     return exchanged.token;
   }
 
-  private sendChatRequest(request: ProviderRunRequest, accessToken: string): Promise<Response> {
+  private sendChatRequest(request: ProviderStepContext, accessToken: string): Promise<Response> {
     return this.fetchImpl(this.apiUrl, {
       method: 'POST',
       headers: {
@@ -112,12 +133,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
       body: JSON.stringify({
         model: request.modelId,
         stream: false,
-        messages: [
-          {
-            role: 'user',
-            content: `${request.inputContextSummary}\n\n${request.goal}`,
-          },
-        ],
+        messages: request.messages.map(toGitHubCopilotMessage),
       }),
     });
   }
@@ -190,6 +206,13 @@ function isTokenExpired(expiresAt: number | null): boolean {
 
 function shouldFallbackToExchange(status: number): boolean {
   return status === 401 || status === 403;
+}
+
+function toGitHubCopilotMessage(message: ProviderMessage): { role: string; content: string } {
+  return {
+    role: message.role,
+    content: message.content,
+  };
 }
 
 function extractGitHubCopilotOutput(payload: GitHubCopilotResponsePayload): string {

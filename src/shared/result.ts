@@ -47,6 +47,16 @@ export function successResult<TData>(code: string, message: string, data?: TData
   };
 }
 
+export interface ParsedTaskOutputSummary {
+  readonly outputSummary?: string;
+  readonly attribution?: SourceAttribution;
+  readonly toolResults?: Array<{
+    readonly toolName: string;
+    readonly status: string;
+    readonly summary: string;
+  }>;
+}
+
 export function failureResult(code: string, message: string, suggestions: string[] = []): CommandResult {
   return {
     ok: false,
@@ -89,6 +99,19 @@ export function withSourceAttribution<TData extends Record<string, unknown>>(
     ...data,
     attribution,
   };
+}
+
+export function extractTaskOutputSummaryText(outputSummary: string | null | undefined): string | null {
+  const parsed = extractTaskOutputSummaryPayload(outputSummary);
+  return parsed?.outputSummary ?? parsed?.attribution?.modelOutput ?? outputSummary ?? null;
+}
+
+export function extractTaskOutputSummaryPayload(outputSummary: string | null | undefined): ParsedTaskOutputSummary | null {
+  if (!outputSummary) {
+    return null;
+  }
+
+  return parseTaskResultPayload(outputSummary);
 }
 
 export function createOutputBlock(input: OutputBlockInput) {
@@ -206,11 +229,15 @@ function extractTaskResultPayload(data: unknown): TaskResultPayload | null {
     return null;
   }
 
+  return parseTaskResultPayload(candidate.outputSummary);
+}
+
+function parseTaskResultPayload(outputSummary: string): ParsedTaskOutputSummary {
   try {
-    return JSON.parse(candidate.outputSummary) as TaskResultPayload;
+    return JSON.parse(outputSummary) as TaskResultPayload;
   } catch {
     return {
-      outputSummary: candidate.outputSummary,
+      outputSummary,
     };
   }
 }
