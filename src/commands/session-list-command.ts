@@ -3,13 +3,14 @@ import type { SessionService } from '../sessions/session-service';
 
 export interface SessionListCommandDependencies {
   readonly sessionService: SessionService;
+  readonly getAgentInstanceId?: () => string | null;
   onCurrentSessionChange?: (sessionId: string | null) => void;
 }
 
 export function createNewSessionCommand(dependencies: SessionListCommandDependencies) {
   return (args: string[]): CommandResult => {
     const title = args.join(' ').trim();
-    const session = dependencies.sessionService.createSession(title);
+    const session = dependencies.sessionService.createSession(title, null, dependencies.getAgentInstanceId?.() ?? null);
     dependencies.onCurrentSessionChange?.(session.id);
 
     return successResult('SESSION_CREATED', 'Session created', session);

@@ -1,7 +1,5 @@
-import type { ProviderMessage, ProviderToolName } from '../providers/provider-adapter';
+import type { ProviderMessage } from '../providers/provider-adapter';
 import type { TaskContext } from './task-context';
-
-const SUPPORTED_TOOL_NAMES = new Set<ProviderToolName>(['glob', 'grep', 'exec']);
 
 export function buildProviderMessages(taskContext: TaskContext, goal: string): ProviderMessage[] {
   const messages: ProviderMessage[] = [];
@@ -30,14 +28,6 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
       ].join('\n'),
     });
   }
-
-  messages.push(
-    ...taskContext.sessionMessages.map((message) => ({
-      role: message.role,
-      content: message.content,
-      toolName: toProviderToolName(message.toolName),
-    })),
-  );
 
   messages.push({ role: 'user', content: goal });
   return messages;
@@ -83,10 +73,3 @@ function appendSection(target: string[], title: string, values: string[]): void 
   target.push(`${title}:\n${values.map((value) => `- ${value}`).join('\n')}`);
 }
 
-function toProviderToolName(toolName: string | null): ProviderToolName | undefined {
-  if (!toolName || !SUPPORTED_TOOL_NAMES.has(toolName as ProviderToolName)) {
-    return undefined;
-  }
-
-  return toolName as ProviderToolName;
-}

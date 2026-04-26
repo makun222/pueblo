@@ -1,7 +1,9 @@
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { ProviderAuthError } from './provider-errors';
 import { resolveConfigPath, type AppConfig } from '../shared/config';
+import { createDefaultCredentialStore, type CredentialStore } from './credential-store';
 
 const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 
@@ -31,6 +33,7 @@ export interface GitHubCopilotDeviceFlowResult {
 export interface GitHubCopilotDeviceFlowDependencies {
   readonly fetchImpl?: typeof fetch;
   readonly wait?: (milliseconds: number) => Promise<void>;
+  readonly credentialStore?: CredentialStore;
 }
 
 export async function requestGitHubDeviceCode(
@@ -151,21 +154,51 @@ export async function pollGitHubDeviceAccessToken(
 export function persistGitHubCopilotDeviceAuth(
   config: AppConfig,
   accessToken: string,
-  options: { cwd?: string; configPath?: string } = {},
+  options: { cwd?: string; configPath?: string; credentialStore?: CredentialStore } = {},
 ): void {
   const cwd = options.cwd ?? process.cwd();
   const configPath = resolveConfigPath({ cwd, configPath: options.configPath });
   const configDir = path.dirname(configPath);
+  const credentialStore = options.credentialStore ?? createDefaultCredentialStore();
   const current = fs.existsSync(configPath)
     ? JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>
     : {};
+
+  if (credentialStore.isSupported()) {
+    const credentialTarget = config.githubCopilot.credentialTarget?.trim() || createGitHubCopilotCredentialTarget();
+    credentialStore.writeSecret(credentialTarget, accessToken);
+    const currentGitHubCopilot = typeof current.githubCopilot === 'object' && current.githubCopilot !== null
+      ? current.githubCopilot as Record<string, unknown>
+      : {};
+    const { token: _discardedCurrentToken, ...currentGitHubCopilotWithoutToken } = currentGitHubCopilot;
+    const { token: _discardedConfigToken, ...configGitHubCopilotWithoutToken } = config.githubCopilot;
+
+    const nextConfig = {
+      ...current,
+      databasePath: config.databasePath,
+      defaultProviderId: config.defaultProviderId,
+      defaultSessionId: config.defaultSessionId,
+      providers: ensureGitHubProviderConfig(current.providers, 'windows-credential-manager'),
+      desktopWindow: config.desktopWindow,
+      githubCopilot: {
+        ...currentGitHubCopilotWithoutToken,
+        ...configGitHubCopilotWithoutToken,
+        credentialTarget,
+        tokenType: 'github-auth-token',
+      },
+    };
+
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify(nextConfig, null, 2));
+    return;
+  }
 
   const nextConfig = {
     ...current,
     databasePath: config.databasePath,
     defaultProviderId: config.defaultProviderId,
     defaultSessionId: config.defaultSessionId,
-    providers: ensureGitHubProviderConfig(current.providers),
+    providers: ensureGitHubProviderConfig(current.providers, 'config-file'),
     desktopWindow: config.desktopWindow,
     githubCopilot: {
       ...(typeof current.githubCopilot === 'object' && current.githubCopilot !== null ? current.githubCopilot : {}),
@@ -179,14 +212,17 @@ export function persistGitHubCopilotDeviceAuth(
   fs.writeFileSync(configPath, JSON.stringify(nextConfig, null, 2));
 }
 
-function ensureGitHubProviderConfig(currentProviders: unknown): Array<Record<string, unknown>> {
+function ensureGitHubProviderConfig(
+  currentProviders: unknown,
+  credentialSource: 'config-file' | 'windows-credential-manager',
+): Array<Record<string, unknown>> {
   const providers = Array.isArray(currentProviders) ? [...currentProviders] as Array<Record<string, unknown>> : [];
   const index = providers.findIndex((provider) => provider.providerId === 'github-copilot');
   const githubProvider = {
     providerId: 'github-copilot',
     defaultModelId: 'copilot-chat',
     enabled: true,
-    credentialSource: 'config-file',
+    credentialSource,
   };
 
   if (index === -1) {
@@ -199,6 +235,10 @@ function ensureGitHubProviderConfig(currentProviders: unknown): Array<Record<str
     ...githubProvider,
   };
   return providers;
+}
+
+function createGitHubCopilotCredentialTarget(): string {
+  return `Pueblo:GitHubCopilot:${randomUUID()}`;
 }
 
 function defaultWait(milliseconds: number): Promise<void> {

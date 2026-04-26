@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { MemoryService } from '../../src/memory/memory-service';
+import { InMemoryMemoryRepository } from '../../src/memory/memory-repository';
 import { InMemorySessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
 
@@ -37,5 +39,23 @@ describe('session service', () => {
       taskId: null,
       toolName: null,
     });
+  });
+
+  it('imports session-scoped memories from another session into the active session selection', () => {
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const repository = new InMemorySessionRepository();
+    const service = new SessionService(repository, memoryService);
+
+    const source = service.createSession('Session B');
+    const target = service.createSession('Session A');
+    const sourceMemory = memoryService.createMemory('Turn 1', 'User: hi\n\nAssistant: hello', 'session', {
+      sourceSessionId: source.id,
+      tags: ['conversation-turn'],
+      derivationType: 'summary',
+    });
+
+    const updated = service.importSelectedMemoriesFromSession(target.id, source.id);
+
+    expect(updated.selectedMemoryIds).toEqual([sourceMemory.id]);
   });
 });

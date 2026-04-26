@@ -55,6 +55,7 @@ const foundationalMigrations = [
         title TEXT NOT NULL,
         status TEXT NOT NULL,
         session_kind TEXT NOT NULL DEFAULT 'user',
+        agent_instance_id TEXT,
         current_model_id TEXT,
         message_history_json TEXT NOT NULL,
         selected_prompt_ids_json TEXT NOT NULL,
@@ -109,6 +110,7 @@ const foundationalMigrations = [
       )
       `,
       'CREATE INDEX IF NOT EXISTS idx_sessions_status_updated_at ON sessions(status, updated_at DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_sessions_agent_instance_id ON sessions(agent_instance_id)',
       'CREATE INDEX IF NOT EXISTS idx_sessions_current_model_id ON sessions(current_model_id)',
       'CREATE INDEX IF NOT EXISTS idx_memory_scope_status ON memory_records(scope, status)',
       'CREATE INDEX IF NOT EXISTS idx_prompts_status_updated_at ON prompt_assets(status, updated_at DESC)',
@@ -136,6 +138,9 @@ const foundationalMigrations = [
       ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
       `,
       `
+      ALTER TABLE sessions ADD COLUMN agent_instance_id TEXT
+      `,
+      `
       ALTER TABLE sessions ADD COLUMN origin_session_id TEXT
       `,
       `
@@ -159,6 +164,62 @@ const foundationalMigrations = [
       `
       ALTER TABLE memory_records ADD COLUMN summary_depth INTEGER NOT NULL DEFAULT 0
       `,
+      'CREATE INDEX IF NOT EXISTS idx_sessions_kind_updated_at ON sessions(session_kind, updated_at DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_memory_parent_updated_at ON memory_records(parent_id, updated_at DESC)',
+    ],
+  },
+  {
+    id: '004_agent_instances',
+    statements: [
+      `
+      CREATE TABLE IF NOT EXISTS agent_instances (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        profile_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        workspace_root TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        terminated_at TEXT
+      )
+      `,
+      'CREATE INDEX IF NOT EXISTS idx_agent_instances_profile_status ON agent_instances(profile_id, status)',
+    ],
+  },
+  {
+    id: '005_session_context_backfill',
+    statements: [
+      `
+      ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'user'
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN agent_instance_id TEXT
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN origin_session_id TEXT
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN trigger_reason TEXT
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN started_at TEXT
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN completed_at TEXT
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN failed_at TEXT
+      `,
+      `
+      ALTER TABLE memory_records ADD COLUMN parent_id TEXT
+      `,
+      `
+      ALTER TABLE memory_records ADD COLUMN derivation_type TEXT NOT NULL DEFAULT 'manual'
+      `,
+      `
+      ALTER TABLE memory_records ADD COLUMN summary_depth INTEGER NOT NULL DEFAULT 0
+      `,
+      'CREATE INDEX IF NOT EXISTS idx_sessions_agent_instance_id ON sessions(agent_instance_id)',
       'CREATE INDEX IF NOT EXISTS idx_sessions_kind_updated_at ON sessions(session_kind, updated_at DESC)',
       'CREATE INDEX IF NOT EXISTS idx_memory_parent_updated_at ON memory_records(parent_id, updated_at DESC)',
     ],

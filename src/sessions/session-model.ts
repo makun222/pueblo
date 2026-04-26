@@ -4,6 +4,7 @@ export interface CreateSessionInput {
   readonly id: string;
   readonly title: string;
   readonly currentModelId?: string | null;
+  readonly agentInstanceId?: string | null;
   readonly sessionKind?: Session['sessionKind'];
   readonly originSessionId?: string | null;
   readonly triggerReason?: Session['triggerReason'];
@@ -17,6 +18,7 @@ export function createSessionModel(input: CreateSessionInput): Session {
     title: input.title,
     status: 'active',
     sessionKind: input.sessionKind ?? 'user',
+    agentInstanceId: input.agentInstanceId ?? null,
     currentModelId: input.currentModelId ?? null,
     messageHistory: [],
     selectedPromptIds: [],

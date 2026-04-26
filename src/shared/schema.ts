@@ -93,11 +93,44 @@ export const puebloProfileSchema = z.object({
   loadedAt: z.string().datetime(),
 });
 
+export const agentProfileTemplateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  roleDirectives: z.array(z.string()),
+  goalDirectives: z.array(z.string()),
+  constraintDirectives: z.array(z.string()),
+  styleDirectives: z.array(z.string()),
+  memoryPolicy: z.object({
+    retentionHints: z.array(z.string()),
+    summaryHints: z.array(z.string()),
+  }),
+  contextPolicy: z.object({
+    priorityHints: z.array(z.string()),
+    truncationHints: z.array(z.string()),
+  }),
+  summaryPolicy: puebloSummaryPolicySchema,
+});
+
+export const agentInstanceStatusSchema = z.enum(['ready', 'active', 'idle', 'terminated']);
+
+export const agentInstanceSchema = z.object({
+  id: z.string().min(1),
+  profileId: z.string().min(1),
+  profileName: z.string().min(1),
+  status: agentInstanceStatusSchema,
+  workspaceRoot: z.string().min(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  terminatedAt: z.string().datetime().nullable(),
+});
+
 export const sessionSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   status: sessionStatusSchema,
   sessionKind: sessionKindSchema.default('user'),
+  agentInstanceId: z.string().min(1).nullable().optional().transform((value) => value ?? null),
   currentModelId: z.string().min(1).nullable(),
   messageHistory: z.array(sessionMessageSchema),
   selectedPromptIds: z.array(z.string()),
@@ -208,12 +241,29 @@ export const toolInvocationSchema = z.object({
 export const desktopWindowStatusSchema = z.enum(['starting', 'ready', 'busy', 'closing', 'closed']);
 export const rendererOutputBlockTypeSchema = z.enum(['command-result', 'task-result', 'tool-result', 'error', 'system']);
 
+export const rendererMessageTraceMessageSchema = z.object({
+  role: z.string().min(1),
+  content: z.string(),
+  toolName: z.string().min(1).optional(),
+  toolCallId: z.string().min(1).optional(),
+  toolArgs: z.unknown().optional(),
+  charCount: z.number().int().nonnegative(),
+});
+
+export const rendererMessageTraceStepSchema = z.object({
+  stepNumber: z.number().int().positive(),
+  messageCount: z.number().int().nonnegative(),
+  charCount: z.number().int().nonnegative(),
+  messages: z.array(rendererMessageTraceMessageSchema),
+});
+
 export const rendererOutputBlockSchema = z.object({
   id: z.string().min(1),
   type: rendererOutputBlockTypeSchema,
   title: z.string().min(1),
   content: z.string().min(1),
   collapsed: z.boolean().default(false),
+  messageTrace: z.array(rendererMessageTraceStepSchema).default([]),
   sourceRefs: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
 });
@@ -251,6 +301,9 @@ export type ContextCount = z.infer<typeof contextCountSchema>;
 export type BackgroundSummaryState = z.infer<typeof backgroundSummaryStateSchema>;
 export type BackgroundSummaryStatus = z.infer<typeof backgroundSummaryStatusSchema>;
 export type PuebloProfile = z.infer<typeof puebloProfileSchema>;
+export type AgentProfileTemplate = z.infer<typeof agentProfileTemplateSchema>;
+export type AgentInstanceStatus = z.infer<typeof agentInstanceStatusSchema>;
+export type AgentInstance = z.infer<typeof agentInstanceSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type MemoryType = z.infer<typeof memoryTypeSchema>;
 export type MemoryScope = z.infer<typeof memoryScopeSchema>;
@@ -269,6 +322,8 @@ export type ToolResultStatus = z.infer<typeof toolResultStatusSchema>;
 export type ToolInvocation = z.infer<typeof toolInvocationSchema>;
 export type DesktopWindowStatus = z.infer<typeof desktopWindowStatusSchema>;
 export type RendererOutputBlockType = z.infer<typeof rendererOutputBlockTypeSchema>;
+export type RendererMessageTraceMessage = z.infer<typeof rendererMessageTraceMessageSchema>;
+export type RendererMessageTraceStep = z.infer<typeof rendererMessageTraceStepSchema>;
 export type RendererOutputBlock = z.infer<typeof rendererOutputBlockSchema>;
 export type DesktopWindowSession = z.infer<typeof desktopWindowSessionSchema>;
 export type IpcInputEnvelope = z.infer<typeof ipcInputEnvelopeSchema>;

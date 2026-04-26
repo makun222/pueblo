@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createCliDependencies } from '../../src/cli/index';
 import { SessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
 import { createSqliteDatabase } from '../../src/persistence/sqlite';
 import { runMigrations } from '../../src/persistence/migrate';
+import { createTestAppConfig } from '../helpers/test-config';
 import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
@@ -100,5 +102,31 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     });
 
     database.close();
+  });
+
+  it('creates a fresh empty session when desktop mode requests a new session', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-desktop-session-'));
+    tempDirs.push(tempDir);
+    const cli = createCliDependencies(createTestAppConfig({
+      databasePath: path.join(tempDir, 'pueblo.db'),
+      defaultProviderId: 'openai',
+      defaultSessionId: null,
+      providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
+    }), {
+      startNewSession: true,
+    });
+
+    try {
+      const listed = await cli.dispatcher.dispatch({ input: '/session-list' });
+      const sessions = (listed.data as { sessions: Array<{ selectedMemoryIds: string[]; messageHistory: unknown[] }> }).sessions;
+
+      expect(listed.ok).toBe(true);
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]?.selectedMemoryIds).toEqual([]);
+      expect(sessions[0]?.messageHistory).toEqual([]);
+      expect(cli.getRuntimeStatus().activeSessionId).toBeTruthy();
+    } finally {
+      cli.databaseClose();
+    }
   });
 });

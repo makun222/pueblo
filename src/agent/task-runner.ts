@@ -26,6 +26,19 @@ export interface RunAgentTaskInput {
 
 const MAX_AGENT_STEPS = 8;
 
+interface AgentStepTraceEntry {
+  readonly stepNumber: number;
+  readonly type: 'tool-call' | 'tool-result' | 'final';
+  readonly summary: string;
+  readonly toolName?: ProviderToolName;
+  readonly toolCallId?: string;
+}
+
+interface ModelMessageTraceEntry {
+  readonly stepNumber: number;
+  readonly messages: ProviderMessage[];
+}
+
 export class AgentTaskRunner {
   constructor(
     private readonly providerRegistry: ProviderRegistry,
@@ -66,6 +79,8 @@ export class AgentTaskRunner {
     let response: ProviderRunResult | null = null;
     const toolOutputs: Awaited<ReturnType<ToolService['runForTask']>>['outputs'] = [];
     const toolInvocationIds: string[] = [];
+    const stepTrace: AgentStepTraceEntry[] = [];
+    const modelMessageTrace: ModelMessageTraceEntry[] = [];
 
     try {
       response = await this.runAgentLoop({
@@ -76,8 +91,17 @@ export class AgentTaskRunner {
         executionMessages,
         toolOutputs,
         toolInvocationIds,
+        stepTrace,
+        modelMessageTrace,
       });
-      const enrichedOutput = this.createCompletedOutputSummary(input, response, toolOutputs, toolInvocationIds);
+      const enrichedOutput = this.createCompletedOutputSummary(
+        input,
+        response,
+        toolOutputs,
+        toolInvocationIds,
+        stepTrace,
+        modelMessageTrace,
+      );
 
       return this.repository.update(task.id, {
         goal: input.goal,
@@ -90,7 +114,17 @@ export class AgentTaskRunner {
         toolInvocationIds,
       });
     } catch (error) {
-      this.tryPersistFailure(task, input, inputSummary, response, toolOutputs, toolInvocationIds, error);
+      this.tryPersistFailure(
+        task,
+        input,
+        inputSummary,
+        response,
+        toolOutputs,
+        toolInvocationIds,
+        stepTrace,
+        modelMessageTrace,
+        error,
+      );
       throw error;
     }
   }
@@ -111,10 +145,23 @@ export class AgentTaskRunner {
     readonly executionMessages: ProviderMessage[];
     readonly toolOutputs: Awaited<ReturnType<ToolService['runForTask']>>['outputs'];
     readonly toolInvocationIds: string[];
+    readonly stepTrace: AgentStepTraceEntry[];
+    readonly modelMessageTrace: ModelMessageTraceEntry[];
   }): Promise<ProviderRunResult> {
     const messages = [...args.executionMessages];
 
     for (let stepIndex = 0; stepIndex < MAX_AGENT_STEPS; stepIndex += 1) {
+      args.modelMessageTrace.push({
+        stepNumber: stepIndex + 1,
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+          toolCallId: message.toolCallId,
+          toolName: message.toolName,
+          toolArgs: message.toolArgs,
+        })),
+      });
+
       const result = await args.adapter.runStep({
         modelId: args.modelId,
         messages,
@@ -122,18 +169,39 @@ export class AgentTaskRunner {
       });
 
       if (result.type === 'final') {
+        args.stepTrace.push({
+          stepNumber: stepIndex + 1,
+          type: 'final',
+          summary: result.outputSummary,
+        });
         return { outputSummary: result.outputSummary };
       }
+
+      args.stepTrace.push({
+        stepNumber: stepIndex + 1,
+        type: 'tool-call',
+        summary: result.rationale ?? `Model requested tool ${result.toolName}`,
+        toolName: result.toolName,
+        toolCallId: result.toolCallId,
+      });
 
       const toolExecution = await this.executeToolCall(args.taskId, result);
       args.toolInvocationIds.push(toolExecution.invocation.id);
       args.toolOutputs.push(toolExecution.output);
+      args.stepTrace.push({
+        stepNumber: stepIndex + 1,
+        type: 'tool-result',
+        summary: toolExecution.output.summary,
+        toolName: result.toolName,
+        toolCallId: result.toolCallId,
+      });
 
       messages.push({
         role: 'assistant',
         content: result.rationale ?? `Requesting tool ${result.toolName}`,
         toolCallId: result.toolCallId,
         toolName: result.toolName,
+        toolArgs: result.args,
       });
       messages.push({
         role: 'tool',
@@ -155,16 +223,35 @@ export class AgentTaskRunner {
       throw new Error(`Tool service is required to execute tool call: ${result.toolName}`);
     }
 
-    return this.toolService.execute({
-      taskId,
+    const inputSummary = JSON.stringify({
+      toolCallId: result.toolCallId,
       toolName: result.toolName,
       args: result.args,
-      inputSummary: JSON.stringify({
-        toolCallId: result.toolCallId,
-        toolName: result.toolName,
-        args: result.args,
-      }),
     });
+
+    switch (result.toolName) {
+      case 'glob':
+        return this.toolService.execute({
+          taskId,
+          toolName: 'glob',
+          args: result.args,
+          inputSummary,
+        });
+      case 'grep':
+        return this.toolService.execute({
+          taskId,
+          toolName: 'grep',
+          args: result.args,
+          inputSummary,
+        });
+      case 'exec':
+        return this.toolService.execute({
+          taskId,
+          toolName: 'exec',
+          args: result.args,
+          inputSummary,
+        });
+    }
   }
 
   private buildExecutionMessages(input: RunAgentTaskInput): ProviderMessage[] {
@@ -188,6 +275,8 @@ export class AgentTaskRunner {
     response: ProviderRunResult,
     toolOutputs: Awaited<ReturnType<ToolService['runForTask']>>['outputs'],
     toolInvocationIds: string[],
+    stepTrace: AgentStepTraceEntry[],
+    modelMessageTrace: ModelMessageTraceEntry[],
   ) {
     return withSourceAttribution(
       {
@@ -196,6 +285,8 @@ export class AgentTaskRunner {
         memoryIds: this.getMemories(input).map((memory) => memory.id),
         toolInvocationIds,
         toolNames: toolOutputs.map((output) => output.toolName),
+        modelMessageTrace,
+        stepTrace,
         toolResults: toolOutputs.map((output) => ({
           toolName: output.toolName,
           status: output.status,
@@ -218,6 +309,8 @@ export class AgentTaskRunner {
     response: ProviderRunResult | null,
     toolOutputs: Awaited<ReturnType<ToolService['runForTask']>>['outputs'],
     toolInvocationIds: string[],
+    stepTrace: AgentStepTraceEntry[],
+    modelMessageTrace: ModelMessageTraceEntry[],
     error: unknown,
   ): void {
     const failureOutput = withSourceAttribution(
@@ -227,6 +320,8 @@ export class AgentTaskRunner {
         memoryIds: this.getMemories(input).map((memory) => memory.id),
         toolInvocationIds,
         toolNames: toolOutputs.map((output) => output.toolName),
+        modelMessageTrace,
+        stepTrace,
         toolResults: toolOutputs.map((output) => ({
           toolName: output.toolName,
           status: output.status,

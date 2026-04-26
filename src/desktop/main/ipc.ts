@@ -8,7 +8,7 @@ import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 
 export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   const config = loadAppConfig();
-  const cli = createCliDependencies(config);
+  const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
   const runtime = createRuntimeCoordinator({
     config,
     submitInput: cli.submitInput,
@@ -20,6 +20,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.removeHandler('get-runtime-status');
   ipcMain.handle('get-runtime-status', async () => resolveRuntimeStatus(cli));
+
+  ipcMain.removeHandler('list-agent-profiles');
+  ipcMain.handle('list-agent-profiles', async () => cli.listAgentProfiles());
+
+  ipcMain.removeHandler('start-agent-session');
+  ipcMain.handle('start-agent-session', async (_event, profileId: string) => cli.startAgentSession(profileId));
 
   ipcMain.removeHandler('submit-input');
   ipcMain.handle('submit-input', async (event, input: string) => {

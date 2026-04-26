@@ -7,6 +7,11 @@ import { runMigrations } from '../../src/persistence/migrate';
 import { AgentTaskRepository } from '../../src/agent/task-repository';
 import { ToolInvocationRepository } from '../../src/tools/tool-invocation-repository';
 import { ToolService } from '../../src/tools/tool-service';
+import {
+  providerExecToolInputSchema,
+  providerGlobToolInputSchema,
+  providerGrepToolInputSchema,
+} from '../../src/providers/provider-adapter';
 import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
@@ -27,6 +32,36 @@ afterEach(() => {
 const describeIfNodeSqlite = nodeSqliteAvailable ? describe : describe.skip;
 
 describeIfNodeSqlite('tool service', () => {
+  it('describes tools with valid object JSON schemas', () => {
+    const repository = {
+      create() {
+        throw new Error('not used');
+      },
+      listByTask() {
+        return [];
+      },
+    } as unknown as ToolInvocationRepository;
+    const service = new ToolService({ repository, cwd: process.cwd() });
+
+    expect(service.describeTools()).toEqual([
+      {
+        name: 'glob',
+        description: 'Match repository paths by glob pattern relative to the workspace root.',
+        inputSchema: providerGlobToolInputSchema,
+      },
+      {
+        name: 'grep',
+        description: 'Search repository files by regex pattern and optional include glob.',
+        inputSchema: providerGrepToolInputSchema,
+      },
+      {
+        name: 'exec',
+        description: 'Run a local executable command without a shell using the workspace as cwd.',
+        inputSchema: providerExecToolInputSchema,
+      },
+    ]);
+  });
+
   it('persists tool invocation history for a task', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-tool-service-'));
     tempDirs.push(tempDir);

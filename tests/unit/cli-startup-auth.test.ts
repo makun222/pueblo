@@ -5,6 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { maybeRunCliStartupSetup } from '../../src/cli/index';
 import { createTestAppConfig } from '../helpers/test-config';
 
+function createInMemoryCredentialStore() {
+  const secrets = new Map<string, string>();
+
+  return {
+    store: {
+      kind: 'windows-credential-manager' as const,
+      isSupported: () => true,
+      readSecret: (target: string) => secrets.get(target) ?? null,
+      writeSecret: (target: string, secret: string) => {
+        secrets.set(target, secret);
+      },
+    },
+    secrets,
+  };
+}
+
 const tempDirs: string[] = [];
 
 describe.sequential('cli startup auth setup', () => {
@@ -32,6 +48,7 @@ describe.sequential('cli startup auth setup', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-cli-auth-'));
     tempDirs.push(tempDir);
     process.chdir(tempDir);
+    const { store, secrets } = createInMemoryCredentialStore();
 
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(
@@ -79,11 +96,19 @@ describe.sequential('cli startup auth setup', () => {
       },
     });
 
-    const result = await maybeRunCliStartupSetup(config);
+    const result = await maybeRunCliStartupSetup(config, { credentialStore: store });
+    const savedConfig = JSON.parse(fs.readFileSync(path.join(tempDir, '.pueblo', 'config.json'), 'utf8')) as {
+      githubCopilot: { credentialTarget?: string; token?: string };
+      providers: Array<{ credentialSource: string }>;
+    };
 
     expect(result.performed).toBe(true);
     expect(result.configured).toBe(true);
     expect(stdoutSpy).toHaveBeenCalledWith('GitHub Copilot is not configured for CLI use. Starting device login flow...\n');
     expect(fs.existsSync(path.join(tempDir, '.pueblo', 'config.json'))).toBe(true);
+    expect(savedConfig.githubCopilot.token).toBeUndefined();
+    expect(savedConfig.githubCopilot.credentialTarget).toBeTruthy();
+    expect(savedConfig.providers[0]?.credentialSource).toBe('windows-credential-manager');
+    expect(secrets.get(savedConfig.githubCopilot.credentialTarget ?? '')).toBe('gho_access_token');
   });
 });

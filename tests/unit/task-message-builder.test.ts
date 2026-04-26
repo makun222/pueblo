@@ -5,7 +5,7 @@ import { createEmptyPuebloProfile } from '../../src/agent/pueblo-profile';
 import { createTestAppConfig } from '../helpers/test-config';
 
 describe('task message builder', () => {
-  it('builds provider messages from task context sources without flattening session roles', () => {
+  it('builds provider messages from pueblo, prompt, and memory context before the current user input', () => {
     const context = createTaskContext({
       config: createTestAppConfig(),
       puebloProfile: createEmptyPuebloProfile(null),
@@ -69,11 +69,9 @@ describe('task message builder', () => {
 
     const messages = buildProviderMessages(context, 'Inspect the current failure');
 
-    expect(messages.map((message) => message.role)).toEqual(['system', 'system', 'user', 'assistant', 'user']);
+    expect(messages.map((message) => message.role)).toEqual(['system', 'system', 'user']);
     expect(messages[0]?.content).toContain('Selected prompts');
     expect(messages[1]?.content).toContain('Relevant memory records');
-    expect(messages[2]?.content).toBe('Previous user turn');
-    expect(messages[3]?.content).toBe('Previous assistant turn');
-    expect(messages[4]?.content).toBe('Inspect the current failure');
+    expect(messages[2]?.content).toBe('Inspect the current failure');
   });
 });

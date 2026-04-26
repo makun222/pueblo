@@ -6,6 +6,22 @@ import { createCliDependencies } from '../../src/cli/index';
 import { createTestAppConfig } from '../helpers/test-config';
 import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
+function createInMemoryCredentialStore() {
+  const secrets = new Map<string, string>();
+
+  return {
+    store: {
+      kind: 'windows-credential-manager' as const,
+      isSupported: () => true,
+      readSecret: (target: string) => secrets.get(target) ?? null,
+      writeSecret: (target: string, secret: string) => {
+        secrets.set(target, secret);
+      },
+    },
+    secrets,
+  };
+}
+
 const tempDirs: string[] = [];
 
 const describeIfNodeSqlite = nodeSqliteAvailable ? describe.sequential : describe.skip;
@@ -35,6 +51,7 @@ describeIfNodeSqlite('cli auth login command', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-cli-login-'));
     tempDirs.push(tempDir);
     process.chdir(tempDir);
+    const { store, secrets } = createInMemoryCredentialStore();
 
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(
@@ -82,16 +99,22 @@ describeIfNodeSqlite('cli auth login command', () => {
       },
     });
 
-    const cli = createCliDependencies(config);
+    const cli = createCliDependencies(config, { credentialStore: store });
 
     try {
       const loginResult = await cli.dispatcher.dispatch({ input: '/auth-login' });
       const modelResult = await cli.dispatcher.dispatch({ input: '/model github-copilot copilot-chat' });
+      const savedConfig = JSON.parse(fs.readFileSync(path.join(tempDir, '.pueblo', 'config.json'), 'utf8')) as {
+        githubCopilot: { credentialTarget?: string; token?: string };
+      };
 
       expect(loginResult.ok).toBe(true);
       expect(loginResult.code).toBe('AUTH_LOGIN_COMPLETED');
       expect(modelResult.ok).toBe(true);
       expect(modelResult.code).toBe('MODEL_SELECTED');
+      expect(savedConfig.githubCopilot.token).toBeUndefined();
+      expect(savedConfig.githubCopilot.credentialTarget).toBeTruthy();
+      expect(secrets.get(savedConfig.githubCopilot.credentialTarget ?? '')).toBe('gho_access_token');
     } finally {
       cli.databaseClose();
     }

@@ -51,6 +51,46 @@ describe('foundation', () => {
       expect(status.ok).toBe(true);
       expect(tables.map((table) => table.name)).toContain('sessions');
       expect(tables.map((table) => table.name)).toContain('schema_migrations');
+      expect(tables.map((table) => table.name)).toContain('agent_instances');
+    } finally {
+      database.close();
+    }
+  });
+
+  itIfNodeSqlite('backfills agent_instances for databases that already applied older migrations', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-db-upgrade-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+
+    try {
+      database.connection.exec(`
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          id TEXT PRIMARY KEY,
+          applied_at TEXT NOT NULL
+        );
+      `);
+      database.connection.exec(`
+        INSERT INTO schema_migrations (id, applied_at) VALUES
+          ('001_initial_foundation', '2026-04-01T00:00:00.000Z'),
+          ('002_provider_desktop_updates', '2026-04-02T00:00:00.000Z'),
+          ('003_context_memory_metadata', '2026-04-03T00:00:00.000Z');
+      `);
+
+      const status = verifyPersistence(database, dbPath);
+      const tables = database.connection
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .all() as Array<{ name: string }>;
+      const appliedMigrations = database.connection
+        .prepare('SELECT id FROM schema_migrations ORDER BY id')
+        .all() as Array<{ id: string }>;
+
+      expect(status.ok).toBe(true);
+      expect(status.appliedMigrations).toContain('004_agent_instances');
+      expect(status.appliedMigrations).toContain('005_session_context_backfill');
+      expect(tables.map((table) => table.name)).toContain('agent_instances');
+      expect(appliedMigrations.map((migration) => migration.id)).toContain('004_agent_instances');
+      expect(appliedMigrations.map((migration) => migration.id)).toContain('005_session_context_backfill');
     } finally {
       database.close();
     }

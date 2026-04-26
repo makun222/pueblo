@@ -76,3 +76,33 @@ export function createSessionDeleteCommand(dependencies: SessionStateCommandDepe
       dependencies.onCurrentSessionChange,
     );
 }
+
+export function createSessionImportMemoriesCommand(dependencies: SessionStateCommandDependencies & {
+  readonly getCurrentSessionId: () => string | null;
+}) {
+  return (args: string[]): CommandResult => {
+    const sourceSessionId = args[0]?.trim();
+    const targetSessionId = dependencies.getCurrentSessionId();
+
+    if (!targetSessionId) {
+      return failureResult('SESSION_REQUIRED', 'Create or select a target session before importing memories', [
+        'Use /new or /session-sel to activate a session, then retry.',
+      ]);
+    }
+
+    if (!sourceSessionId) {
+      return failureResult('SESSION_ID_REQUIRED', 'Source session id is required', ['Use /session-import-memories <session-id>.']);
+    }
+
+    try {
+      const session = dependencies.sessionService.importSelectedMemoriesFromSession(targetSessionId, sourceSessionId);
+      return successResult('SESSION_MEMORIES_IMPORTED', 'Session memories imported', session);
+    } catch (error) {
+      if (error instanceof SessionCommandError) {
+        return failureResult('SESSION_COMMAND_FAILED', error.message, ['Check the session ids and current state.']);
+      }
+
+      throw error;
+    }
+  };
+}

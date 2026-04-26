@@ -22,9 +22,10 @@ implementations, not in CLI handlers.
 - IPC contracts in `src/desktop/shared/` define secure communication boundaries.
 - Renderer submits input to shared routing; outputs stream back via IPC blocks.
 
-## GitHub Copilot Provider Integration
+## Provider Integration
 
 - `src/providers/github-copilot-*.ts`: Dedicated profile, auth, and adapter for GitHub Copilot as mandatory provider.
+- `src/providers/deepseek-*.ts`: DeepSeek profile, auth persistence, and OpenAI-compatible adapter.
 - Auth state tracked in persistence with provider-aware migrations.
 - Adapter implements provider contract for task execution and tool orchestration.
 - No provider logic leaks into session, memory, or prompt modules.

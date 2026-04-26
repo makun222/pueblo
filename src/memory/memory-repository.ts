@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { RepositoryBase, buildLikePattern, fromJson, toJson, type RepositoryContext } from '../persistence/repository-base';
 import { memoryRecordSchema, type MemoryRecord, type MemoryScope } from '../shared/schema';
-import { createMemoryModel } from './memory-model';
+import { createMemoryModel, type CreateMemoryModelOptions } from './memory-model';
 
 interface MemoryRow {
   id: string;
@@ -20,7 +20,7 @@ interface MemoryRow {
 }
 
 export interface MemoryStore {
-  create(title: string, content: string, scope: MemoryScope): MemoryRecord;
+  create(title: string, content: string, scope: MemoryScope, options?: CreateMemoryModelOptions): MemoryRecord;
   list(): MemoryRecord[];
   getById(memoryId: string): MemoryRecord | null;
   save(memory: MemoryRecord): MemoryRecord;
@@ -30,8 +30,8 @@ export interface MemoryStore {
 export class InMemoryMemoryRepository implements MemoryStore {
   private readonly memories = new Map<string, MemoryRecord>();
 
-  create(title: string, content: string, scope: MemoryScope): MemoryRecord {
-    const memory = createMemoryModel(randomUUID(), title, content, scope);
+  create(title: string, content: string, scope: MemoryScope, options: CreateMemoryModelOptions = {}): MemoryRecord {
+    const memory = createMemoryModel(randomUUID(), title, content, scope, options);
     this.memories.set(memory.id, memory);
     return memory;
   }
@@ -62,8 +62,8 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
     super(context);
   }
 
-  create(title: string, content: string, scope: MemoryScope): MemoryRecord {
-    const memory = createMemoryModel(randomUUID(), title, content, scope);
+  create(title: string, content: string, scope: MemoryScope, options: CreateMemoryModelOptions = {}): MemoryRecord {
+    const memory = createMemoryModel(randomUUID(), title, content, scope, options);
     this.save(memory);
     return memory;
   }

@@ -11,7 +11,7 @@ const providerSettingSchema = z.object({
   providerId: z.string().min(1),
   defaultModelId: z.string().min(1),
   enabled: z.boolean().default(true),
-  credentialSource: z.enum(['env', 'config-file', 'external-login']).default('env'),
+  credentialSource: z.enum(['env', 'config-file', 'external-login', 'windows-credential-manager']).default('env'),
 });
 
 const desktopWindowSchema = z.object({
@@ -24,6 +24,7 @@ const desktopWindowSchema = z.object({
 const githubCopilotSchema = z.object({
   token: z.string().trim().min(1).optional(),
   tokenType: z.enum(['copilot-access-token', 'github-auth-token', 'github-pat']).optional(),
+  credentialTarget: z.string().trim().min(1).optional(),
   oauthClientId: z.string().trim().min(1).optional(),
   apiUrl: z.string().url().default(DEFAULT_GITHUB_COPILOT_API_URL),
   exchangeUrl: z.string().url().default(DEFAULT_GITHUB_COPILOT_EXCHANGE_URL),
@@ -36,9 +37,16 @@ const githubCopilotSchema = z.object({
   integrationId: z.string().min(1).default('vscode-chat'),
 });
 
+const deepseekSchema = z.object({
+  apiKey: z.string().trim().min(1).optional(),
+  credentialTarget: z.string().trim().min(1).optional(),
+  baseUrl: z.string().url().default('https://api.deepseek.com'),
+});
+
 const appConfigSchema = z.object({
   databasePath: z.string().min(1).default(path.join('.pueblo', 'pueblo.db')),
   defaultProviderId: z.string().min(1).nullable().default(null),
+  defaultAgentProfileId: z.string().min(1).nullable().default('code-master'),
   defaultSessionId: z.string().min(1).nullable().default(null),
   providers: z.array(providerSettingSchema).default([]),
   desktopWindow: desktopWindowSchema.default({
@@ -46,6 +54,9 @@ const appConfigSchema = z.object({
     title: 'Pueblo',
     width: 1200,
     height: 820,
+  }),
+  deepseek: deepseekSchema.default({
+    baseUrl: 'https://api.deepseek.com',
   }),
   githubCopilot: githubCopilotSchema.default({
     apiUrl: DEFAULT_GITHUB_COPILOT_API_URL,
@@ -62,6 +73,7 @@ const appConfigSchema = z.object({
 
 export type ProviderSetting = z.infer<typeof providerSettingSchema>;
 export type DesktopWindowConfig = z.infer<typeof desktopWindowSchema>;
+export type DeepSeekConfig = z.infer<typeof deepseekSchema>;
 export type GitHubCopilotConfig = z.infer<typeof githubCopilotSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;
 

@@ -284,7 +284,14 @@ describeIfNodeSqlite('agent task persistence integration', () => {
         {
           name: 'grep',
           description: 'Search files',
-          inputSchema: { pattern: 'string' },
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
         },
       ],
       async execute() {

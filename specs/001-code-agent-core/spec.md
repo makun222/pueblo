@@ -157,14 +157,31 @@
 
 ### Key Entities *(include if feature involves data)*
 
+- **Agent Profile Template**: 表示一个静态 agent 模版，定义角色、目标、约束、风格、记忆策略与上下文裁剪偏好。模板在启动时供用户选择，不直接承载对话历史，也不记录运行态状态。
+- **Agent Instance**: 表示一次真实启动出来的 agent 运行实例。每次执行 `node index.ts` 并在桌面窗口中选择一个模板后，系统 MUST 创建一个新的 Agent Instance。该实例绑定所选模板，作为当前窗口后续会话的拥有者，也是未来多 agent 协作的最小运行单元。
 - **Provider Profile**: 表示一个可接入的模型服务来源，包含提供方标识、可用模型列表、状态与使用约束。
-- **Model Session**: 表示一次持续的 agent 协作会话，包含会话标识、历史消息、关联任务、状态与上下文范围。
+- **Session**: 表示某个 Agent Instance 下的一条对话线程，包含会话标识、历史消息、关联任务、状态与上下文范围。一个 Agent Instance 可以拥有多个 Session；`/new` 创建的是同一 Agent Instance 下的新 Session，而不是新的 Agent Instance。
 - **Memory Record**: 表示可供 agent 复用的短期或长期记忆，包含类型、来源、适用范围、内容摘要与生命周期状态。
 - **Prompt Asset**: 表示用户维护的 prompt 模板或片段，包含标题、分类、内容、适用场景与启用状态。
 - **Agent Task**: 表示一次具体的代码工作请求，包含目标、输入上下文、关联会话、执行结果与状态。
 - **Command Action**: 表示一次 command 指令调用，包含指令名称、目标对象、输入参数、执行结果与适用上下文。
 - **Tool Invocation**: 表示一次工具调用行为，包含工具名称、调用目标、输入条件、执行结果与返回状态。
 - **Desktop Window Session**: 表示一次弹窗式对话窗口交互，包含窗口标识、输入状态、输出内容和当前绑定会话。
+
+### Agent Layering *(mandatory for multi-agent evolution)*
+
+- **Layer 1 - Agent Profile Template**: 模板层负责定义 agent 身份，不参与运行时状态。示例包括代码大师、架构师、debugger、文学家、哲学家。
+- **Layer 2 - Agent Instance**: 实例层负责把模板变成正在运行的 agent。桌面窗口启动后必须先选择模板，再创建 Agent Instance。未来多 agent 协作应建立在多个 Agent Instance 之间，而不是把 Session 直接当作 agent。
+- **Layer 3 - Session**: 会话层负责管理某个 Agent Instance 与用户之间的一条具体对话线程。Session 记录消息、模型选择、已选 prompt/memory 与任务历史，但 Session 本身不定义 agent 身份。
+- **Layer 4 - Memory**: 记忆层负责承载可复用上下文。Memory 可以来源于单次 Session，也可以被跨 Session、跨 Agent Instance 复用，因此它既不从属于某一个模板，也不应与 message history 等同。
+
+### Agent Relationship Rules *(mandatory)*
+
+- 系统 MUST 在桌面窗口首次可交互前提供 agent profile 选择界面。
+- 系统 MUST 在用户确认模板后创建新的 Agent Instance，并把当前桌面窗口绑定到该实例。
+- 系统 MUST 让后续在该窗口中创建的 Session 默认继承当前 Agent Instance。
+- 系统 MUST 允许多个 Agent Instance 各自拥有独立 Session，同时共享或导入需要的 Memory。
+- 系统 SHOULD 将多 agent co-work 视为后续协作编排层能力；当前迭代先确保模板、实例、会话、记忆四层边界清晰稳定。
 
 ## Success Criteria *(mandatory)*
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Session } from '../shared/schema';
 import type { SessionMessage, SessionMessageRole } from '../shared/schema';
 import { SessionCommandError } from '../commands/command-errors';
+import type { MemoryService } from '../memory/memory-service';
 import { SessionQueries } from './session-queries';
 import type { SessionStore } from './session-repository';
 
@@ -16,13 +17,16 @@ export interface AppendSessionMessageInput {
 export class SessionService {
   private readonly queries: SessionQueries;
 
-  constructor(private readonly repository: SessionStore) {
+  constructor(
+    private readonly repository: SessionStore,
+    private readonly memoryService?: MemoryService,
+  ) {
     this.queries = new SessionQueries(repository);
   }
 
-  createSession(title?: string, currentModelId?: string | null): Session {
+  createSession(title?: string, currentModelId?: string | null, agentInstanceId?: string | null): Session {
     const resolvedTitle = title?.trim() || 'Untitled session';
-    const session = this.repository.create(resolvedTitle, currentModelId ?? null);
+    const session = this.repository.create(resolvedTitle, currentModelId ?? null, agentInstanceId ?? null);
     this.repository.setCurrentSession(session.id);
     return session;
   }
@@ -191,6 +195,23 @@ export class SessionService {
     const session = this.requireSession(sessionId);
     return this.updateSession(session, {
       selectedMemoryIds: uniqueValues(memoryIds),
+    });
+  }
+
+  importSelectedMemoriesFromSession(targetSessionId: string, sourceSessionId: string): Session {
+    const targetSession = this.requireSession(targetSessionId);
+    const sourceSession = this.requireSession(sourceSessionId);
+
+    if (targetSession.status === 'deleted' || sourceSession.status === 'deleted') {
+      throw new SessionCommandError('Deleted session cannot participate in memory import');
+    }
+
+    const importedMemoryIds = this.memoryService
+      ?.listSessionMemories(sourceSession.id)
+      .map((memory) => memory.id) ?? [];
+
+    return this.updateSession(targetSession, {
+      selectedMemoryIds: uniqueValues([...targetSession.selectedMemoryIds, ...importedMemoryIds]),
     });
   }
 

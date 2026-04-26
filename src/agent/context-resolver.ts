@@ -1,4 +1,6 @@
 import type { AppConfig } from '../shared/config';
+import type { AgentInstanceService } from './agent-instance-service';
+import { mergeAgentTemplateWithPuebloProfile } from './agent-profile-templates';
 import type { MemoryService } from '../memory/memory-service';
 import type { PromptService } from '../prompts/prompt-service';
 import type { ProviderRegistry } from '../providers/provider-registry';
@@ -26,6 +28,9 @@ export interface ResolvedContext {
   readonly runtimeStatus: {
     providerId: string | null;
     providerName: string | null;
+    agentProfileId: string | null;
+    agentProfileName: string | null;
+    agentInstanceId: string | null;
     modelId: string | null;
     modelName: string | null;
     activeSessionId: string | null;
@@ -41,6 +46,7 @@ export interface ContextResolverDependencies {
   readonly sessionService: SessionService;
   readonly promptService: PromptService;
   readonly memoryService: MemoryService;
+  readonly agentInstanceService: AgentInstanceService;
   readonly providerRegistry: ProviderRegistry;
   readonly puebloProfileLoader?: PuebloProfileLoader;
 }
@@ -99,7 +105,12 @@ export class ContextResolver {
     });
     const prompts = this.dependencies.promptService.resolvePromptSelection(session?.selectedPromptIds ?? []);
     const memories = this.dependencies.memoryService.resolveMemorySelection(session?.selectedMemoryIds ?? []);
-    const puebloProfile = this.profileLoader.load(input.cwd ?? process.cwd());
+    const agentInstance = this.dependencies.agentInstanceService.getAgentInstance(session?.agentInstanceId);
+    const selectedTemplate = this.dependencies.agentInstanceService.getProfileTemplate(agentInstance?.profileId ?? this.dependencies.config.defaultAgentProfileId ?? '');
+    const puebloProfile = mergeAgentTemplateWithPuebloProfile(
+      selectedTemplate,
+      this.profileLoader.load(input.cwd ?? process.cwd()),
+    );
     const sessionMessages = session?.messageHistory ?? [];
     const recentMessages = sessionMessages.map(formatSessionMessageForContext);
     const contextCount = this.budgetService.compute({
@@ -116,7 +127,7 @@ export class ContextResolver {
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
       memoryTexts: memories.map((memory) => memory.content),
-      recentMessages,
+      recentMessages: [],
       pendingUserInput: input.pendingUserInput,
       modelContextWindow: selection.model?.contextWindow ?? null,
       derivedMemoryCount: memories.filter((memory) => memory.derivationType === 'summary' || memory.summaryDepth > 0).length,
@@ -149,6 +160,9 @@ export class ContextResolver {
       runtimeStatus: {
         providerId: taskContext.providerId,
         providerName: taskContext.providerName,
+        agentProfileId: selectedTemplate?.id ?? null,
+        agentProfileName: selectedTemplate?.name ?? null,
+        agentInstanceId: agentInstance?.id ?? null,
         modelId: taskContext.selectedModelId,
         modelName: taskContext.selectedModelName,
         activeSessionId: taskContext.sessionId,

@@ -8,6 +8,7 @@ interface SessionRow {
   title: string;
   status: Session['status'];
   session_kind: Session['sessionKind'];
+  agent_instance_id: string | null;
   current_model_id: string | null;
   message_history_json: string;
   selected_prompt_ids_json: string;
@@ -23,7 +24,7 @@ interface SessionRow {
 }
 
 export interface SessionStore {
-  create(title: string, currentModelId?: string | null): Session;
+  create(title: string, currentModelId?: string | null, agentInstanceId?: string | null): Session;
   list(): Session[];
   getById(sessionId: string): Session | null;
   save(session: Session): Session;
@@ -35,10 +36,11 @@ export class InMemorySessionRepository implements SessionStore {
   private readonly sessions = new Map<string, Session>();
   private currentSessionId: string | null = null;
 
-  create(title: string, currentModelId?: string | null): Session {
+  create(title: string, currentModelId?: string | null, agentInstanceId?: string | null): Session {
     const session = createSessionModel({
       id: randomUUID(),
       title,
+      agentInstanceId: agentInstanceId ?? null,
       currentModelId: currentModelId ?? null,
     });
 
@@ -88,10 +90,11 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
     super(context);
   }
 
-  create(title: string, currentModelId?: string | null): Session {
+  create(title: string, currentModelId?: string | null, agentInstanceId?: string | null): Session {
     const session = createSessionModel({
       id: randomUUID(),
       title,
+      agentInstanceId: agentInstanceId ?? null,
       currentModelId: currentModelId ?? null,
     });
 
@@ -120,6 +123,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
         SET title = @title,
             status = @status,
           session_kind = @session_kind,
+          agent_instance_id = @agent_instance_id,
             current_model_id = @current_model_id,
             message_history_json = @message_history_json,
             selected_prompt_ids_json = @selected_prompt_ids_json,
@@ -140,11 +144,11 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       this.run(
         `
         INSERT INTO sessions (
-          id, title, status, session_kind, current_model_id, message_history_json,
+          id, title, status, session_kind, agent_instance_id, current_model_id, message_history_json,
           selected_prompt_ids_json, selected_memory_ids_json, origin_session_id, trigger_reason,
           created_at, updated_at, started_at, completed_at, failed_at, archived_at
         ) VALUES (
-          @id, @title, @status, @session_kind, @current_model_id, @message_history_json,
+          @id, @title, @status, @session_kind, @agent_instance_id, @current_model_id, @message_history_json,
           @selected_prompt_ids_json, @selected_memory_ids_json, @origin_session_id, @trigger_reason,
           @created_at, @updated_at, @started_at, @completed_at, @failed_at, @archived_at
         )
@@ -176,6 +180,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       title: row.title,
       status: row.status,
       sessionKind: row.session_kind,
+      agentInstanceId: row.agent_instance_id ?? null,
       currentModelId: row.current_model_id,
       messageHistory: deserializeMessageHistory(row.id, row.message_history_json, row.updated_at),
       selectedPromptIds: fromJson<string[]>(row.selected_prompt_ids_json),
@@ -197,6 +202,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       title: session.title,
       status: session.status,
       session_kind: session.sessionKind,
+      agent_instance_id: session.agentInstanceId,
       current_model_id: session.currentModelId,
       message_history_json: toJson(session.messageHistory),
       selected_prompt_ids_json: toJson(session.selectedPromptIds),

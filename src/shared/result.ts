@@ -11,9 +11,28 @@ export interface SourceAttribution {
   readonly toolNames?: string[];
 }
 
+interface TaskModelMessageTraceEntry {
+  readonly stepNumber: number;
+  readonly messages: Array<{
+    readonly role: string;
+    readonly content: string;
+    readonly toolName?: string;
+    readonly toolCallId?: string;
+    readonly toolArgs?: unknown;
+  }>;
+}
+
 interface TaskResultPayload {
   readonly outputSummary?: string;
   readonly attribution?: SourceAttribution;
+  readonly modelMessageTrace?: TaskModelMessageTraceEntry[];
+  readonly stepTrace?: Array<{
+    readonly stepNumber: number;
+    readonly type: string;
+    readonly summary: string;
+    readonly toolName?: string;
+    readonly toolCallId?: string;
+  }>;
   readonly toolResults?: Array<{
     readonly toolName: string;
     readonly status: string;
@@ -26,6 +45,7 @@ export interface OutputBlockInput {
   readonly title: string;
   readonly content: string;
   readonly collapsed?: boolean;
+  readonly messageTrace?: TaskModelMessageTraceEntry[];
   readonly sourceRefs?: string[];
 }
 
@@ -50,6 +70,14 @@ export function successResult<TData>(code: string, message: string, data?: TData
 export interface ParsedTaskOutputSummary {
   readonly outputSummary?: string;
   readonly attribution?: SourceAttribution;
+  readonly modelMessageTrace?: TaskModelMessageTraceEntry[];
+  readonly stepTrace?: Array<{
+    readonly stepNumber: number;
+    readonly type: string;
+    readonly summary: string;
+    readonly toolName?: string;
+    readonly toolCallId?: string;
+  }>;
   readonly toolResults?: Array<{
     readonly toolName: string;
     readonly status: string;
@@ -114,6 +142,29 @@ export function extractTaskOutputSummaryPayload(outputSummary: string | null | u
   return parseTaskResultPayload(outputSummary);
 }
 
+export function summarizeModelMessageTrace(trace: ParsedTaskOutputSummary['modelMessageTrace'] | null | undefined): {
+  readonly messageCount: number;
+  readonly messageCharCount: number;
+} {
+  if (!trace || trace.length === 0) {
+    return {
+      messageCount: 0,
+      messageCharCount: 0,
+    };
+  }
+
+  return trace.reduce(
+    (totals, step) => ({
+      messageCount: totals.messageCount + step.messages.length,
+      messageCharCount: totals.messageCharCount + step.messages.reduce((sum, message) => sum + message.content.length, 0),
+    }),
+    {
+      messageCount: 0,
+      messageCharCount: 0,
+    },
+  );
+}
+
 export function createOutputBlock(input: OutputBlockInput) {
   const now = new Date().toISOString();
   return {
@@ -122,6 +173,7 @@ export function createOutputBlock(input: OutputBlockInput) {
     title: input.title,
     content: input.content,
     collapsed: input.collapsed ?? false,
+    messageTrace: toRendererMessageTrace(input.messageTrace),
     sourceRefs: input.sourceRefs ?? [],
     createdAt: now,
   };
@@ -130,6 +182,7 @@ export function createOutputBlock(input: OutputBlockInput) {
 export function createResultBlocks(result: CommandResult<unknown>) {
   const payload = result.data !== undefined ? extractTaskResultPayload(result.data) : null;
   const blocks = [] as ReturnType<typeof createOutputBlock>[];
+  const messageTrace = payload?.modelMessageTrace ?? [];
 
   if (!result.ok || !payload) {
     blocks.push(
@@ -137,6 +190,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         type: result.ok ? 'command-result' : 'error',
         title: result.code,
         content: result.message,
+        messageTrace,
       }),
     );
   }
@@ -152,6 +206,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
           type: result.ok ? 'task-result' : 'error',
           title: 'Output Summary',
           content: outputSummary,
+          messageTrace,
         }),
       );
 
@@ -162,6 +217,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
             title: 'Model Output',
             content: modelOutput,
             collapsed: true,
+            messageTrace,
           }),
         );
       }
@@ -172,6 +228,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
             type: 'system',
             title: `${result.code}-prompts`,
             content: `Prompt sources: ${payload.attribution?.promptIds?.join(', ')}`,
+            messageTrace,
           }),
         );
       }
@@ -182,6 +239,19 @@ export function createResultBlocks(result: CommandResult<unknown>) {
             type: 'system',
             title: `${result.code}-memories`,
             content: `Memory sources: ${payload.attribution?.memoryIds?.join(', ')}`,
+            messageTrace,
+          }),
+        );
+      }
+
+      if ((payload.stepTrace?.length ?? 0) > 0) {
+        blocks.push(
+          createOutputBlock({
+            type: 'system',
+            title: 'Step Trace',
+            content: payload.stepTrace!.map(formatStepTraceLine).join('\n'),
+            collapsed: true,
+            messageTrace,
           }),
         );
       }
@@ -192,6 +262,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
             type: 'tool-result',
             title: `${result.code}-${toolResult.toolName}`,
             content: `${toolResult.toolName}: ${toolResult.status} - ${toolResult.summary}`,
+            messageTrace,
           }),
         );
       }
@@ -201,6 +272,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
           type: result.ok ? 'task-result' : 'error',
           title: `${result.code}-data`,
           content: JSON.stringify(result.data, null, 2),
+          messageTrace,
         }),
       );
     }
@@ -212,6 +284,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         type: 'system',
         title: `${result.code}-suggestions`,
         content: result.suggestions.join('\n'),
+        messageTrace,
       }),
     );
   }
@@ -240,4 +313,29 @@ function parseTaskResultPayload(outputSummary: string): ParsedTaskOutputSummary 
       outputSummary,
     };
   }
+}
+
+function formatStepTraceLine(step: NonNullable<ParsedTaskOutputSummary['stepTrace']>[number]): string {
+  const toolSuffix = step.toolName ? ` (${step.toolName}${step.toolCallId ? ` / ${step.toolCallId}` : ''})` : '';
+  return `${step.stepNumber}. ${step.type}${toolSuffix}: ${step.summary}`;
+}
+
+function toRendererMessageTrace(trace: ParsedTaskOutputSummary['modelMessageTrace'] | null | undefined) {
+  if (!trace || trace.length === 0) {
+    return [];
+  }
+
+  return trace.map((step) => ({
+    stepNumber: step.stepNumber,
+    messageCount: step.messages.length,
+    charCount: step.messages.reduce((sum, message) => sum + message.content.length, 0),
+    messages: step.messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      toolName: message.toolName,
+      toolCallId: message.toolCallId,
+      toolArgs: message.toolArgs,
+      charCount: message.content.length,
+    })),
+  }));
 }

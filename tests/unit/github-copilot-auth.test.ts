@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { resolveGitHubCopilotAuth, resolveGitHubCopilotToken } from '../../src/providers/github-copilot-auth';
 import { createTestAppConfig } from '../helpers/test-config';
 
+const inMemoryCredentialStore = {
+  kind: 'windows-credential-manager' as const,
+  isSupported: () => true,
+  readSecret: (target: string) => (target === 'Pueblo:GitHubCopilot:test' ? 'gho_stored_token' : null),
+  writeSecret: () => {},
+};
+
 const previousEnvToken = process.env.GITHUB_COPILOT_TOKEN;
 
 afterEach(() => {
@@ -45,6 +52,23 @@ describe('github copilot auth', () => {
     });
   });
 
+  it('reads token from the credential store before falling back to env', () => {
+    process.env.GITHUB_COPILOT_TOKEN = 'copilot_access_token';
+    const config = createTestAppConfig({
+      githubCopilot: {
+        credentialTarget: 'Pueblo:GitHubCopilot:test',
+        token: undefined,
+      },
+    });
+
+    const resolved = resolveGitHubCopilotToken(config, { credentialStore: inMemoryCredentialStore });
+
+    expect(resolved).toEqual({
+      token: 'gho_stored_token',
+      tokenType: 'github-auth-token',
+    });
+  });
+
   it('marks personal access tokens as invalid auth state', () => {
     const config = createTestAppConfig({
       providers: [
@@ -83,6 +107,24 @@ describe('github copilot auth', () => {
       providerId: 'github-copilot',
       authState: 'missing',
       credentialSource: 'env',
+    });
+  });
+
+  it('reports windows credential manager when a credential target exists without provider settings', () => {
+    const config = createTestAppConfig({
+      providers: [],
+      githubCopilot: {
+        credentialTarget: 'Pueblo:GitHubCopilot:test',
+        token: undefined,
+      },
+    });
+
+    const status = resolveGitHubCopilotAuth(config, { credentialStore: inMemoryCredentialStore });
+
+    expect(status).toEqual({
+      providerId: 'github-copilot',
+      authState: 'configured',
+      credentialSource: 'windows-credential-manager',
     });
   });
 });

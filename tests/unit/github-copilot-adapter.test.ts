@@ -94,4 +94,189 @@ describe('github copilot adapter', () => {
       inputContextSummary: 'test',
     })).rejects.toThrow('did not include message content');
   });
+
+  it('parses tool calls from the chat response and includes tools in the request body', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [{
+          message: {
+            tool_calls: [
+              {
+                id: 'call-1',
+                type: 'function',
+                function: {
+                  name: 'grep',
+                  arguments: JSON.stringify({ pattern: 'task', include: '*.ts' }),
+                },
+              },
+            ],
+          },
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-access-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [{ role: 'user', content: 'inspect repo' }],
+      availableTools: [
+        {
+          name: 'grep',
+          description: 'Search files',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+              include: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'grep',
+      args: { pattern: 'task', include: '*.ts' },
+    });
+
+    const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(requestBody.tools).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'grep',
+          description: 'Search files',
+          parameters: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+              include: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+      },
+    ]);
+    expect(requestBody.tool_choice).toBe('auto');
+  });
+
+  it('rejects tool calls with invalid arguments', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [{
+          message: {
+            tool_calls: [
+              {
+                id: 'call-1',
+                type: 'function',
+                function: {
+                  name: 'exec',
+                  arguments: JSON.stringify({ command: '' }),
+                },
+              },
+            ],
+          },
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-access-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    await expect(adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [{ role: 'user', content: 'run command' }],
+      availableTools: [
+        {
+          name: 'exec',
+          description: 'Run command',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              command: { type: 'string' },
+            },
+            required: ['command'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    })).rejects.toThrow();
+  });
+
+  it('serializes assistant tool calls and tool results with explicit tool metadata', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [{ message: { content: 'final answer' } }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-access-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    await adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'Search files first',
+          toolCallId: 'call-1',
+          toolName: 'grep',
+          toolArgs: { pattern: 'task', include: '*.ts' },
+        },
+        {
+          role: 'tool',
+          content: JSON.stringify({ status: 'succeeded', summary: 'Matched 2 files' }),
+          toolCallId: 'call-1',
+          toolName: 'grep',
+        },
+      ],
+      availableTools: [],
+    });
+
+    const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(requestBody.messages).toEqual([
+      {
+        role: 'assistant',
+        content: 'Search files first',
+        tool_calls: [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: {
+              name: 'grep',
+              arguments: JSON.stringify({ pattern: 'task', include: '*.ts' }),
+            },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        content: JSON.stringify({ status: 'succeeded', summary: 'Matched 2 files' }),
+        tool_call_id: 'call-1',
+        name: 'grep',
+      },
+    ]);
+  });
 });

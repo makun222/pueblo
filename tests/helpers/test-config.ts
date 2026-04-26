@@ -1,8 +1,9 @@
 import path from 'node:path';
 import type { AppConfig } from '../../src/shared/config';
 
-type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'githubCopilot'>> & {
+type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'githubCopilot'>> & {
   desktopWindow?: Partial<AppConfig['desktopWindow']>;
+  deepseek?: Partial<AppConfig['deepseek']>;
   githubCopilot?: Partial<AppConfig['githubCopilot']>;
 };
 
@@ -10,6 +11,7 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
   return {
     databasePath: overrides.databasePath ?? path.join(process.cwd(), '.pueblo', 'test.db'),
     defaultProviderId: overrides.defaultProviderId ?? 'openai',
+    defaultAgentProfileId: overrides.defaultAgentProfileId ?? 'code-master',
     defaultSessionId: overrides.defaultSessionId ?? null,
     providers: overrides.providers ?? [
       {
@@ -25,6 +27,11 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       width: overrides.desktopWindow?.width ?? 1200,
       height: overrides.desktopWindow?.height ?? 820,
     },
+    deepseek: {
+      apiKey: overrides.deepseek?.apiKey,
+      credentialTarget: overrides.deepseek?.credentialTarget,
+      baseUrl: overrides.deepseek?.baseUrl ?? 'https://api.deepseek.com',
+    },
     githubCopilot: {
       apiUrl: overrides.githubCopilot?.apiUrl ?? 'https://api.githubcopilot.com/chat/completions',
       exchangeUrl: overrides.githubCopilot?.exchangeUrl ?? 'https://api.github.com/copilot_internal/v2/token',
@@ -32,6 +39,7 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       oauthAccessTokenUrl: overrides.githubCopilot?.oauthAccessTokenUrl ?? 'https://github.com/login/oauth/access_token',
       oauthClientId: overrides.githubCopilot?.oauthClientId,
       scopes: overrides.githubCopilot?.scopes ?? [],
+      credentialTarget: overrides.githubCopilot?.credentialTarget,
       tokenType: overrides.githubCopilot?.tokenType,
       token: overrides.githubCopilot?.token,
       userAgent: overrides.githubCopilot?.userAgent ?? 'Pueblo/0.1.0',

@@ -60,7 +60,7 @@
 
 ## Memory Record
 
-- **Purpose**: 表示可复用的短期或长期记忆。
+- **Purpose**: 表示带标签的、无状态的上下文对象，用于维护交互过程中沉淀出的问答、总结和新 prompt 线索。
 - **Fields**:
   - `id`
   - `type`: short-term, long-term
@@ -76,6 +76,7 @@
   - expired 或 deleted 记忆默认不可注入任务
 - **Relationships**:
   - 可与多个 session 关联使用
+  - session 通过 memory 列表组织其可注入上下文，而不是直接依赖原始对话历史
 - **Persistence Notes**:
   - 使用 SQLite 存储，需支持按 `scope`、`status`、`tags` 和关键词的快速检索，以满足 memory-list 与 memory-search 场景
 
@@ -153,7 +154,7 @@
 
 ## Desktop Window Session
 
-- **Purpose**: 表示一次弹窗式对话窗口交互。
+- **Purpose**: 表示一次弹窗式对话窗口交互。每次新开窗口都应创建新的 session。
 - **Fields**:
   - `windowId`
   - `status`: starting, ready, busy, closing, closed
@@ -172,6 +173,19 @@
   - ready/busy -> closing -> closed
 - **Persistence Notes**:
   - 首版无需作为独立 SQLite 主实体持久化，可由内存态维护；仅与既有 session/task 状态联动
+  - 窗口首次交互时的模型上下文应仅包含 agent/pueblo profile 与用户输入；后续轮次通过 session 选中的 memory 注入
+
+## Session
+
+- **Purpose**: 表示用户打开 desktop 窗口后的一次交互对象。
+- **Fields / Relationships**:
+  - 当前 model
+  - 当前 agent/pueblo profile
+  - 关联 task 列表
+  - 关联 memory 列表
+- **Behavior Notes**:
+  - 新开窗口默认创建新 session，初始 memory 为空
+  - session 可选择导入其他 session 的 memory，形成跨 session 的上下文复用
 
 ## Renderer Output Block
 

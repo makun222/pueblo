@@ -99,6 +99,14 @@
 - **Purpose**: 删除指定 session
 - **Constraint**: 删除后必须明确反馈状态变化
 
+### `/session-import-memories`
+
+- **Purpose**: 将指定 source session 的 session-scoped memories 导入当前活动 session
+- **Input**: source session id
+- **Success Output**:
+  - 当前 session 的 memory 选择集已更新
+  - 返回导入后的 session 状态
+
 ## Model Command
 
 ### `/model`

@@ -3,6 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ContextResolver } from '../../src/agent/context-resolver';
+import { InMemoryAgentInstanceRepository } from '../../src/agent/agent-instance-repository';
+import { AgentInstanceService } from '../../src/agent/agent-instance-service';
+import { AgentTemplateLoader } from '../../src/agent/agent-template-loader';
 import { MemoryService } from '../../src/memory/memory-service';
 import { InMemoryMemoryRepository } from '../../src/memory/memory-repository';
 import { PromptService } from '../../src/prompts/prompt-service';
@@ -31,10 +34,47 @@ describe('context resolver', () => {
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
     fs.writeFileSync(path.join(tempDir, 'pueblo.md'), '# Role\n- focused agent\n# Summary Policy\n- Auto summarize near 75 percent\n');
+    fs.mkdirSync(path.join(tempDir, 'puebl-profile', 'code-master'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'puebl-profile', 'code-master', 'agent.md'),
+      [
+        '# Profile',
+        '- id: code-master',
+        '- name: Code Master',
+        '- description: Focused on shipping correct code changes with strong validation discipline.',
+        '',
+        '# Role',
+        '- Act as a pragmatic senior software engineer.',
+        '',
+        '# Goals',
+        '- Produce correct, testable code changes.',
+        '',
+        '# Constraints',
+        '- Do not change unrelated behavior.',
+        '',
+        '# Style',
+        '- Be concise, technical, and direct.',
+        '',
+        '# Memory Policy',
+        '- Retain task-relevant implementation decisions as reusable memories.',
+        '- Summary: Summarize completed code turns into compact reusable engineering notes.',
+        '',
+        '# Context Policy',
+        '- Prioritize current code goal, selected memories, and active constraints.',
+        '- Truncate: Drop stale conversational history before dropping explicit task memories.',
+        '',
+        '# Summary Policy',
+        '- Auto summarize',
+        '- Threshold: 12000',
+        '- Lineage: Preserve engineering decisions as reusable session memories.',
+        '',
+      ].join('\n'),
+    );
 
     const sessionService = new SessionService(new InMemorySessionRepository());
     const promptService = new PromptService(new InMemoryPromptRepository());
     const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
     const providerRegistry = new ProviderRegistry();
     providerRegistry.register(
       createProviderProfile({
@@ -59,6 +99,7 @@ describe('context resolver', () => {
       sessionService,
       promptService,
       memoryService,
+      agentInstanceService,
       providerRegistry,
     });
     const resolved = resolver.resolve({
@@ -67,7 +108,7 @@ describe('context resolver', () => {
       cwd: tempDir,
     });
 
-    expect(resolved.taskContext.puebloProfile.roleDirectives).toEqual(['focused agent']);
+    expect(resolved.taskContext.puebloProfile.roleDirectives).toContain('focused agent');
     expect(resolved.taskContext.selectedPromptIds).toEqual([prompt.id]);
     expect(resolved.taskContext.selectedMemoryIds).toEqual([memory.id]);
     expect(resolved.taskContext.sessionMessages).toHaveLength(2);
@@ -76,8 +117,10 @@ describe('context resolver', () => {
       'Assistant: I will inspect the failing workflow.',
     ]);
     expect(resolved.runtimeStatus.activeSessionId).toBe(session.id);
+    expect(resolved.runtimeStatus.agentProfileId).toBe('code-master');
     expect(resolved.runtimeStatus.selectedPromptCount).toBe(1);
     expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);
+    expect(resolved.runtimeStatus.contextCount.messageCount).toBe(0);
     expect(resolved.runtimeStatus.contextCount.estimatedTokens).toBeGreaterThan(0);
     expect(resolved.runtimeStatus.contextCount.contextWindowLimit).toBe(16000);
   });

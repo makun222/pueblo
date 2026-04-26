@@ -1,11 +1,14 @@
 import {
   createLegacyStepContext,
+  parseProviderToolArgs,
   type ProviderAdapter,
   type ProviderMessage,
   type ProviderRunRequest,
   type ProviderRunResult,
   type ProviderStepContext,
   type ProviderStepResult,
+  type ProviderToolDefinition,
+  type ProviderToolName,
 } from './provider-adapter';
 import { ProviderAuthError, ProviderError } from './provider-errors';
 import type { GitHubCopilotTokenType } from './github-copilot-auth';
@@ -14,8 +17,18 @@ interface GitHubCopilotResponsePayload {
   readonly choices?: Array<{
     readonly message?: {
       readonly content?: string | Array<{ readonly text?: string }>;
+      readonly tool_calls?: GitHubCopilotToolCall[];
     };
   }>;
+}
+
+interface GitHubCopilotToolCall {
+  readonly id?: string;
+  readonly type?: string;
+  readonly function?: {
+    readonly name?: string;
+    readonly arguments?: string;
+  };
 }
 
 interface GitHubCopilotExchangePayload {
@@ -88,12 +101,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     }
 
     const payload = await response.json() as GitHubCopilotResponsePayload;
-    const outputSummary = extractGitHubCopilotOutput(payload);
-
-    return {
-      type: 'final',
-      outputSummary,
-    };
+    return extractGitHubCopilotStepResult(payload);
   }
 
   async runTask(request: ProviderRunRequest): Promise<ProviderRunResult> {
@@ -134,6 +142,8 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
         model: request.modelId,
         stream: false,
         messages: request.messages.map(toGitHubCopilotMessage),
+        tools: request.availableTools.length > 0 ? request.availableTools.map(toGitHubCopilotToolDefinition) : undefined,
+        tool_choice: request.availableTools.length > 0 ? 'auto' : undefined,
       }),
     });
   }
@@ -208,7 +218,44 @@ function shouldFallbackToExchange(status: number): boolean {
   return status === 401 || status === 403;
 }
 
+function toGitHubCopilotToolDefinition(tool: ProviderToolDefinition) {
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    },
+  };
+}
+
 function toGitHubCopilotMessage(message: ProviderMessage): { role: string; content: string } {
+  if (message.role === 'assistant' && message.toolCallId && message.toolName && message.toolArgs) {
+    return {
+      role: 'assistant',
+      content: message.content,
+      tool_calls: [
+        {
+          id: message.toolCallId,
+          type: 'function',
+          function: {
+            name: message.toolName,
+            arguments: JSON.stringify(message.toolArgs),
+          },
+        },
+      ],
+    } as unknown as { role: string; content: string };
+  }
+
+  if (message.role === 'tool' && message.toolCallId) {
+    return {
+      role: 'tool',
+      content: message.content,
+      tool_call_id: message.toolCallId,
+      name: message.toolName,
+    } as unknown as { role: string; content: string };
+  }
+
   return {
     role: message.role,
     content: message.content,
@@ -216,10 +263,30 @@ function toGitHubCopilotMessage(message: ProviderMessage): { role: string; conte
 }
 
 function extractGitHubCopilotOutput(payload: GitHubCopilotResponsePayload): string {
-  const content = payload.choices?.[0]?.message?.content;
+  const result = extractGitHubCopilotStepResult(payload);
+
+  if (result.type !== 'final') {
+    throw new ProviderError('GitHub Copilot returned a tool call where final output was required');
+  }
+
+  return result.outputSummary;
+}
+
+function extractGitHubCopilotStepResult(payload: GitHubCopilotResponsePayload): ProviderStepResult {
+  const message = payload.choices?.[0]?.message;
+  const toolCall = message?.tool_calls?.[0];
+
+  if (toolCall?.function?.name) {
+    return parseGitHubCopilotToolCall(toolCall);
+  }
+
+  const content = message?.content;
 
   if (typeof content === 'string' && content.trim()) {
-    return content.trim();
+    return {
+      type: 'final',
+      outputSummary: content.trim(),
+    };
   }
 
   if (Array.isArray(content)) {
@@ -229,9 +296,64 @@ function extractGitHubCopilotOutput(payload: GitHubCopilotResponsePayload): stri
       .join('\n');
 
     if (text) {
-      return text;
+      return {
+        type: 'final',
+        outputSummary: text,
+      };
     }
   }
 
   throw new ProviderError('GitHub Copilot response payload did not include message content');
+}
+
+function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderStepResult {
+  const toolName = toolCall.function?.name;
+  if (!isProviderToolName(toolName)) {
+    throw new ProviderError(`GitHub Copilot returned unsupported tool call: ${toolName ?? 'unknown'}`);
+  }
+
+  const rawArguments = toolCall.function?.arguments?.trim();
+  if (!rawArguments) {
+    throw new ProviderError(`GitHub Copilot tool call ${toolName} did not include arguments`);
+  }
+
+  let parsedArguments: unknown;
+  try {
+    parsedArguments = JSON.parse(rawArguments);
+  } catch {
+    throw new ProviderError(`GitHub Copilot tool call ${toolName} returned invalid JSON arguments`);
+  }
+
+  const toolCallId = toolCall.id?.trim();
+  if (!toolCallId) {
+    throw new ProviderError(`GitHub Copilot tool call ${toolName} did not include an id`);
+  }
+
+  switch (toolName) {
+    case 'glob':
+      return {
+        type: 'tool-call',
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgs('glob', parsedArguments),
+      };
+    case 'grep':
+      return {
+        type: 'tool-call',
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgs('grep', parsedArguments),
+      };
+    case 'exec':
+      return {
+        type: 'tool-call',
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgs('exec', parsedArguments),
+      };
+  }
+}
+
+function isProviderToolName(value: string | undefined): value is ProviderToolName {
+  return value === 'glob' || value === 'grep' || value === 'exec';
 }

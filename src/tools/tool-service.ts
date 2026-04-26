@@ -2,7 +2,17 @@ import { ToolInvocationRepository } from './tool-invocation-repository';
 import { createExecTool } from './exec-tool';
 import { createGlobTool, type ToolExecutionResult } from './glob-tool';
 import { createGrepTool } from './grep-tool';
-import type { ProviderToolDefinition, ProviderToolName } from '../providers/provider-adapter';
+import {
+  providerExecToolInputSchema,
+  providerGlobToolInputSchema,
+  providerGrepToolInputSchema,
+  parseProviderToolArgs,
+  type ProviderExecToolArgs,
+  type ProviderGlobToolArgs,
+  type ProviderGrepToolArgs,
+  type ProviderToolDefinition,
+  type ProviderToolName,
+} from '../providers/provider-adapter';
 
 export interface ToolServiceDependencies {
   readonly repository: ToolInvocationRepository;
@@ -11,10 +21,22 @@ export interface ToolServiceDependencies {
 
 export interface ExecuteToolInput {
   readonly taskId: string;
-  readonly toolName: ProviderToolName;
-  readonly args: Record<string, unknown>;
   readonly inputSummary?: string;
 }
+
+export type ExecuteToolRequest =
+  | (ExecuteToolInput & {
+      readonly toolName: 'glob';
+      readonly args: ProviderGlobToolArgs;
+    })
+  | (ExecuteToolInput & {
+      readonly toolName: 'grep';
+      readonly args: ProviderGrepToolArgs;
+    })
+  | (ExecuteToolInput & {
+      readonly toolName: 'exec';
+      readonly args: ProviderExecToolArgs;
+    });
 
 export class ToolService {
   private readonly globTool = createGlobTool();
@@ -33,23 +55,23 @@ export class ToolService {
       {
         name: 'glob',
         description: 'Match repository paths by glob pattern relative to the workspace root.',
-        inputSchema: { pattern: 'string' },
+        inputSchema: providerGlobToolInputSchema,
       },
       {
         name: 'grep',
         description: 'Search repository files by regex pattern and optional include glob.',
-        inputSchema: { pattern: 'string', include: 'string?' },
+        inputSchema: providerGrepToolInputSchema,
       },
       {
         name: 'exec',
         description: 'Run a local executable command without a shell using the workspace as cwd.',
-        inputSchema: { command: 'string' },
+        inputSchema: providerExecToolInputSchema,
       },
     ];
   }
 
-  async execute(input: ExecuteToolInput): Promise<{ invocation: ReturnType<ToolInvocationRepository['create']>; output: ToolExecutionResult }> {
-    const output = await this.executeTool(input.toolName, input.args);
+  async execute(input: ExecuteToolRequest): Promise<{ invocation: ReturnType<ToolInvocationRepository['create']>; output: ToolExecutionResult }> {
+    const output = await this.executeTool(input);
     const invocation = this.dependencies.repository.create({
       toolName: output.toolName,
       taskId: input.taskId,
@@ -103,67 +125,26 @@ export class ToolService {
     return outputs;
   }
 
-  private async executeTool(toolName: ProviderToolName, args: Record<string, unknown>): Promise<ToolExecutionResult> {
-    switch (toolName) {
+  private async executeTool(input: ExecuteToolRequest): Promise<ToolExecutionResult> {
+    switch (input.toolName) {
       case 'glob':
-        return this.runGlob(args);
+        return this.runGlob(parseProviderToolArgs('glob', input.args));
       case 'grep':
-        return this.runGrep(args);
+        return this.runGrep(parseProviderToolArgs('grep', input.args));
       case 'exec':
-        return this.runExec(args);
-      default:
-        return {
-          toolName,
-          status: 'failed',
-          summary: `Unsupported tool: ${toolName}`,
-          output: [],
-        };
+        return this.runExec(parseProviderToolArgs('exec', input.args));
     }
   }
 
-  private runGlob(args: Record<string, unknown>): Promise<ToolExecutionResult> {
-    const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
-
-    if (!pattern) {
-      return Promise.resolve({
-        toolName: 'glob',
-        status: 'failed',
-        summary: 'Glob pattern is required',
-        output: [],
-      });
-    }
-
-    return this.globTool({ pattern, cwd: this.dependencies.cwd });
+  private runGlob(args: ProviderGlobToolArgs): Promise<ToolExecutionResult> {
+    return this.globTool({ pattern: args.pattern, cwd: this.dependencies.cwd });
   }
 
-  private runGrep(args: Record<string, unknown>): Promise<ToolExecutionResult> {
-    const pattern = typeof args.pattern === 'string' ? args.pattern.trim() : '';
-    const include = typeof args.include === 'string' ? args.include.trim() : undefined;
-
-    if (!pattern) {
-      return Promise.resolve({
-        toolName: 'grep',
-        status: 'failed',
-        summary: 'Grep pattern is required',
-        output: [],
-      });
-    }
-
-    return this.grepTool({ pattern, include, cwd: this.dependencies.cwd });
+  private runGrep(args: ProviderGrepToolArgs): Promise<ToolExecutionResult> {
+    return this.grepTool({ pattern: args.pattern, include: args.include, cwd: this.dependencies.cwd });
   }
 
-  private runExec(args: Record<string, unknown>): Promise<ToolExecutionResult> {
-    const command = typeof args.command === 'string' ? args.command.trim() : '';
-
-    if (!command) {
-      return Promise.resolve({
-        toolName: 'exec',
-        status: 'failed',
-        summary: 'Exec command is required',
-        output: [],
-      });
-    }
-
-    return this.execTool({ command, cwd: this.dependencies.cwd });
+  private runExec(args: ProviderExecToolArgs): Promise<ToolExecutionResult> {
+    return this.execTool({ command: args.command, cwd: this.dependencies.cwd });
   }
 }

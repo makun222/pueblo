@@ -19,6 +19,9 @@ describe('interactive cli session', () => {
         return {
           providerId: null,
           providerName: null,
+          agentProfileId: null,
+          agentProfileName: null,
+          agentInstanceId: null,
           modelId: null,
           modelName: null,
           activeSessionId: null,
@@ -31,6 +34,8 @@ describe('interactive cli session', () => {
             selectedMemoryCount: 0,
             derivedMemoryCount: 0,
           },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
           backgroundSummaryStatus: {
@@ -40,6 +45,12 @@ describe('interactive cli session', () => {
             lastSummaryMemoryId: null,
           },
         };
+      },
+      listAgentProfiles() {
+        return [];
+      },
+      startAgentSession() {
+        throw new Error('not implemented for interactive test');
       },
       databaseClose() {},
     };

@@ -47,6 +47,25 @@ export class PuebloProfileLoader {
   }
 }
 
+export function findWorkspaceRoot(startDir: string): string | null {
+  let currentDir = path.resolve(startDir);
+
+  while (true) {
+    const packageJsonPath = path.join(currentDir, 'package.json');
+
+    if (fs.existsSync(packageJsonPath)) {
+      return currentDir;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
 export function createEmptyPuebloProfile(loadedFromPath: string | null): PuebloProfile {
   return puebloProfileSchema.parse({
     roleDirectives: [],
@@ -151,21 +170,11 @@ function extractThresholdHint(lines: string[]): number | null {
 }
 
 function findPuebloProfilePath(startDir: string): string | null {
-  let currentDir = path.resolve(startDir);
-
-  while (true) {
-    const packageJsonPath = path.join(currentDir, 'package.json');
-    const puebloPath = path.join(currentDir, 'pueblo.md');
-
-    if (fs.existsSync(packageJsonPath)) {
-      return fs.existsSync(puebloPath) ? puebloPath : null;
-    }
-
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {
-      return null;
-    }
-
-    currentDir = parentDir;
+  const workspaceRoot = findWorkspaceRoot(startDir);
+  if (!workspaceRoot) {
+    return null;
   }
+
+  const puebloPath = path.join(workspaceRoot, 'pueblo.md');
+  return fs.existsSync(puebloPath) ? puebloPath : null;
 }

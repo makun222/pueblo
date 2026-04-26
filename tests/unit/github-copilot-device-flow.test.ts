@@ -10,6 +10,22 @@ import {
 } from '../../src/providers/github-copilot-device-flow';
 import { createTestAppConfig } from '../helpers/test-config';
 
+function createInMemoryCredentialStore() {
+  const secrets = new Map<string, string>();
+
+  return {
+    store: {
+      kind: 'windows-credential-manager' as const,
+      isSupported: () => true,
+      readSecret: (target: string) => secrets.get(target) ?? null,
+      writeSecret: (target: string, secret: string) => {
+        secrets.set(target, secret);
+      },
+    },
+    secrets,
+  };
+}
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -102,9 +118,10 @@ describe('github copilot device flow', () => {
     expect(waits).toEqual([1000, 1000]);
   });
 
-  it('persists the GitHub auth token into config.json', () => {
+  it('persists the GitHub auth token into Windows credential storage and keeps only a reference in config.json', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-device-flow-'));
     tempDirs.push(tempDir);
+    const { store, secrets } = createInMemoryCredentialStore();
     const config = createTestAppConfig({
       databasePath: '.pueblo/pueblo.db',
       defaultProviderId: 'github-copilot',
@@ -121,13 +138,17 @@ describe('github copilot device flow', () => {
       },
     });
 
-    persistGitHubCopilotDeviceAuth(config, 'gho_access_token', { cwd: tempDir });
+    persistGitHubCopilotDeviceAuth(config, 'gho_access_token', { cwd: tempDir, credentialStore: store });
 
     const stored = JSON.parse(fs.readFileSync(path.join(tempDir, '.pueblo', 'config.json'), 'utf8')) as {
-      githubCopilot: { token: string; tokenType: string };
+      providers: Array<{ credentialSource: string }>;
+      githubCopilot: { credentialTarget?: string; token?: string; tokenType: string };
     };
 
-    expect(stored.githubCopilot.token).toBe('gho_access_token');
+    expect(stored.githubCopilot.token).toBeUndefined();
+    expect(stored.githubCopilot.credentialTarget).toMatch(/^Pueblo:GitHubCopilot:/);
     expect(stored.githubCopilot.tokenType).toBe('github-auth-token');
+    expect(stored.providers[0]?.credentialSource).toBe('windows-credential-manager');
+    expect(secrets.get(stored.githubCopilot.credentialTarget ?? '')).toBe('gho_access_token');
   });
 });

@@ -181,4 +181,63 @@ describe('GitHub Copilot Provider Contract', () => {
       inputContextSummary: 'Task execution test',
     })).rejects.toThrow('Personal Access Tokens are not supported');
   });
+
+  it('should surface tool-call responses through the step API', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: {
+                    name: 'glob',
+                    arguments: JSON.stringify({ pattern: 'src/**/*.ts' }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [{ role: 'user', content: 'Inspect repository state' }],
+      availableTools: [
+        {
+          name: 'glob',
+          description: 'Match files',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'glob',
+      args: { pattern: 'src/**/*.ts' },
+    });
+  });
 });
