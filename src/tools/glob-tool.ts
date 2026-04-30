@@ -6,7 +6,7 @@ export interface GlobToolRequest {
 }
 
 export interface ToolExecutionResult {
-  readonly toolName: 'glob' | 'grep' | 'exec';
+  readonly toolName: 'glob' | 'grep' | 'exec' | 'read';
   readonly status: 'succeeded' | 'failed' | 'empty';
   readonly summary: string;
   readonly output: string[];

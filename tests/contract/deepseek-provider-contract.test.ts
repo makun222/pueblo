@@ -1,8 +1,11 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DeepSeekAdapter } from '../../src/providers/deepseek-adapter';
 import { resolveDeepSeekAuth } from '../../src/providers/deepseek-auth';
 import { createDeepSeekProfile } from '../../src/providers/deepseek-profile';
-import type { ProviderAdapter } from '../../src/providers/provider-adapter';
+import { providerGlobToolInputSchema, providerReadToolInputSchema, type ProviderAdapter, type ProviderStepContext } from '../../src/providers/provider-adapter';
 import { createTestAppConfig } from '../helpers/test-config';
 
 describe('DeepSeek Provider Contract', () => {
@@ -69,5 +72,363 @@ describe('DeepSeek Provider Contract', () => {
     });
 
     expect(resolveDeepSeekAuth(config).authState).toBe('configured');
+  });
+
+  it('should wrap network fetch failures as provider errors', async () => {
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl: vi.fn().mockRejectedValue(new TypeError('fetch failed')),
+    });
+
+    await expect(adapter.runTask({
+      modelId: 'deepseek-v4-flash',
+      goal: 'Inspect repository state',
+      inputContextSummary: 'Task execution test',
+    })).rejects.toThrow('DeepSeek network request failed to https://api.deepseek.com/chat/completions: fetch failed');
+  });
+
+  it('should write failed DeepSeek response details to the response log directory', async () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-deepseek-log-'));
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      logDir,
+      fetchImpl: vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({
+          error: {
+            message: 'bad request',
+            type: 'invalid_request_error',
+          },
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    });
+
+    await expect(adapter.runTask({
+      modelId: 'deepseek-v4-flash',
+      goal: 'Inspect repository state',
+      inputContextSummary: 'Task execution test',
+    })).rejects.toThrow('DeepSeek request failed (400)');
+
+    const logFiles = fs.readdirSync(logDir);
+    expect(logFiles.length).toBe(1);
+
+    const logContent = JSON.parse(fs.readFileSync(path.join(logDir, logFiles[0] ?? ''), 'utf8')) as {
+      providerId?: string;
+      category?: string;
+      status?: number;
+      responseText?: string;
+    };
+
+    expect(logContent.providerId).toBe('deepseek');
+    expect(logContent.category).toBe('http-error');
+    expect(logContent.status).toBe(400);
+    expect(logContent.responseText).toContain('invalid_request_error');
+  });
+
+  it('should replay reasoning_content for tool-call follow-up requests', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'I should inspect files first.',
+                reasoning_content: 'Need repository visibility before answering.',
+                tool_calls: [
+                  {
+                    id: 'tool-1',
+                    type: 'function',
+                    function: {
+                      name: 'glob',
+                      arguments: JSON.stringify({ pattern: 'src/**/*.ts' }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'Done.',
+              },
+            },
+          ],
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const initialContext: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a coding assistant',
+        },
+        {
+          role: 'user',
+          content: 'List TypeScript files.',
+        },
+      ],
+      availableTools: [
+        {
+          name: 'glob',
+          description: 'Find files by glob pattern',
+          inputSchema: providerGlobToolInputSchema,
+        },
+      ],
+    };
+
+    const firstStep = await adapter.runStep(initialContext);
+    expect(firstStep.type).toBe('tool-call');
+    if (firstStep.type !== 'tool-call') {
+      throw new Error('Expected tool-call result');
+    }
+
+    expect(firstStep.reasoningContent).toBe('Need repository visibility before answering.');
+
+    const followUpContext: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        ...initialContext.messages,
+        {
+          role: 'assistant',
+          content: firstStep.rationale ?? 'Requesting tool glob',
+          toolCallId: firstStep.toolCallId,
+          toolName: firstStep.toolName,
+          toolArgs: firstStep.args,
+          reasoningContent: firstStep.reasoningContent,
+        },
+        {
+          role: 'tool',
+          content: JSON.stringify({ status: 'succeeded', summary: 'Found files', output: ['src/main.ts'] }),
+          toolCallId: firstStep.toolCallId,
+          toolName: firstStep.toolName,
+        },
+      ],
+      availableTools: initialContext.availableTools,
+    };
+
+    await adapter.runStep(followUpContext);
+
+    const secondRequestPayload = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body)) as {
+      messages?: Array<{ role?: string; reasoning_content?: string }>;
+    };
+    const assistantMessage = secondRequestPayload.messages?.find((message) => message.role === 'assistant');
+
+    expect(assistantMessage?.reasoning_content).toBe('Need repository visibility before answering.');
+  });
+
+  it('should preserve multiple DeepSeek tool calls within one assistant turn', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'I need both file discovery and content search.',
+                reasoning_content: 'Two tools are needed before I can answer.',
+                tool_calls: [
+                  {
+                    id: 'tool-1',
+                    type: 'function',
+                    function: {
+                      name: 'glob',
+                      arguments: JSON.stringify({ pattern: 'src/**/*.ts' }),
+                    },
+                  },
+                  {
+                    id: 'tool-2',
+                    type: 'function',
+                    function: {
+                      name: 'grep',
+                      arguments: JSON.stringify({ pattern: 'task', include: '*.ts' }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'Done.',
+              },
+            },
+          ],
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const initialContext: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: 'Inspect repository files and usages.' },
+      ],
+      availableTools: [
+        {
+          name: 'glob',
+          description: 'Find files by glob pattern',
+          inputSchema: providerGlobToolInputSchema,
+        },
+        {
+          name: 'grep',
+          description: 'Search file contents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+              include: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    };
+
+    const firstStep = await adapter.runStep(initialContext);
+    expect(firstStep.type).toBe('tool-calls');
+    if (firstStep.type !== 'tool-calls') {
+      throw new Error('Expected grouped tool-calls result');
+    }
+
+    expect(firstStep.toolCalls).toHaveLength(2);
+    expect(firstStep.reasoningContent).toBe('Two tools are needed before I can answer.');
+
+    const followUpContext: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        ...initialContext.messages,
+        {
+          role: 'assistant',
+          content: firstStep.rationale ?? 'Requesting multiple tools',
+          toolCalls: firstStep.toolCalls,
+          reasoningContent: firstStep.reasoningContent,
+        },
+        {
+          role: 'tool',
+          content: JSON.stringify({ status: 'succeeded', summary: 'Found files', output: ['src/main.ts'] }),
+          toolCallId: firstStep.toolCalls[0]?.toolCallId,
+          toolName: firstStep.toolCalls[0]?.toolName,
+        },
+        {
+          role: 'tool',
+          content: JSON.stringify({ status: 'succeeded', summary: 'Found matches', output: ['src/agent/task-runner.ts'] }),
+          toolCallId: firstStep.toolCalls[1]?.toolCallId,
+          toolName: firstStep.toolCalls[1]?.toolName,
+        },
+      ],
+      availableTools: initialContext.availableTools,
+    };
+
+    await adapter.runStep(followUpContext);
+
+    const secondRequestPayload = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body)) as {
+      messages?: Array<{ role?: string; reasoning_content?: string; tool_calls?: Array<{ id?: string }> }>;
+    };
+    const assistantMessage = secondRequestPayload.messages?.find((message) => message.role === 'assistant');
+
+    expect(assistantMessage?.reasoning_content).toBe('Two tools are needed before I can answer.');
+    expect(assistantMessage?.tool_calls).toHaveLength(2);
+    expect(assistantMessage?.tool_calls?.map((toolCall) => toolCall.id)).toEqual(['tool-1', 'tool-2']);
+  });
+
+  it('should accept read tool calls returned by DeepSeek', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  id: 'tool-read-1',
+                  type: 'function',
+                  function: {
+                    name: 'read',
+                    arguments: JSON.stringify({ path: 'src/agent/task-runner.ts' }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'deepseek-v4-pro',
+      messages: [{ role: 'user', content: 'Read the task runner.' }],
+      availableTools: [
+        {
+          name: 'read',
+          description: 'Read a file',
+          inputSchema: providerReadToolInputSchema,
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      type: 'tool-call',
+      toolCallId: 'tool-read-1',
+      toolName: 'read',
+      args: { path: 'src/agent/task-runner.ts' },
+      rationale: undefined,
+      reasoningContent: undefined,
+    });
   });
 });

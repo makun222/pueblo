@@ -225,7 +225,7 @@ export const commandActionSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const toolNameSchema = z.enum(['grep', 'glob', 'exec']);
+export const toolNameSchema = z.enum(['grep', 'glob', 'exec', 'read']);
 export const toolResultStatusSchema = z.enum(['succeeded', 'failed', 'empty']);
 
 export const toolInvocationSchema = z.object({

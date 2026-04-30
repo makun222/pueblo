@@ -11,6 +11,7 @@ import { createProviderProfile } from '../../src/providers/provider-profile';
 import { InMemoryProviderAdapter } from '../../src/providers/provider-adapter';
 import { ProviderRegistry } from '../../src/providers/provider-registry';
 import { ToolService } from '../../src/tools/tool-service';
+import type { ExecuteToolRequest } from '../../src/tools/tool-service';
 import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
 const tempDirs: string[] = [];
@@ -95,6 +96,72 @@ class ToolCallingProviderAdapter implements ProviderAdapter {
     return {
       type: 'final',
       outputSummary: `Tool-informed result: ${toolMessage?.content ?? 'missing tool output'}`,
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class MultiToolCallingProviderAdapter implements ProviderAdapter {
+  private hasRequestedTools = false;
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    if (!this.hasRequestedTools) {
+      this.hasRequestedTools = true;
+      return {
+        type: 'tool-calls',
+        rationale: 'Inspect files and search contents first',
+        toolCalls: [
+          {
+            toolCallId: 'call-1',
+            toolName: 'glob',
+            args: { pattern: 'src/**/*.ts' },
+          },
+          {
+            toolCallId: 'call-2',
+            toolName: 'grep',
+            args: { pattern: 'task', include: '*.ts' },
+          },
+        ],
+      };
+    }
+
+    const assistantMessage = context.messages.find((message) => message.role === 'assistant' && (message.toolCalls?.length ?? 0) === 2);
+    const toolMessages = context.messages.filter((message) => message.role === 'tool');
+
+    return {
+      type: 'final',
+      outputSummary: `Grouped tool result: assistantTools=${assistantMessage?.toolCalls?.length ?? 0}; toolMessages=${toolMessages.length}`,
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class RepeatedToolCallingProviderAdapter implements ProviderAdapter {
+  constructor(private readonly toolCallsBeforeFinal: number) {}
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const toolMessages = context.messages.filter((message) => message.role === 'tool');
+
+    if (toolMessages.length >= this.toolCallsBeforeFinal) {
+      return {
+        type: 'final',
+        outputSummary: `Completed after ${toolMessages.length} tool call(s)`,
+      };
+    }
+
+    const nextToolCallIndex = toolMessages.length + 1;
+    return {
+      type: 'tool-call',
+      toolCallId: `call-${nextToolCallIndex}`,
+      toolName: 'read',
+      args: { path: 'notes.txt' },
+      rationale: `Read attempt ${nextToolCallIndex}`,
     };
   }
 
@@ -318,6 +385,141 @@ describeIfNodeSqlite('agent task persistence integration', () => {
     expect(result.status).toBe('completed');
     expect(result.outputSummary).toContain('Tool-informed result');
     expect(result.outputSummary).toContain('toolInvocationIds');
+
+    database.close();
+  });
+
+  it('supports grouped tool calls before producing the final answer', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-multi-tool-call-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new MultiToolCallingProviderAdapter());
+
+    const repository = new AgentTaskRepository({ connection: database.connection });
+    const runner = new AgentTaskRunner(registry, repository, {
+      describeTools: () => [
+        {
+          name: 'glob',
+          description: 'Find files',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+        {
+          name: 'grep',
+          description: 'Search files',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+              include: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+      ],
+      async execute(input: ExecuteToolRequest) {
+        return {
+          invocation: { id: `tool-invocation-${input.toolName}` },
+          output: {
+            toolName: input.toolName,
+            status: 'succeeded',
+            summary: `Executed ${input.toolName}`,
+            output: input.toolName === 'glob' ? ['src/main.ts'] : ['src/agent/task-runner.ts'],
+          },
+        };
+      },
+    } as unknown as ToolService);
+
+    const result = await runner.run({
+      goal: 'Inspect repository state',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.outputSummary).toContain('assistantTools=2');
+    expect(result.outputSummary).toContain('toolMessages=2');
+
+    database.close();
+  });
+
+  it('allows longer tool workflows before hitting the default step limit', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-repeated-tool-call-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new RepeatedToolCallingProviderAdapter(8));
+
+    const repository = new AgentTaskRepository({ connection: database.connection });
+    let invocationCount = 0;
+    const runner = new AgentTaskRunner(registry, repository, {
+      describeTools: () => [
+        {
+          name: 'read',
+          description: 'Read file contents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+            },
+            required: ['path'],
+            additionalProperties: false,
+          },
+        },
+      ],
+      async execute(input: ExecuteToolRequest) {
+        invocationCount += 1;
+        return {
+          invocation: { id: `tool-invocation-${invocationCount}` },
+          output: {
+            toolName: input.toolName,
+            status: 'succeeded',
+            summary: `Executed ${input.toolName} ${invocationCount}`,
+            output: ['1: alpha'],
+          },
+        };
+      },
+    } as unknown as ToolService);
+
+    const result = await runner.run({
+      goal: 'Inspect repository state with repeated reads',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(invocationCount).toBe(8);
+    expect(result.outputSummary).toContain('Completed after 8 tool call(s)');
 
     database.close();
   });

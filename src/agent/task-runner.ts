@@ -6,6 +6,7 @@ import type {
   ProviderRunResult,
   ProviderStepResult,
   ProviderToolName,
+  ProviderToolCall,
 } from '../providers/provider-adapter';
 import { ProviderRegistry } from '../providers/provider-registry';
 import type { PromptAsset, MemoryRecord } from '../shared/schema';
@@ -24,7 +25,11 @@ export interface RunAgentTaskInput {
   readonly memories?: MemoryRecord[];
 }
 
-const MAX_AGENT_STEPS = 8;
+export interface AgentTaskRunnerOptions {
+  readonly maxSteps?: number;
+}
+
+const DEFAULT_MAX_AGENT_STEPS = 24;
 
 interface AgentStepTraceEntry {
   readonly stepNumber: number;
@@ -40,11 +45,16 @@ interface ModelMessageTraceEntry {
 }
 
 export class AgentTaskRunner {
+  private readonly maxSteps: number;
+
   constructor(
     private readonly providerRegistry: ProviderRegistry,
     private readonly repository: AgentTaskRepository,
     private readonly toolService?: ToolService,
-  ) {}
+    options: AgentTaskRunnerOptions = {},
+  ) {
+    this.maxSteps = resolveAgentTaskStepLimit(options.maxSteps);
+  }
 
   async run(input: RunAgentTaskInput): Promise<AgentTask> {
     const inputSummary = this.buildInputSummary(input);
@@ -150,7 +160,7 @@ export class AgentTaskRunner {
   }): Promise<ProviderRunResult> {
     const messages = [...args.executionMessages];
 
-    for (let stepIndex = 0; stepIndex < MAX_AGENT_STEPS; stepIndex += 1) {
+    for (let stepIndex = 0; stepIndex < this.maxSteps; stepIndex += 1) {
       args.modelMessageTrace.push({
         stepNumber: stepIndex + 1,
         messages: messages.map((message) => ({
@@ -177,48 +187,76 @@ export class AgentTaskRunner {
         return { outputSummary: result.outputSummary };
       }
 
-      args.stepTrace.push({
-        stepNumber: stepIndex + 1,
-        type: 'tool-call',
-        summary: result.rationale ?? `Model requested tool ${result.toolName}`,
-        toolName: result.toolName,
-        toolCallId: result.toolCallId,
-      });
+      const requestedToolCalls = result.type === 'tool-calls'
+        ? result.toolCalls
+        : [this.toProviderToolCall(result)];
 
-      const toolExecution = await this.executeToolCall(args.taskId, result);
-      args.toolInvocationIds.push(toolExecution.invocation.id);
-      args.toolOutputs.push(toolExecution.output);
-      args.stepTrace.push({
-        stepNumber: stepIndex + 1,
-        type: 'tool-result',
-        summary: toolExecution.output.summary,
-        toolName: result.toolName,
-        toolCallId: result.toolCallId,
-      });
+      for (const toolCall of requestedToolCalls) {
+        args.stepTrace.push({
+          stepNumber: stepIndex + 1,
+          type: 'tool-call',
+          summary: result.rationale ?? `Model requested tool ${toolCall.toolName}`,
+          toolName: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+        });
+      }
 
-      messages.push({
-        role: 'assistant',
-        content: result.rationale ?? `Requesting tool ${result.toolName}`,
-        toolCallId: result.toolCallId,
-        toolName: result.toolName,
-        toolArgs: result.args,
-      });
-      messages.push({
-        role: 'tool',
-        content: JSON.stringify({
-          status: toolExecution.output.status,
+      const toolExecutions = [] as Array<Awaited<ReturnType<typeof this.executeToolCall>>>;
+      for (const toolCall of requestedToolCalls) {
+        const toolExecution = await this.executeToolCall(args.taskId, toolCall);
+        args.toolInvocationIds.push(toolExecution.invocation.id);
+        args.toolOutputs.push(toolExecution.output);
+        args.stepTrace.push({
+          stepNumber: stepIndex + 1,
+          type: 'tool-result',
           summary: toolExecution.output.summary,
-          output: toolExecution.output.output,
-        }),
-        toolCallId: result.toolCallId,
-        toolName: result.toolName,
-      });
+          toolName: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+        });
+        toolExecutions.push(toolExecution);
+      }
+
+      if (result.type === 'tool-calls') {
+        messages.push({
+          role: 'assistant',
+          content: result.rationale ?? `Requesting ${requestedToolCalls.length} tools`,
+          toolCalls: requestedToolCalls,
+          reasoningContent: result.reasoningContent,
+        });
+      } else {
+        messages.push({
+          role: 'assistant',
+          content: result.rationale ?? `Requesting tool ${result.toolName}`,
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          toolArgs: result.args,
+          reasoningContent: result.reasoningContent,
+        });
+      }
+
+      for (let toolIndex = 0; toolIndex < requestedToolCalls.length; toolIndex += 1) {
+        const toolCall = requestedToolCalls[toolIndex];
+        const toolExecution = toolExecutions[toolIndex];
+        if (!toolExecution) {
+          throw new Error(`Missing tool execution result for ${toolCall.toolName}:${toolCall.toolCallId}`);
+        }
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify({
+            status: toolExecution.output.status,
+            summary: toolExecution.output.summary,
+            output: toolExecution.output.output,
+          }),
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+        });
+      }
     }
 
-    throw new Error(`Agent task exceeded ${MAX_AGENT_STEPS} steps without producing a final response`);
+    throw new Error(`Agent task exceeded ${this.maxSteps} steps without producing a final response`);
   }
 
-  private executeToolCall(taskId: string, result: Extract<ProviderStepResult, { type: 'tool-call' }>) {
+  private executeToolCall(taskId: string, result: ProviderToolCall) {
     if (!this.toolService) {
       throw new Error(`Tool service is required to execute tool call: ${result.toolName}`);
     }
@@ -251,6 +289,42 @@ export class AgentTaskRunner {
           args: result.args,
           inputSummary,
         });
+      case 'read':
+        return this.toolService.execute({
+          taskId,
+          toolName: 'read',
+          args: result.args,
+          inputSummary,
+        });
+    }
+  }
+
+  private toProviderToolCall(result: Extract<ProviderStepResult, { type: 'tool-call' }>): ProviderToolCall {
+    switch (result.toolName) {
+      case 'glob':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'grep':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'exec':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'read':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
     }
   }
 
@@ -359,4 +433,12 @@ export class AgentTaskRunner {
 
     return String(error);
   }
+}
+
+function resolveAgentTaskStepLimit(maxSteps?: number): number {
+  if (typeof maxSteps !== 'number' || !Number.isFinite(maxSteps)) {
+    return DEFAULT_MAX_AGENT_STEPS;
+  }
+
+  return Math.max(1, Math.floor(maxSteps));
 }

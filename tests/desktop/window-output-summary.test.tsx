@@ -2,9 +2,21 @@ import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/desktop/renderer/App';
-import type { RendererMessageTraceStep, RendererOutputBlock } from '../../src/shared/schema';
+import type { ProviderProfile, RendererMessageTraceStep, RendererOutputBlock } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
+
+const availableProviders: ProviderProfile[] = [
+  {
+    id: 'github-copilot',
+    name: 'GitHub Copilot',
+    status: 'active',
+    authState: 'configured',
+    defaultModelId: 'copilot-chat',
+    models: [{ id: 'copilot-chat', name: 'GPT-5.4', supportsTools: true }],
+    capabilities: { codeExecution: true, toolUse: true, streaming: true },
+  },
+];
 
 const sampleMessageTrace: RendererMessageTraceStep[] = [
   {
@@ -56,6 +68,7 @@ beforeEach(() => {
           modelMessageCharCount: 0,
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
+          availableProviders,
           backgroundSummaryStatus: {
             state: 'idle',
             activeSummarySessionId: null,
@@ -86,6 +99,7 @@ beforeEach(() => {
         modelMessageCharCount: 0,
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
+        availableProviders,
         backgroundSummaryStatus: {
           state: 'idle',
           activeSummarySessionId: null,
@@ -129,6 +143,7 @@ beforeEach(() => {
         modelMessageCharCount: 0,
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
+        availableProviders,
         backgroundSummaryStatus: {
           state: 'idle',
           activeSummarySessionId: null,
@@ -136,6 +151,7 @@ beforeEach(() => {
           lastSummaryMemoryId: null,
         },
       }),
+      onMenuAction: vi.fn(() => () => {}),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),
@@ -225,6 +241,7 @@ describe('Desktop Output Summary Rendering', () => {
           modelMessageCharCount: 0,
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
+          availableProviders: [],
           backgroundSummaryStatus: {
             state: 'idle',
             activeSummarySessionId: null,
@@ -268,6 +285,7 @@ describe('Desktop Output Summary Rendering', () => {
           modelMessageCharCount: 0,
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
+          availableProviders: [],
           backgroundSummaryStatus: {
             state: 'idle',
             activeSummarySessionId: null,
@@ -275,6 +293,7 @@ describe('Desktop Output Summary Rendering', () => {
             lastSummaryMemoryId: null,
           },
         }),
+        onMenuAction: vi.fn(() => () => {}),
         onOutput: vi.fn(),
         removeAllListeners: vi.fn(),
       },
@@ -283,7 +302,7 @@ describe('Desktop Output Summary Rendering', () => {
     render(createElement(App));
 
     expect(await screen.findByLabelText('agent-profile-picker')).toBeTruthy();
-    expect(screen.getByText('Architect')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Architect' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Start with this agent' }));
 

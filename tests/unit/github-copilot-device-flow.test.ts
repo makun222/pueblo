@@ -69,6 +69,43 @@ describe('github copilot device flow', () => {
     expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://github.com/login/device/code');
   });
 
+  it('reports the device code request URL when the network request fails', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'ECONNRESET', message: 'socket hang up' },
+    }));
+    const config = createTestAppConfig({
+      githubCopilot: {
+        oauthClientId: 'client-id',
+        deviceCodeUrl: 'https://github.com/login/device/code',
+      },
+    });
+
+    await expect(requestGitHubDeviceCode(config, { fetchImpl })).rejects.toThrow(
+      'github-copilot: GitHub device flow request failed to https://github.com/login/device/code: fetch failed (ECONNRESET: socket hang up)',
+    );
+  });
+
+  it('reports a clear error when the device code URL returns HTML instead of JSON', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('<!doctype html><html><body>GitHub Sign in</body></html>', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      }),
+    );
+    const config = createTestAppConfig({
+      githubCopilot: {
+        oauthClientId: 'client-id',
+        deviceCodeUrl: 'https://github.com/login/device',
+      },
+    });
+
+    await expect(requestGitHubDeviceCode(config, { fetchImpl })).rejects.toThrow(
+      'github-copilot: GitHub device code initialization returned non-JSON content from https://github.com/login/device. Check githubCopilot.deviceCodeUrl; it should use the API endpoint https://github.com/login/device/code.',
+    );
+  });
+
   it('polls until GitHub returns an access token', async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(
@@ -116,6 +153,32 @@ describe('github copilot device flow', () => {
     expect(result.accessToken).toBe('gho_access_token');
     expect(result.tokenType).toBe('github-auth-token');
     expect(waits).toEqual([1000, 1000]);
+  });
+
+  it('reports the token polling URL when the network request fails', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'ECONNRESET', message: 'socket hang up' },
+    }));
+    const config = createTestAppConfig({
+      githubCopilot: {
+        oauthClientId: 'client-id',
+        oauthAccessTokenUrl: 'https://github.com/login/oauth/access_token',
+      },
+    });
+    const deviceCode: GitHubDeviceCodePayload = {
+      device_code: 'device-code',
+      user_code: 'WDJB-MJHT',
+      verification_uri: 'https://github.com/login/device',
+      expires_in: 900,
+      interval: 1,
+    };
+
+    await expect(pollGitHubDeviceAccessToken(config, deviceCode, {
+      fetchImpl,
+      wait: async () => {},
+    })).rejects.toThrow(
+      'github-copilot: GitHub device flow request failed to https://github.com/login/oauth/access_token: fetch failed (ECONNRESET: socket hang up)',
+    );
   });
 
   it('persists the GitHub auth token into Windows credential storage and keeps only a reference in config.json', () => {

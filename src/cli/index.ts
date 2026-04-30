@@ -12,9 +12,9 @@ import { AgentInstanceService } from '../agent/agent-instance-service';
 import { ContextResolver } from '../agent/context-resolver';
 import { AgentTaskRepository } from '../agent/task-repository';
 import { AgentTaskRunner } from '../agent/task-runner';
-import { createDeepSeekAuthCommand } from '../commands/deepseek-auth-command';
 import { InputRouter } from '../commands/input-router';
 import { createModelCommand } from '../commands/model-command';
+import { createProviderConfigCommand } from '../commands/provider-config-command';
 import {
   createMemoryAddCommand,
   createMemoryListCommand,
@@ -77,7 +77,7 @@ import { SessionRepository } from '../sessions/session-repository';
 import { SessionService } from '../sessions/session-service';
 import { ToolInvocationRepository } from '../tools/tool-invocation-repository';
 import { ToolService } from '../tools/tool-service';
-import type { DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
+import type { DesktopProviderStatuses, DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
 import type { AgentProfileTemplate } from '../shared/schema';
 
 export async function main(argv: string[] = process.argv): Promise<void> {
@@ -134,6 +134,7 @@ export interface CliDependencies {
   readonly getRuntimeStatus: () => DesktopRuntimeStatus;
   readonly listAgentProfiles: () => AgentProfileTemplate[];
   readonly startAgentSession: (profileId: string) => DesktopRuntimeStatus;
+  readonly setProgressReporter: (reporter: ((message: string) => void) | null) => void;
   readonly databaseClose: () => void;
 }
 
@@ -157,13 +158,17 @@ export interface DesktopDialogLaunchOptions {
   readonly write?: (text: string) => void;
 }
 
-interface CliStartupSetupResult {
+export interface CliStartupSetupResult {
   readonly performed: boolean;
   readonly configured: boolean;
   readonly config: AppConfig;
+  readonly errorMessage?: string;
 }
 
-interface CliStartupSetupOptions extends Pick<GitHubCopilotDeviceFlowDependencies, 'credentialStore'> {}
+interface CliStartupSetupOptions extends Pick<GitHubCopilotDeviceFlowDependencies, 'credentialStore'> {
+  readonly openUrl?: (url: string) => Promise<void>;
+  readonly reportProgress?: (message: string) => void;
+}
 
 export async function runInteractiveCliSession(
   cli: CliDependencies,
@@ -242,6 +247,7 @@ export async function maybeRunCliStartupSetup(
       performed: false,
       configured: true,
       config,
+      errorMessage: undefined,
     };
   }
 
@@ -249,6 +255,8 @@ export async function maybeRunCliStartupSetup(
 
   try {
     const deviceCode = await requestGitHubDeviceCode(config);
+    await openVerificationUrl(deviceCode.verification_uri, options.openUrl);
+    options.reportProgress?.(`Open ${deviceCode.verification_uri} and enter code: ${deviceCode.user_code}`);
     process.stdout.write(`Open ${deviceCode.verification_uri} and enter code: ${deviceCode.user_code}\n`);
     process.stdout.write('Waiting for GitHub authorization...\n');
 
@@ -256,12 +264,13 @@ export async function maybeRunCliStartupSetup(
     persistGitHubCopilotDeviceAuth(config, token.accessToken, { credentialStore: options.credentialStore });
     const nextConfig = loadAppConfig();
 
-    process.stdout.write('GitHub Copilot authentication saved to .pueblo/config.json\n');
+    process.stdout.write('GitHub Copilot authentication saved for future CLI and desktop sessions\n');
 
     return {
       performed: true,
       configured: true,
       config: nextConfig,
+      errorMessage: undefined,
     };
   } catch (error) {
     process.stdout.write(formatCommandResult(formatError(error)));
@@ -270,8 +279,32 @@ export async function maybeRunCliStartupSetup(
       performed: true,
       configured: false,
       config,
+      errorMessage: error instanceof Error ? error.message : 'GitHub Copilot login failed.',
     };
   }
+}
+
+async function openVerificationUrl(
+  verificationUrl: string,
+  openUrl: ((url: string) => Promise<void>) | undefined,
+): Promise<void> {
+  const open = openUrl ?? defaultOpenUrl;
+
+  try {
+    await open(verificationUrl);
+  } catch {
+    // Manual fallback remains available via the printed verification URL.
+  }
+}
+
+async function defaultOpenUrl(url: string): Promise<void> {
+  const child = process.platform === 'win32'
+    ? spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true })
+    : process.platform === 'darwin'
+      ? spawn('open', [url], { detached: true, stdio: 'ignore' })
+      : spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
+
+  child.unref();
 }
 
 export function createCliDependencies(
@@ -279,6 +312,7 @@ export function createCliDependencies(
   options: CreateCliDependenciesOptions = {},
 ): CliDependencies {
   let currentConfig = config;
+  let progressReporter: ((message: string) => void) | null = null;
   const credentialStore = options.credentialStore ?? createDefaultCredentialStore();
   const database = createSqliteDatabase({ dbPath: config.databasePath });
   const dispatcher = new CommandDispatcher();
@@ -452,8 +486,8 @@ export function createCliDependencies(
         sessionService.addSelectedMemory(sessionId, turnMemory.id);
         return failureResult('TASK_RUN_FAILED', error.message, [
           'Use /model to review the active provider configuration.',
-          'Use /auth-login to sign in to GitHub Copilot when credentials are missing.',
-          'Use /auth-deepseek <apiKey> [defaultModelId] [baseUrl] to configure DeepSeek access.',
+          'Use /provider-config github-copilot login when GitHub Copilot credentials are missing.',
+          'Use /provider-config deepseek set-key <apiKey> [defaultModelId] [baseUrl] to configure DeepSeek access.',
         ]);
       }
 
@@ -548,39 +582,37 @@ export function createCliDependencies(
     sessionService,
     getCurrentSessionId: () => selectionState.sessionId,
   }));
-  dispatcher.register('/auth-deepseek', createDeepSeekAuthCommand({
+  const providerConfigCommand = createProviderConfigCommand({
     getCurrentConfig: () => currentConfig,
     setCurrentConfig: (nextConfig) => {
       currentConfig = nextConfig;
     },
     credentialStore,
-    onConfigured: (nextConfig) => {
-      registerDeepSeekProvider(
-        providerRegistry,
-        nextConfig,
-        nextConfig.providers.find((provider) => provider.providerId === 'deepseek')?.defaultModelId,
-        credentialStore,
-      );
+    runGitHubCopilotLogin: () => maybeRunCliStartupSetup(currentConfig, {
+      credentialStore,
+      reportProgress: progressReporter ?? undefined,
+    }),
+    onConfigured: (providerId, nextConfig) => {
+      if (providerId === 'deepseek') {
+        registerDeepSeekProvider(
+          providerRegistry,
+          nextConfig,
+          nextConfig.providers.find((provider) => provider.providerId === 'deepseek')?.defaultModelId,
+          credentialStore,
+        );
+        applyConfiguredProviderSelection('deepseek', nextConfig);
+        return;
+      }
+
+      if (providerId === 'github-copilot') {
+        registerGitHubCopilotProvider(providerRegistry, nextConfig, credentialStore);
+        applyConfiguredProviderSelection('github-copilot', nextConfig);
+      }
     },
-  }));
-  dispatcher.register('/auth-login', async () => {
-    const setup = await maybeRunCliStartupSetup(currentConfig, { credentialStore });
-
-    if (!setup.performed) {
-      return successResult('AUTH_ALREADY_CONFIGURED', 'GitHub Copilot is already configured');
-    }
-
-    if (!setup.configured) {
-      return failureResult('AUTH_LOGIN_FAILED', 'GitHub Copilot login was not completed', [
-        'Check githubCopilot.oauthClientId and network access, then retry.',
-      ]);
-    }
-
-    currentConfig = setup.config;
-    registerGitHubCopilotProvider(providerRegistry, currentConfig, credentialStore);
-
-    return successResult('AUTH_LOGIN_COMPLETED', 'GitHub Copilot login completed');
   });
+  dispatcher.register('/provider-config', providerConfigCommand);
+  dispatcher.register('/auth-deepseek', (args) => providerConfigCommand(['deepseek', 'set-key', ...args]));
+  dispatcher.register('/auth-login', () => providerConfigCommand(['github-copilot', 'login']));
   dispatcher.register(
     '/model',
     createModelCommand({
@@ -628,6 +660,8 @@ export function createCliDependencies(
         agentInstanceId: runtimeStatus.agentInstanceId ?? activeAgentInstanceId,
         modelMessageCount: lastModelMessageCount,
         modelMessageCharCount: lastModelMessageCharCount,
+        availableProviders: providerRegistry.listProfiles(),
+        providerStatuses: buildDesktopProviderStatuses(currentConfig, credentialStore),
       };
     },
     listAgentProfiles() {
@@ -642,6 +676,9 @@ export function createCliDependencies(
       const session = sessionService.createSession(`${agentInstance.profileName} session`, selectionState.modelId, agentInstance.id);
       syncSelectionFromSession(session.id);
       return this.getRuntimeStatus();
+    },
+    setProgressReporter(reporter: ((message: string) => void) | null): void {
+      progressReporter = reporter;
     },
     databaseClose(): void {
       database.close();
@@ -660,6 +697,49 @@ export function createCliDependencies(
     activeAgentProfileId = agentInstance.profileId;
     activeAgentInstanceId = agentInstance.id;
     return agentInstance.id;
+  }
+
+  function applyConfiguredProviderSelection(providerId: 'github-copilot' | 'deepseek', nextConfig: AppConfig): void {
+    const configuredProvider = nextConfig.providers.find((provider) => provider.providerId === providerId && provider.enabled);
+    const defaultModelId = configuredProvider?.defaultModelId
+      ?? (providerId === 'github-copilot' ? 'copilot-chat' : 'deepseek-v4-flash');
+
+    selectionState.providerId = providerId;
+    selectionState.modelId = defaultModelId;
+
+    if (selectionState.sessionId) {
+      sessionService.setCurrentModel(selectionState.sessionId, defaultModelId);
+      syncSelectionFromSession(selectionState.sessionId);
+    }
+  }
+
+  function buildDesktopProviderStatuses(
+    config: AppConfig,
+    store: CredentialStore,
+  ): DesktopProviderStatuses {
+    const githubProvider = config.providers.find((provider) => provider.providerId === 'github-copilot');
+    const deepSeekProvider = config.providers.find((provider) => provider.providerId === 'deepseek');
+    const githubAuth = resolveGitHubCopilotAuth(config, { credentialStore: store });
+    const deepSeekAuth = resolveDeepSeekAuth(config, { credentialStore: store });
+
+    return {
+      githubCopilot: {
+        providerId: 'github-copilot',
+        authState: githubAuth.authState,
+        credentialSource: githubAuth.credentialSource,
+        defaultModelId: githubProvider?.defaultModelId ?? null,
+        credentialTarget: config.githubCopilot.credentialTarget?.trim() ?? null,
+        oauthClientIdConfigured: Boolean(config.githubCopilot.oauthClientId?.trim()),
+      },
+      deepseek: {
+        providerId: 'deepseek',
+        authState: deepSeekAuth.authState,
+        credentialSource: deepSeekAuth.credentialSource,
+        defaultModelId: deepSeekProvider?.defaultModelId ?? null,
+        credentialTarget: config.deepseek.credentialTarget?.trim() ?? null,
+        baseUrl: config.deepseek.baseUrl,
+      },
+    };
   }
 }
 

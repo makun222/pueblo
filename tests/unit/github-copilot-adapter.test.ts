@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubCopilotAdapter } from '../../src/providers/github-copilot-adapter';
 
@@ -93,6 +96,57 @@ describe('github copilot adapter', () => {
       goal: 'inspect repo',
       inputContextSummary: 'test',
     })).rejects.toThrow('did not include message content');
+  });
+
+  it('writes abnormal GitHub payload details to the response log directory', async () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-github-log-'));
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: [] } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-access-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+      logDir,
+    });
+
+    await expect(adapter.runTask({
+      modelId: 'copilot-chat',
+      goal: 'inspect repo',
+      inputContextSummary: 'test',
+    })).rejects.toThrow('did not include message content');
+
+    const logFiles = fs.readdirSync(logDir);
+    expect(logFiles.length).toBe(1);
+
+    const logContent = JSON.parse(fs.readFileSync(path.join(logDir, logFiles[0] ?? ''), 'utf8')) as {
+      providerId?: string;
+      category?: string;
+      payload?: { choices?: Array<{ message?: { content?: unknown } }> };
+      message?: string;
+    };
+
+    expect(logContent.providerId).toBe('github-copilot');
+    expect(logContent.category).toBe('response-structure-invalid');
+    expect(logContent.message).toContain('did not include message content');
+    expect(logContent.payload?.choices?.[0]?.message?.content).toEqual([]);
+  });
+
+  it('wraps network fetch failures as provider errors', async () => {
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-access-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl: vi.fn().mockRejectedValue(new TypeError('fetch failed')),
+    });
+
+    await expect(adapter.runTask({
+      modelId: 'copilot-chat',
+      goal: 'inspect repo',
+      inputContextSummary: 'test',
+    })).rejects.toThrow('GitHub Copilot network request failed to https://api.githubcopilot.com/chat/completions: fetch failed');
   });
 
   it('parses tool calls from the chat response and includes tools in the request body', async () => {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'read';
 
 interface ProviderJsonSchemaStringProperty {
   readonly type: 'string';
@@ -27,10 +27,36 @@ export const providerExecToolArgsSchema = z.object({
   command: z.string().trim().min(1),
 });
 
+export const providerReadToolArgsSchema = z.object({
+  path: z.string().trim().min(1),
+});
+
 export type ProviderGlobToolArgs = z.infer<typeof providerGlobToolArgsSchema>;
 export type ProviderGrepToolArgs = z.infer<typeof providerGrepToolArgsSchema>;
 export type ProviderExecToolArgs = z.infer<typeof providerExecToolArgsSchema>;
-export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs;
+export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
+export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs;
+export type ProviderToolCall =
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'glob';
+      readonly args: ProviderGlobToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'grep';
+      readonly args: ProviderGrepToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'exec';
+      readonly args: ProviderExecToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'read';
+      readonly args: ProviderReadToolArgs;
+    };
 
 export const providerGlobToolInputSchema: ProviderToolInputSchema = {
   type: 'object',
@@ -72,12 +98,26 @@ export const providerExecToolInputSchema: ProviderToolInputSchema = {
   additionalProperties: false,
 };
 
+export const providerReadToolInputSchema: ProviderToolInputSchema = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Workspace-relative file path to read as UTF-8 text.',
+    },
+  },
+  required: ['path'],
+  additionalProperties: false,
+};
+
 export interface ProviderMessage {
   readonly role: 'system' | 'user' | 'assistant' | 'tool';
   readonly content: string;
   readonly toolCallId?: string;
   readonly toolName?: ProviderToolName;
   readonly toolArgs?: ProviderToolArgs;
+  readonly toolCalls?: readonly ProviderToolCall[];
+  readonly reasoningContent?: string;
 }
 
 export interface ProviderToolDefinition {
@@ -103,6 +143,7 @@ export type ProviderStepResult =
       readonly toolName: 'glob';
       readonly args: ProviderGlobToolArgs;
       readonly rationale?: string;
+      readonly reasoningContent?: string;
     }
   | {
       readonly type: 'tool-call';
@@ -110,6 +151,7 @@ export type ProviderStepResult =
       readonly toolName: 'grep';
       readonly args: ProviderGrepToolArgs;
       readonly rationale?: string;
+      readonly reasoningContent?: string;
     }
   | {
       readonly type: 'tool-call';
@@ -117,6 +159,21 @@ export type ProviderStepResult =
       readonly toolName: 'exec';
       readonly args: ProviderExecToolArgs;
       readonly rationale?: string;
+      readonly reasoningContent?: string;
+    }
+  | {
+      readonly type: 'tool-call';
+      readonly toolCallId: string;
+      readonly toolName: 'read';
+      readonly args: ProviderReadToolArgs;
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
+    }
+  | {
+      readonly type: 'tool-calls';
+      readonly toolCalls: readonly ProviderToolCall[];
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
     };
 
 export interface ProviderRunRequest {
@@ -180,6 +237,7 @@ export function createLegacyStepContext(request: ProviderRunRequest): ProviderSt
 export function parseProviderToolArgs(toolName: 'glob', rawArgs: unknown): ProviderGlobToolArgs;
 export function parseProviderToolArgs(toolName: 'grep', rawArgs: unknown): ProviderGrepToolArgs;
 export function parseProviderToolArgs(toolName: 'exec', rawArgs: unknown): ProviderExecToolArgs;
+export function parseProviderToolArgs(toolName: 'read', rawArgs: unknown): ProviderReadToolArgs;
 export function parseProviderToolArgs(toolName: ProviderToolName, rawArgs: unknown): ProviderToolArgs {
   switch (toolName) {
     case 'glob':
@@ -188,5 +246,7 @@ export function parseProviderToolArgs(toolName: ProviderToolName, rawArgs: unkno
       return providerGrepToolArgsSchema.parse(rawArgs);
     case 'exec':
       return providerExecToolArgsSchema.parse(rawArgs);
+    case 'read':
+      return providerReadToolArgsSchema.parse(rawArgs);
   }
 }

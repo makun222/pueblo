@@ -2,14 +2,17 @@ import { ToolInvocationRepository } from './tool-invocation-repository';
 import { createExecTool } from './exec-tool';
 import { createGlobTool, type ToolExecutionResult } from './glob-tool';
 import { createGrepTool } from './grep-tool';
+import { createReadTool } from './read-tool';
 import {
   providerExecToolInputSchema,
   providerGlobToolInputSchema,
   providerGrepToolInputSchema,
+  providerReadToolInputSchema,
   parseProviderToolArgs,
   type ProviderExecToolArgs,
   type ProviderGlobToolArgs,
   type ProviderGrepToolArgs,
+  type ProviderReadToolArgs,
   type ProviderToolDefinition,
   type ProviderToolName,
 } from '../providers/provider-adapter';
@@ -36,12 +39,17 @@ export type ExecuteToolRequest =
   | (ExecuteToolInput & {
       readonly toolName: 'exec';
       readonly args: ProviderExecToolArgs;
+    })
+  | (ExecuteToolInput & {
+      readonly toolName: 'read';
+      readonly args: ProviderReadToolArgs;
     });
 
 export class ToolService {
   private readonly globTool = createGlobTool();
   private readonly grepTool = createGrepTool();
   private readonly execTool = createExecTool();
+  private readonly readTool = createReadTool();
 
   constructor(private readonly dependencies: ToolServiceDependencies) {}
 
@@ -66,6 +74,11 @@ export class ToolService {
         name: 'exec',
         description: 'Run a local executable command without a shell using the workspace as cwd.',
         inputSchema: providerExecToolInputSchema,
+      },
+      {
+        name: 'read',
+        description: 'Read a workspace text file and return numbered lines with bounded output.',
+        inputSchema: providerReadToolInputSchema,
       },
     ];
   }
@@ -133,6 +146,8 @@ export class ToolService {
         return this.runGrep(parseProviderToolArgs('grep', input.args));
       case 'exec':
         return this.runExec(parseProviderToolArgs('exec', input.args));
+      case 'read':
+        return this.runRead(parseProviderToolArgs('read', input.args));
     }
   }
 
@@ -146,5 +161,9 @@ export class ToolService {
 
   private runExec(args: ProviderExecToolArgs): Promise<ToolExecutionResult> {
     return this.execTool({ command: args.command, cwd: this.dependencies.cwd });
+  }
+
+  private runRead(args: ProviderReadToolArgs): Promise<ToolExecutionResult> {
+    return this.readTool({ path: args.path, cwd: this.dependencies.cwd });
   }
 }

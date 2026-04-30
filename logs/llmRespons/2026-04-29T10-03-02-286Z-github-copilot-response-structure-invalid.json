@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-04-29T10:03:02.286Z",
+  "providerId": "github-copilot",
+  "category": "response-structure-invalid",
+  "message": "GitHub Copilot response payload did not include message content",
+  "requestUrl": "https://api.githubcopilot.com/chat/completions",
+  "modelId": "copilot-chat",
+  "payload": {
+    "choices": [
+      {
+        "message": {
+          "content": []
+        }
+      }
+    ]
+  },
+  "details": {
+    "name": "ProviderError",
+    "message": "GitHub Copilot response payload did not include message content",
+    "stack": "ProviderError: GitHub Copilot response payload did not include message content\n    at extractGitHubCopilotStepResult (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:441:9)\n    at GitHubCopilotAdapter.runStep (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:126:14)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at GitHubCopilotAdapter.runTask (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:142:24)\n    at D:\\workspace\\trends\\pueblo\\tests\\unit\\github-copilot-adapter.test.ts:94:5\n    at file:///D:/workspace/trends/pueblo/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+  }
+}

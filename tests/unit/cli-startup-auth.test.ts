@@ -79,6 +79,8 @@ describe.sequential('cli startup auth setup', () => {
       );
     vi.stubGlobal('fetch', fetchImpl);
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const openUrl = vi.fn().mockResolvedValue(undefined);
+    const reportProgress = vi.fn();
 
     const config = createTestAppConfig({
       databasePath: '.pueblo/pueblo.db',
@@ -96,7 +98,7 @@ describe.sequential('cli startup auth setup', () => {
       },
     });
 
-    const result = await maybeRunCliStartupSetup(config, { credentialStore: store });
+    const result = await maybeRunCliStartupSetup(config, { credentialStore: store, openUrl, reportProgress });
     const savedConfig = JSON.parse(fs.readFileSync(path.join(tempDir, '.pueblo', 'config.json'), 'utf8')) as {
       githubCopilot: { credentialTarget?: string; token?: string };
       providers: Array<{ credentialSource: string }>;
@@ -105,6 +107,8 @@ describe.sequential('cli startup auth setup', () => {
     expect(result.performed).toBe(true);
     expect(result.configured).toBe(true);
     expect(stdoutSpy).toHaveBeenCalledWith('GitHub Copilot is not configured for CLI use. Starting device login flow...\n');
+    expect(openUrl).toHaveBeenCalledWith('https://github.com/login/device');
+    expect(reportProgress).toHaveBeenCalledWith('Open https://github.com/login/device and enter code: WDJB-MJHT');
     expect(fs.existsSync(path.join(tempDir, '.pueblo', 'config.json'))).toBe(true);
     expect(savedConfig.githubCopilot.token).toBeUndefined();
     expect(savedConfig.githubCopilot.credentialTarget).toBeTruthy();

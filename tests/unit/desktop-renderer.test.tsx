@@ -2,9 +2,21 @@ import { createElement } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/desktop/renderer/App';
-import type { RendererOutputBlock } from '../../src/shared/schema';
+import type { ProviderProfile, RendererOutputBlock } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
+
+const availableProviders: ProviderProfile[] = [
+  {
+    id: 'github-copilot',
+    name: 'GitHub Copilot',
+    status: 'active',
+    authState: 'configured',
+    defaultModelId: 'copilot-chat',
+    models: [{ id: 'copilot-chat', name: 'GPT-5.4', supportsTools: true }],
+    capabilities: { codeExecution: true, toolUse: true, streaming: true },
+  },
+];
 
 beforeEach(() => {
   outputListener = null;
@@ -36,6 +48,7 @@ beforeEach(() => {
           modelMessageCharCount: 0,
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
+          availableProviders,
           backgroundSummaryStatus: {
             state: 'idle',
             activeSummarySessionId: null,
@@ -66,6 +79,7 @@ beforeEach(() => {
         modelMessageCharCount: 0,
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
+        availableProviders,
         backgroundSummaryStatus: {
           state: 'idle',
           activeSummarySessionId: null,
@@ -96,6 +110,7 @@ beforeEach(() => {
         modelMessageCharCount: 0,
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
+        availableProviders,
         backgroundSummaryStatus: {
           state: 'idle',
           activeSummarySessionId: null,
@@ -103,6 +118,7 @@ beforeEach(() => {
           lastSummaryMemoryId: null,
         },
       }),
+      onMenuAction: vi.fn(() => () => {}),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),

@@ -119,4 +119,38 @@ describeIfNodeSqlite('cli auth login command', () => {
       cli.databaseClose();
     }
   });
+
+  it('configures DeepSeek on demand and refreshes the current runtime provider state', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-cli-deepseek-login-'));
+    tempDirs.push(tempDir);
+    process.chdir(tempDir);
+    const { store, secrets } = createInMemoryCredentialStore();
+
+    const config = createTestAppConfig({
+      databasePath: '.pueblo/pueblo.db',
+      defaultProviderId: null,
+      providers: [],
+      deepseek: {
+        apiKey: undefined,
+      },
+    });
+
+    const cli = createCliDependencies(config, { credentialStore: store });
+
+    try {
+      const loginResult = await cli.dispatcher.dispatch({
+        input: '/provider-config deepseek set-key deepseek-secret deepseek-v4-pro https://api.deepseek.com',
+      });
+      const runtimeStatus = cli.getRuntimeStatus();
+
+      expect(loginResult.ok).toBe(true);
+      expect(loginResult.code).toBe('DEEPSEEK_AUTH_COMPLETED');
+      expect(runtimeStatus.providerId).toBe('deepseek');
+      expect(runtimeStatus.modelId).toBe('deepseek-v4-pro');
+      expect(runtimeStatus.providerName).toBe('DeepSeek');
+      expect(secrets.size).toBeGreaterThan(0);
+    } finally {
+      cli.databaseClose();
+    }
+  });
 });

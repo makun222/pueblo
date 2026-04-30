@@ -55,7 +55,7 @@ export async function requestGitHubDeviceCode(
     body.set('scope', config.githubCopilot.scopes.join(' '));
   }
 
-  const response = await fetchImpl(config.githubCopilot.deviceCodeUrl, {
+  const response = await fetchGitHubDeviceFlowJson(config.githubCopilot.deviceCodeUrl, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -63,7 +63,7 @@ export async function requestGitHubDeviceCode(
       'User-Agent': config.githubCopilot.userAgent,
     },
     body,
-  });
+  }, fetchImpl);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -73,7 +73,11 @@ export async function requestGitHubDeviceCode(
     );
   }
 
-  return await response.json() as GitHubDeviceCodePayload;
+  return await parseGitHubJsonResponse<GitHubDeviceCodePayload>(
+    response,
+    config.githubCopilot.deviceCodeUrl,
+    'device code initialization',
+  );
 }
 
 export async function pollGitHubDeviceAccessToken(
@@ -95,7 +99,7 @@ export async function pollGitHubDeviceAccessToken(
   while (Date.now() < expiresAt) {
     await wait(intervalSeconds * 1000);
 
-    const response = await fetchImpl(config.githubCopilot.oauthAccessTokenUrl, {
+    const response = await fetchGitHubDeviceFlowJson(config.githubCopilot.oauthAccessTokenUrl, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -107,9 +111,13 @@ export async function pollGitHubDeviceAccessToken(
         device_code: deviceCode.device_code,
         grant_type: DEVICE_GRANT_TYPE,
       }),
-    });
+    }, fetchImpl);
 
-    const payload = await response.json() as GitHubDeviceTokenPayload;
+    const payload = await parseGitHubJsonResponse<GitHubDeviceTokenPayload>(
+      response,
+      config.githubCopilot.oauthAccessTokenUrl,
+      'device token polling',
+    );
 
     if (payload.access_token?.trim()) {
       return {
@@ -149,6 +157,43 @@ export async function pollGitHubDeviceAccessToken(
   }
 
   throw new ProviderAuthError('github-copilot', 'Device code expired before authorization completed. Start login again.');
+}
+
+async function fetchGitHubDeviceFlowJson(
+  input: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  try {
+    return await fetchImpl(input, init);
+  } catch (error) {
+    throw new ProviderAuthError(
+      'github-copilot',
+      `GitHub device flow request failed to ${input}: ${formatNetworkFailureReason(error)}`,
+    );
+  }
+}
+
+async function parseGitHubJsonResponse<T>(response: Response, requestUrl: string, operation: string): Promise<T> {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+
+  if (!contentType.includes('application/json')) {
+    const responseText = (await response.text()).trim();
+    const snippet = responseText.slice(0, 160);
+    throw new ProviderAuthError(
+      'github-copilot',
+      `GitHub ${operation} returned non-JSON content from ${requestUrl}. Check githubCopilot.deviceCodeUrl; it should use the API endpoint https://github.com/login/device/code. Response preview: ${snippet}`,
+    );
+  }
+
+  try {
+    return await response.json() as T;
+  } catch (error) {
+    throw new ProviderAuthError(
+      'github-copilot',
+      `GitHub ${operation} returned invalid JSON from ${requestUrl}: ${formatNetworkFailureReason(error)}`,
+    );
+  }
 }
 
 export function persistGitHubCopilotDeviceAuth(
@@ -245,4 +290,23 @@ function defaultWait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+function formatNetworkFailureReason(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const cause = error.cause;
+  if (cause && typeof cause === 'object') {
+    const causeCode = 'code' in cause ? cause.code : undefined;
+    const causeMessage = 'message' in cause ? cause.message : undefined;
+    const details = [causeCode, causeMessage].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+    if (details.length > 0) {
+      return `${error.message} (${details.join(': ')})`;
+    }
+  }
+
+  return error.message;
 }

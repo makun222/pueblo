@@ -52,6 +52,7 @@ describe('interactive cli session', () => {
       startAgentSession() {
         throw new Error('not implemented for interactive test');
       },
+      setProgressReporter() {},
       databaseClose() {},
     };
 

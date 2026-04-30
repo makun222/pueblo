@@ -14,6 +14,17 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     submitInput: cli.submitInput,
   });
 
+  cli.setProgressReporter((message) => {
+    runtime.publish({
+      block: createOutputBlock({
+        type: 'system',
+        title: 'GitHub Device Login',
+        content: message,
+        sourceRefs: [],
+      }),
+    });
+  });
+
   runtime.onMessage((message: RuntimeMessage) => {
     mainWindow.webContents.send('output', message.block);
   });

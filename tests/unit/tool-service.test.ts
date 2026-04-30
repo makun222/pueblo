@@ -11,6 +11,7 @@ import {
   providerExecToolInputSchema,
   providerGlobToolInputSchema,
   providerGrepToolInputSchema,
+  providerReadToolInputSchema,
 } from '../../src/providers/provider-adapter';
 import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
 
@@ -59,7 +60,37 @@ describeIfNodeSqlite('tool service', () => {
         description: 'Run a local executable command without a shell using the workspace as cwd.',
         inputSchema: providerExecToolInputSchema,
       },
+      {
+        name: 'read',
+        description: 'Read a workspace text file and return numbered lines with bounded output.',
+        inputSchema: providerReadToolInputSchema,
+      },
     ]);
+  });
+
+  it('reads a workspace file with bounded numbered output', async () => {
+    const repository = {
+      create() {
+        throw new Error('not used');
+      },
+      listByTask() {
+        return [];
+      },
+    } as unknown as ToolInvocationRepository;
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-read-tool-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'sample.txt'), 'alpha\nbeta\ngamma', 'utf8');
+    const service = new ToolService({ repository, cwd: tempDir });
+
+    const result = await service.execute({
+      taskId: 'task-1',
+      toolName: 'read',
+      args: { path: 'sample.txt' },
+    });
+
+    expect(result.output.toolName).toBe('read');
+    expect(result.output.status).toBe('succeeded');
+    expect(result.output.output).toEqual(['1: alpha', '2: beta', '3: gamma']);
   });
 
   it('persists tool invocation history for a task', async () => {

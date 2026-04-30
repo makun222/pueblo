@@ -62,7 +62,7 @@ describeIfNodeSqlite('deepseek auth command', () => {
     const cli = createCliDependencies(config, { credentialStore: store });
 
     try {
-      const authResult = await cli.dispatcher.dispatch({ input: '/auth-deepseek deepseek-secret deepseek-v4-pro https://api.deepseek.com' });
+      const authResult = await cli.dispatcher.dispatch({ input: '/provider-config deepseek set-key deepseek-secret deepseek-v4-pro https://api.deepseek.com' });
       const modelResult = await cli.dispatcher.dispatch({ input: '/model deepseek deepseek-v4-pro' });
       const listResult = await cli.dispatcher.dispatch({ input: '/model' });
       const savedConfig = JSON.parse(fs.readFileSync(path.join(tempDir, '.pueblo', 'config.json'), 'utf8')) as {

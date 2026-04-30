@@ -2,12 +2,14 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { createOutputBlock } from '../../shared/result';
 import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 import { setupIpcHandlers } from './ipc';
+import { installDesktopApplicationMenu } from './menu';
 import { createWindow } from './window';
 
 let mainWindow: BrowserWindow | null = null;
 
 function createMainWindow(): void {
   mainWindow = createWindow();
+  installDesktopApplicationMenu(mainWindow);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -61,11 +63,30 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
     modelMessageCharCount: 0,
     selectedPromptCount: 0,
     selectedMemoryCount: 0,
+    availableProviders: [],
     backgroundSummaryStatus: {
       state: 'idle',
       activeSummarySessionId: null,
       lastSummaryAt: null,
       lastSummaryMemoryId: null,
+    },
+    providerStatuses: {
+      githubCopilot: {
+        providerId: 'github-copilot',
+        authState: 'missing',
+        credentialSource: 'env',
+        defaultModelId: null,
+        credentialTarget: null,
+        oauthClientIdConfigured: false,
+      },
+      deepseek: {
+        providerId: 'deepseek',
+        authState: 'missing',
+        credentialSource: 'env',
+        defaultModelId: null,
+        credentialTarget: null,
+        baseUrl: 'https://api.deepseek.com',
+      },
     },
   };
 
