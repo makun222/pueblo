@@ -1,0 +1,20 @@
+{
+  "id": "7b36ec40-b758-4caf-baba-8c6c295505fd",
+  "type": "short-term",
+  "title": "Summary: Turn 22",
+  "content": "No file or directory matching \"pepe-worker-process\" found in repository; user asked to verify name or location.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa33d793-fdda-4e8a-b3e2-c3184e629c7e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.072Z",
+  "updatedAt": "2026-05-01T14:45:17.072Z"
+}

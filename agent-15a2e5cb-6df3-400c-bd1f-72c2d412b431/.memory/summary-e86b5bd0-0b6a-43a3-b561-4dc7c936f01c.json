@@ -1,0 +1,20 @@
+{
+  "id": "e86b5bd0-0b6a-43a3-b561-4dc7c936f01c",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "用户请求查看pueblo整体架构，助手要求提供具体操作或讨论主题以进一步协助。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "88b8775f-a224-40e2-b0ed-5c4bd8cc6325",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.940Z",
+  "updatedAt": "2026-05-01T14:45:55.940Z"
+}

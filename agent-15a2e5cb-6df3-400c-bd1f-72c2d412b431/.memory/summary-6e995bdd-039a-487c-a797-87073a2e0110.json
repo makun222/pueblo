@@ -1,0 +1,20 @@
+{
+  "id": "6e995bdd-039a-487c-a797-87073a2e0110",
+  "type": "short-term",
+  "title": "Summary: Turn 16",
+  "content": "Pueblo is a CLI code agent built with TypeScript and Node.js (Node.js 22 LTS required). Features include CLI/desktop integration, GitHub Copilot and DeepSeek provider support, session management, tool utilities (grep, glob, exec), and SQLite local persistence. Configuration is read from `.pueblo/config.json` (auto-created with defaults). Build with `npm run build`, test with `npm test`, launch via `node dist/cli/index.js`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3b00890d-51ec-4ba6-b0b2-dd486c8e216a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:29.941Z",
+  "updatedAt": "2026-05-01T14:45:29.941Z"
+}

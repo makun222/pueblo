@@ -1,0 +1,18 @@
+{
+  "id": "47c7dedb-cd43-4875-9b13-c732b6e22734",
+  "type": "short-term",
+  "title": "Turn 26",
+  "content": "User:\npepe-worker-process.ts\n\nAssistant:\nThere are no files named `pepe-worker-process.ts` in the repository. Please verify the file name or its location.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T07:26:54.338Z",
+  "updatedAt": "2026-04-30T07:26:54.338Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "0efd1a53-0d77-4b10-99ff-50c5fc568b40",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe is a background memory monitor that uses local character n-gram vectorization and LLM summarization to prune irrelevant conversation-turn memories when context token utilization exceeds 85%, writing filtered memory IDs back to session state for transparent integration.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:07.012Z",
+  "updatedAt": "2026-05-01T14:45:07.012Z"
+}

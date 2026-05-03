@@ -1,0 +1,20 @@
+{
+  "id": "3a2692bc-b661-4fda-8056-7543e22bff8f",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "US global strategy: forward military bases in Europe, Asia-Pacific, Middle East; Indo-Pacific alignment to counter China; NATO deterrence against Russia; increased focus on cyber/information warfare; continued counterterrorism in Middle East and Africa; economic/tech competition in AI, 5G, critical minerals.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:26.345Z",
+  "updatedAt": "2026-05-01T14:45:26.345Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "036e6456-10d4-4d39-85a5-cbf9d704fd10",
+  "type": "short-term",
+  "title": "Summary: Turn 17",
+  "content": "User requested optimization suggestions; assistant listed 6 areas: performance, complexity reduction, testability, readability, error handling, resource management. Assistant asked for specific target or code snippet for detailed advice.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4361ee59-526a-4d12-80ad-da8d1684a884",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:26.318Z",
+  "updatedAt": "2026-05-01T14:45:26.318Z"
+}

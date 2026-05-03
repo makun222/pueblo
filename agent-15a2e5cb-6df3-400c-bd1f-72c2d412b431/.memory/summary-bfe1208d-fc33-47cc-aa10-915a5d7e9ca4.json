@@ -1,0 +1,20 @@
+{
+  "id": "bfe1208d-fc33-47cc-aa10-915a5d7e9ca4",
+  "type": "short-term",
+  "title": "Summary: Turn 12",
+  "content": "用户要求解析当前目录代码功能，助手请求提供具体路径或文件。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "41437adf-4674-4ff2-a001-d63759598d1a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:18.201Z",
+  "updatedAt": "2026-05-01T14:46:18.201Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "3e71684d-adf8-40f2-9467-b3e560eeaf38",
+  "type": "short-term",
+  "title": "Summary: Turn 7",
+  "content": "User inquired about China-US relations; assistant requested clarification on specific aspect (economy, military, technology, etc.).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "00e2a12f-1bfa-4f66-b27d-592ddc9bd3a6",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:24.000Z",
+  "updatedAt": "2026-05-01T14:45:24.000Z"
+}

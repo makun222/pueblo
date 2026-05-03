@@ -1,0 +1,20 @@
+{
+  "id": "692aeb0e-90c9-40b3-a240-a1231e1cf1fe",
+  "type": "short-term",
+  "title": "Summary: Turn 25",
+  "content": "Found 21 source files in `src/agent` (services, repositories, embedding, workers, supervisor, task context). User now intends to study Pueblo’s overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "81fa592b-93f3-4a01-836a-330b6554e2c3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.885Z",
+  "updatedAt": "2026-05-01T14:46:40.885Z"
+}

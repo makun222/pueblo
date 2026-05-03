@@ -1,0 +1,20 @@
+{
+  "id": "ba817c6c-39dc-4f80-8cfc-2bc215b99ac9",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "Directory `D:\\workspace\\trends\\pueblo\\src\\agent` contains 21 files including agent-instance-repository.ts, agent-instance-service.ts, pepe-* components (embedding, memory, ranking, semantic, supervisor, worker), task-related files, and others.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.457Z",
+  "updatedAt": "2026-05-01T14:45:19.457Z"
+}

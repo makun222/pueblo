@@ -1,6 +1,9 @@
 import type { AppConfig } from '../shared/config';
 import type { AgentInstanceService } from './agent-instance-service';
 import { mergeAgentTemplateWithPuebloProfile } from './agent-profile-templates';
+import { PepeResultService } from './pepe-result-service';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { MemoryService } from '../memory/memory-service';
 import type { PromptService } from '../prompts/prompt-service';
 import type { ProviderRegistry } from '../providers/provider-registry';
@@ -12,6 +15,7 @@ import {
   type ProviderProfile,
   type Session,
 } from '../shared/schema';
+import { selectRecentMessagesForPrompt } from './task-message-builder';
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
@@ -48,6 +52,8 @@ export interface ContextResolverDependencies {
   readonly memoryService: MemoryService;
   readonly agentInstanceService: AgentInstanceService;
   readonly providerRegistry: ProviderRegistry;
+  readonly pepeResultService?: PepeResultService;
+  readonly resolveBackgroundSummaryStatus?: (sessionId: string | null) => BackgroundSummaryStatus;
   readonly puebloProfileLoader?: PuebloProfileLoader;
 }
 
@@ -88,9 +94,14 @@ export class ContextBudgetService {
 export class ContextResolver {
   private readonly profileLoader: PuebloProfileLoader;
   private readonly budgetService = new ContextBudgetService();
+  private readonly pepeResultService: PepeResultService;
 
   constructor(private readonly dependencies: ContextResolverDependencies) {
     this.profileLoader = dependencies.puebloProfileLoader ?? new PuebloProfileLoader();
+    this.pepeResultService = dependencies.pepeResultService ?? new PepeResultService(
+      dependencies.memoryService,
+      dependencies.config.pepe,
+    );
   }
 
   resolve(input: ResolveContextInput = {}): ResolvedContext {
@@ -104,7 +115,6 @@ export class ContextResolver {
       defaultProviderId: this.dependencies.config.defaultProviderId,
     });
     const prompts = this.dependencies.promptService.resolvePromptSelection(session?.selectedPromptIds ?? []);
-    const memories = this.dependencies.memoryService.resolveMemorySelection(session?.selectedMemoryIds ?? []);
     const agentInstance = this.dependencies.agentInstanceService.getAgentInstance(session?.agentInstanceId);
     const selectedTemplate = this.dependencies.agentInstanceService.getProfileTemplate(agentInstance?.profileId ?? this.dependencies.config.defaultAgentProfileId ?? '');
     const puebloProfile = mergeAgentTemplateWithPuebloProfile(
@@ -113,6 +123,17 @@ export class ContextResolver {
     );
     const sessionMessages = session?.messageHistory ?? [];
     const recentMessages = sessionMessages.map(formatSessionMessageForContext);
+    const promptRecentMessages = selectRecentMessagesForPrompt(recentMessages);
+    const targetDirectory = resolveTargetDirectory({
+      pendingUserInput: input.pendingUserInput,
+      sessionMessages,
+    });
+    const resolvedPepeResult = this.pepeResultService.resolve({
+      sessionId: session?.id ?? input.activeSessionId ?? null,
+      agentInstanceId: agentInstance?.id ?? null,
+      selectedMemoryIds: session?.selectedMemoryIds ?? [],
+      pendingUserInput: input.pendingUserInput,
+    });
     const contextCount = this.budgetService.compute({
       puebloTexts: [
         ...puebloProfile.roleDirectives,
@@ -126,13 +147,13 @@ export class ContextResolver {
         puebloProfile.summaryPolicy.lineageHint ?? '',
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
-      memoryTexts: memories.map((memory) => memory.content),
-      recentMessages: [],
+      memoryTexts: resolvedPepeResult.resultItems.map((item) => item.summary),
+      recentMessages: promptRecentMessages,
       pendingUserInput: input.pendingUserInput,
       modelContextWindow: selection.model?.contextWindow ?? null,
-      derivedMemoryCount: memories.filter((memory) => memory.derivationType === 'summary' || memory.summaryDepth > 0).length,
+      derivedMemoryCount: resolvedPepeResult.sourceMemories.filter((memory) => memory.derivationType === 'summary' || memory.summaryDepth > 0).length,
     });
-    const backgroundSummaryStatus: BackgroundSummaryStatus = {
+    const backgroundSummaryStatus = this.dependencies.resolveBackgroundSummaryStatus?.(session?.id ?? input.activeSessionId ?? null) ?? {
       state: 'idle',
       activeSummarySessionId: null,
       lastSummaryAt: null,
@@ -142,12 +163,14 @@ export class ContextResolver {
       config: this.dependencies.config,
       session,
       currentSessionId: session?.id ?? input.activeSessionId ?? null,
+      targetDirectory,
       providerId: selection.provider?.id ?? null,
       providerName: selection.provider?.name ?? selection.provider?.id ?? null,
       selectedModelId: selection.model?.id ?? null,
       selectedModelName: selection.model?.name ?? selection.model?.id ?? null,
       prompts,
-      memories,
+      resultSet: resolvedPepeResult.resultSet,
+      resultItems: resolvedPepeResult.resultItems,
       sessionMessages,
       recentMessages,
       puebloProfile,
@@ -168,7 +191,7 @@ export class ContextResolver {
         activeSessionId: taskContext.sessionId,
         contextCount,
         selectedPromptCount: prompts.length,
-        selectedMemoryCount: memories.length,
+        selectedMemoryCount: resolvedPepeResult.resultItems.length,
         backgroundSummaryStatus,
       },
     };
@@ -233,4 +256,55 @@ function estimateTokens(input: string): number {
   }
 
   return Math.max(1, Math.ceil(trimmed.length / 4));
+}
+
+function resolveTargetDirectory(args: {
+  readonly pendingUserInput?: string;
+  readonly sessionMessages: Session['messageHistory'];
+}): string | null {
+  const candidateInputs = [
+    args.pendingUserInput ?? '',
+    ...[...args.sessionMessages]
+      .reverse()
+      .filter((message) => message.role === 'user')
+      .map((message) => message.content),
+  ];
+
+  for (const inputText of candidateInputs) {
+    for (const candidatePath of extractAbsolutePaths(inputText)) {
+      const resolvedDirectory = resolveDirectoryCandidate(candidatePath);
+      if (resolvedDirectory) {
+        return resolvedDirectory;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractAbsolutePaths(inputText: string): string[] {
+  const matches = inputText.match(/[A-Za-z]:(?:\\|\/)[^\s"'<>|，。；;,!?)\]]+/g) ?? [];
+  return matches.map((match) => match.replace(/[，。；;,.!?)\]]+$/u, ''));
+}
+
+function resolveDirectoryCandidate(candidatePath: string): string | null {
+  try {
+    const normalizedPath = path.normalize(candidatePath);
+    if (!fs.existsSync(normalizedPath)) {
+      return null;
+    }
+
+    const stat = fs.statSync(normalizedPath);
+    if (stat.isDirectory()) {
+      return normalizedPath;
+    }
+
+    if (stat.isFile()) {
+      return path.dirname(normalizedPath);
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }

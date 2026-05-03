@@ -1,0 +1,20 @@
+{
+  "id": "c9559de6-e79f-40e0-b943-01165cdd0fe0",
+  "type": "short-term",
+  "title": "Summary: Turn 17",
+  "content": "User requested optimization plan; assistant suggested focusing on performance, complexity, testability, readability, error handling, and resource management, but asked for specific code or goals for detailed advice.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4361ee59-526a-4d12-80ad-da8d1684a884",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.088Z",
+  "updatedAt": "2026-05-01T14:45:17.088Z"
+}

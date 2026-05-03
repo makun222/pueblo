@@ -1,0 +1,20 @@
+{
+  "id": "45bea19c-42ac-420c-9098-5938a881c327",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "Pepe process optimization: set similarity threshold appropriately to avoid dialogue drift; consider context retention, dynamic adjustment, and enhanced semantic analysis.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.921Z",
+  "updatedAt": "2026-05-01T14:45:55.921Z"
+}

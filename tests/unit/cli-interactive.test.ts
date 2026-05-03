@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CliDependencies } from '../../src/cli/index';
-import { runInteractiveCliSession } from '../../src/cli/index';
+import { renderToolApprovalPrompt, runInteractiveCliSession } from '../../src/cli/index';
 import { successResult } from '../../src/shared/result';
 
 describe('interactive cli session', () => {
@@ -53,6 +53,7 @@ describe('interactive cli session', () => {
         throw new Error('not implemented for interactive test');
       },
       setProgressReporter() {},
+      setToolApprovalHandler() {},
       databaseClose() {},
     };
 
@@ -70,5 +71,28 @@ describe('interactive cli session', () => {
     expect(writes.join('')).toContain('[HANDLED] Handled /ping');
     expect(writes.join('')).toContain('[HANDLED] Handled inspect workflow');
     expect(writes.join('')).toContain('Exiting Pueblo CLI.');
+  });
+
+  it('renders approval previews with title and detail blocks', () => {
+    const prompt = renderToolApprovalPrompt({
+      taskId: 'task-1',
+      toolName: 'edit',
+      args: {
+        path: 'src/example.ts',
+        oldText: 'old',
+        newText: 'new',
+      },
+      title: 'Allow edit in src/example.ts?',
+      summary: 'src/example.ts @ lines 3-4\n@@ lines 3-4 @@\n- old\n+ new',
+      detail: 'Path: src/example.ts\n\nScope: lines 3-4\n\n@@ lines 3-4 @@\n- old\n+ new',
+    });
+
+    expect(prompt).toContain('[TOOL APPROVAL] edit');
+    expect(prompt).toContain('Allow edit in src/example.ts?');
+    expect(prompt).toContain('src/example.ts @ lines 3-4');
+    expect(prompt).toContain('@@ lines 3-4 @@');
+    expect(prompt).toContain('- old');
+    expect(prompt).toContain('+ new');
+    expect(prompt).toContain('Approve? (y/N)');
   });
 });

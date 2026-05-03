@@ -1,0 +1,20 @@
+{
+  "id": "7592532d-4706-47fa-9afe-762578a371d8",
+  "type": "short-term",
+  "title": "Summary: Turn 773",
+  "content": "User requested file listing for D:\\workspace\\KnowledgeBase\\knowledgeBase but assistant failed due to prompt token count (82198) exceeding the 64000 limit.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0a05d84a-ecea-4bcd-80af-91010cdd7eff",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:45:20.445Z",
+  "updatedAt": "2026-05-02T13:45:20.445Z"
+}

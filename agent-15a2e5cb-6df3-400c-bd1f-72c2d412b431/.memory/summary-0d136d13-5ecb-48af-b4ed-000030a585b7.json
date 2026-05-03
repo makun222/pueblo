@@ -1,0 +1,20 @@
+{
+  "id": "0d136d13-5ecb-48af-b4ed-000030a585b7",
+  "type": "short-term",
+  "title": "Summary: Turn 18",
+  "content": "User greeted but assistant encountered a network error (GitHub Copilot fetch failed); now user asks to see the overall architecture of \"pueblo\".",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "30996acf-d7b1-4651-96d7-86c3c4721e2d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.608Z",
+  "updatedAt": "2026-05-01T14:46:11.608Z"
+}

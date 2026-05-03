@@ -1,0 +1,20 @@
+{
+  "id": "86b2ac39-d99e-4a85-ab54-2df10cd72f69",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Implemented Pepe monitoring service: triggers at >85% context utilization (30s cooldown), summarizes conversation-turn memories via LLM, vectorizes with local char 3-gram hashing (256d), filters by cosine similarity >0.3, updates session.selectedMemoryIds. Pepe is optional, runs in background during AgentTaskRunner, uses ProviderAdapter for LLM calls.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:29.979Z",
+  "updatedAt": "2026-05-01T14:45:29.979Z"
+}

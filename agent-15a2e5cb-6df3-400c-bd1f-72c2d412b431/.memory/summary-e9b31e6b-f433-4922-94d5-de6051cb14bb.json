@@ -1,0 +1,20 @@
+{
+  "id": "e9b31e6b-f433-4922-94d5-de6051cb14bb",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe: a background thread in AgentTaskRunner that monitors context token utilization; when >85%, summarizes each conversation-turn memory via LLM, computes local 256-dim character 3-gram vectors, filters memories by cosine similarity (>0.3) to current goal, and writes kept IDs to `session.selectedMemoryIds`. Uses cooling (30s) and min-memory (3) guards. Vectorization is local (no external embedding API). Pepe is optional, uses existing ProviderAdapter. Lifecycle: start/stop around agent loop.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:48.797Z",
+  "updatedAt": "2026-05-01T14:45:48.797Z"
+}

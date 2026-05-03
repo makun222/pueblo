@@ -1,0 +1,20 @@
+{
+  "id": "ab148e45-fe48-4892-917e-30a5dd20e517",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "US strategic layout analyzed: global military bases for power projection, Indo-Pacific alliance countering China, NATO/Eastern Europe presence deterring Russia, emphasis on cyber/info warfare, ongoing counterterrorism, and economic-tech competition (AI, 5G, critical minerals).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.494Z",
+  "updatedAt": "2026-05-01T14:45:19.494Z"
+}

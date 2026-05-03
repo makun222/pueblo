@@ -1,0 +1,20 @@
+{
+  "id": "0740a4b0-3c8a-4974-94dd-577a5058a826",
+  "type": "short-term",
+  "title": "Summary: Turn 13",
+  "content": "User path `D:\\workspace\\trends\\pueblo` caused GitHub Copilot request failure (400) with prompt token count 180081 exceeding limit of 64000.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2a4080a4-a3f7-4e9a-976c-d5d9a91a091c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.747Z",
+  "updatedAt": "2026-05-01T14:45:16.747Z"
+}

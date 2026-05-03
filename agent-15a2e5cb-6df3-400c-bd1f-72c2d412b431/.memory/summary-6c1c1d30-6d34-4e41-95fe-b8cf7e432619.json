@@ -1,0 +1,20 @@
+{
+  "id": "6c1c1d30-6d34-4e41-95fe-b8cf7e432619",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "美国全球战略布局涵盖军事基地、亚太印太制衡、北约东欧防务、信息战网络安全、反恐及经济科技竞争等关键领域。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.914Z",
+  "updatedAt": "2026-05-01T14:46:40.914Z"
+}

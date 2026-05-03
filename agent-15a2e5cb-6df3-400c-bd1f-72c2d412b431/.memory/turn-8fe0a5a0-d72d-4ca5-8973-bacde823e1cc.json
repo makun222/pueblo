@@ -1,0 +1,18 @@
+{
+  "id": "8fe0a5a0-d72d-4ca5-8973-bacde823e1cc",
+  "type": "short-term",
+  "title": "Turn 786",
+  "content": "User:\n我们来看一下这个目录下的工程是做什么用的？路径：D:\\workspace\\KnowledgeBase\\knowledgeBase\n\nAssistant:\n好的，我已经对这个项目有了全面的了解。下面是详细介绍：\n\n---\n\n## 📚 项目概况 — `knowledge-base` 知识库引擎\n\n### 一句话概括\n\n这是一个**轻量级的 Java 知识库构建与可视化引擎**，能够从**图片、视频、音频、文档**等多种多媒体学习材料中自动提取\"概念(Notion)\"及其关系，并将它们构建成结构化的知识图谱进行可视化展示。\n\n---\n\n### 🧱 技术栈\n\n| 层面 | 技术 |\n|------|------|\n| **后端语言** | Java 8（兼容 Java 1.8） |\n| **构建工具** | Maven（`pom.xml`，含 Maven Wrapper `mvnw`） |\n| **数据库** | H2 Database（嵌入式，支持文件持久化） |\n| **LLM 集成** | OpenAI 兼容接口（用于 OCR/转录、文本提取、关系推理） |\n| **前端 UI** | React + Vite（`web-ui/` 目录，使用 **Cytoscape.js** 渲染知识图谱） |\n| **多媒体处理** | FFmpeg（用于音视频预处理） |\n\n---\n\n### 🏗️ 整体架构 — 四步流水线\n\n项目核心是一个**四步流水线**：\n\n```\n收集(Gather) → 构建(Build) → 推理关系(Infer Relations) → 可视化(Visualise)\n```\n\n#### 1️⃣ 收集（Gather）\n- 从**图片、视频、音频、文档**注册学习材料\n- 通过 **OpenAI 兼容 API** 进行 OCR（图片/视频帧）或语音转录（音频）\n- 直接读取本地文本文件（txt/md/json/csv/xml/yaml 等）\n- 将文本分块后，调用 LLM 提取**概念(Notion)**\n\n#### 2️⃣ 构建（Build）\n- 将提取到的概念存入知识库（支持 **JSON 文件存储** 或 **H2 数据库存储**）\n\n#### 3️⃣ 推理关系（Infer Relations）\n- 调用 LLM 分析概念之间的**有向关系**（如 \"A 是 B 的子类\"、\"A 影响 B\"）\n- 支持可选的 **人工引导提示词(prompt)** 来指导关系推理方向\n\n#### 4️⃣ 可视化（Visualise）\n- **命令行模式**：输出格式化文本知识图谱\n- **Web UI 模式**：通过 React 前端 + Cytoscape.js 渲染交互式图谱，支持 BFS 聚焦子图\n\n---\n\n### 📂 核心源码结构\n\n```\nsrc/main/java/com/knowledge/\n├── model/                  # 数据模型\n│   ├── Notion.java         # 概念实体\n│   ├── NotionRelation.java # 概念间有向关系\n│   ├── StudyMaterial.java  # 学习材料\n│   ├── MediaType.java      # 媒体类型枚举\n│   ├── LlmProvider.java    # LLM 提供商配置\n│   ├── LlmServiceConfig.java\n│   └── InferenceConfig.java\n├── service/                # 服务接口\n│   ├── KnowledgeBaseService.java\n│   ├── KnowledgeMapService.java\n│   ├── MediaProcessingService.java\n│   ├── MediaPreprocessingService.java\n│   ├── MediaTextExtractionService.java\n│   ├── TextKnowledgeExtractionService.java\n│   └── NotionRelationInferenceService.java\n├── service/impl/           # 服务实现\n│   ├── KnowledgeBaseServiceImpl.java\n│   ├── KnowledgeMapServiceImpl.java\n│   ├── MediaProcessingServiceImpl.java\n│   ├── FfmpegMediaPreprocessingService.java\n│   ├── OpenAiCompatibleMediaTextExtractionService.java\n│   ├── OpenAiCompatibleTextKnowledgeExtractionService.java\n│   ├── OpenAiCompatibleNotionRelationInferenceService.java\n│   ├── H2KnowledgeBaseStore.java\n│   ├── JsonFileKnowledgeBaseStore.java\n│   └── ... (含 Fallback/Noop 策略)\n├── web/                    # Web 服务器\n│   ├── KnowledgeMapHttpServer.java\n│   ├── KnowledgeMapWebApplication.java\n│   └── H2WebStateStore.java\n└── KnowledgeBaseApplication.java  # 应用入口\n```\n\n---\n\n### 🚀 运行方式\n\n项目配有脚本支持**全栈启动**：\n\n| 脚本 | 用途 |\n|------|------|\n| `scripts/start-fullstack.ps1` | 启动 Java 后端 + React 前端 |\n| `scripts/stop-fullstack.ps1` | 停止服务 |\n| `scripts/e2e-smoke.ps1` | 端到端冒烟测试 |\n\n---\n\n### 🔧 配置文件\n\n| 文件 | 用途 |\n|------|------|\n| `llm-config.json` | LLM 服务配置（API Key、模型名称等） |\n| `inference-config.json` | 推理参数配置 |\n| `knowledge-base-data.json` | 序列化知识库数据 |\n\n---\n\n### 📝 总结\n\n这是一个**将多媒体学习材料自动转化为结构化知识图谱**的工具。它利用 LLM（大语言模型）从视频、图片、音频、文档中提取核心概念及其关系，最终以**交互式图谱**（Web UI）或**文本地图**（CLI）的形式呈现，非常适合用于学习笔记整理、知识管理、研究材料分析等场景。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T14:57:46.630Z",
+  "updatedAt": "2026-05-02T14:57:46.630Z"
+}

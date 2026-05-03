@@ -1,0 +1,20 @@
+{
+  "id": "402a4ad3-5b9a-47bb-958c-e9bc18eff853",
+  "type": "short-term",
+  "title": "Summary: Turn 766",
+  "content": "User queried project analysis at D:\\workspace\\KnowledgeBase\\knowledgeBase, but assistant failed due to network error.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "d8bf95cf-d233-4f1a-a4bf-5b16372b4533",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:43:06.864Z",
+  "updatedAt": "2026-05-02T13:43:06.864Z"
+}

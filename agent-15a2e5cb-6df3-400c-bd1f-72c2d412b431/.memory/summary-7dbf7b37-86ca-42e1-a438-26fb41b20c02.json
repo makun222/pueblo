@@ -1,0 +1,20 @@
+{
+  "id": "7dbf7b37-86ca-42e1-a438-26fb41b20c02",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "The `src/agent` directory contains 21 files including core agent modules: types (`pepe-types.ts`), services (`pepe-result-service.ts`, `pepe-semantic-client.ts`, `pepe-local-embedding-client.ts`), memory mirror (`pepe-memory-mirror.ts`), supervisor (`pepe-supervisor.ts`), worker (`pepe-worker.ts`, `pepe-worker-process.ts`, `pepe-worker-protocol.ts`), task runner (`task-runner.ts`), repository (`task-repository.ts`, `agent-instance-repository.ts`), and profile/template loaders (`pueblo-profile.ts`, `agent-profile-templates.ts`, `agent-template-loader.ts`). This inventory provides a high-level view of the agent architecture for future retrieval.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.010Z",
+  "updatedAt": "2026-05-01T14:46:08.010Z"
+}

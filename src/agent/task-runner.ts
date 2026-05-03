@@ -1,7 +1,9 @@
 import { AgentTaskRepository } from './task-repository';
 import type { AgentTask } from '../shared/schema';
 import { buildLegacyProviderMessages, buildProviderMessages } from './task-message-builder';
-import type {
+import {
+  getToolExecutionPolicy,
+  type ProviderToolArgs,
   ProviderMessage,
   ProviderRunResult,
   ProviderStepResult,
@@ -9,9 +11,10 @@ import type {
   ProviderToolCall,
 } from '../providers/provider-adapter';
 import { ProviderRegistry } from '../providers/provider-registry';
-import type { PromptAsset, MemoryRecord } from '../shared/schema';
+import type { PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
 import { ToolService } from '../tools/tool-service';
+import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
 
 export interface RunAgentTaskInput {
@@ -22,14 +25,28 @@ export interface RunAgentTaskInput {
   readonly inputContextSummary: string;
   readonly taskContext?: TaskContext;
   readonly prompts?: PromptAsset[];
-  readonly memories?: MemoryRecord[];
+  readonly memoryIds?: string[];
 }
 
 export interface AgentTaskRunnerOptions {
   readonly maxSteps?: number;
+  readonly requestToolApproval?: ToolApprovalHandler;
 }
 
+export interface ToolApprovalRequest {
+  readonly taskId: string;
+  readonly toolName: ProviderToolName;
+  readonly args: ProviderToolArgs;
+  readonly title: string;
+  readonly summary: string;
+  readonly detail: string;
+}
+
+export type ToolApprovalHandler = (request: ToolApprovalRequest) => Promise<boolean>;
+
 const DEFAULT_MAX_AGENT_STEPS = 24;
+const DEFAULT_TOOL_PREVIEW_ITEM_LIMIT = 12;
+const READ_TOOL_PREVIEW_ITEM_LIMIT = 24;
 
 interface AgentStepTraceEntry {
   readonly stepNumber: number;
@@ -46,6 +63,7 @@ interface ModelMessageTraceEntry {
 
 export class AgentTaskRunner {
   private readonly maxSteps: number;
+  private readonly requestToolApproval?: ToolApprovalHandler;
 
   constructor(
     private readonly providerRegistry: ProviderRegistry,
@@ -54,6 +72,7 @@ export class AgentTaskRunner {
     options: AgentTaskRunnerOptions = {},
   ) {
     this.maxSteps = resolveAgentTaskStepLimit(options.maxSteps);
+    this.requestToolApproval = options.requestToolApproval;
   }
 
   async run(input: RunAgentTaskInput): Promise<AgentTask> {
@@ -97,6 +116,7 @@ export class AgentTaskRunner {
         adapter,
         modelId: input.modelId,
         taskId: task.id,
+        executionCwd: input.taskContext?.targetDirectory ?? undefined,
         availableTools,
         executionMessages,
         toolOutputs,
@@ -143,7 +163,7 @@ export class AgentTaskRunner {
     return JSON.stringify({
       inputContextSummary: input.inputContextSummary,
       promptIds: this.getPrompts(input).map((prompt) => prompt.id),
-      memoryIds: this.getMemories(input).map((memory) => memory.id),
+      memoryIds: this.getMemoryIds(input),
     });
   }
 
@@ -151,6 +171,7 @@ export class AgentTaskRunner {
     readonly adapter: ReturnType<ProviderRegistry['getAdapter']>;
     readonly modelId: string;
     readonly taskId: string;
+    readonly executionCwd?: string;
     readonly availableTools: ReturnType<ToolService['describeTools']>;
     readonly executionMessages: ProviderMessage[];
     readonly toolOutputs: Awaited<ReturnType<ToolService['runForTask']>>['outputs'];
@@ -161,9 +182,10 @@ export class AgentTaskRunner {
     const messages = [...args.executionMessages];
 
     for (let stepIndex = 0; stepIndex < this.maxSteps; stepIndex += 1) {
+      const stepMessages = prepareMessagesForModel(messages);
       args.modelMessageTrace.push({
         stepNumber: stepIndex + 1,
-        messages: messages.map((message) => ({
+        messages: stepMessages.map((message) => ({
           role: message.role,
           content: message.content,
           toolCallId: message.toolCallId,
@@ -174,7 +196,7 @@ export class AgentTaskRunner {
 
       const result = await args.adapter.runStep({
         modelId: args.modelId,
-        messages,
+        messages: stepMessages,
         availableTools: args.availableTools,
       });
 
@@ -203,7 +225,7 @@ export class AgentTaskRunner {
 
       const toolExecutions = [] as Array<Awaited<ReturnType<typeof this.executeToolCall>>>;
       for (const toolCall of requestedToolCalls) {
-        const toolExecution = await this.executeToolCall(args.taskId, toolCall);
+        const toolExecution = await this.executeToolCall(args.taskId, toolCall, args.executionCwd);
         args.toolInvocationIds.push(toolExecution.invocation.id);
         args.toolOutputs.push(toolExecution.output);
         args.stepTrace.push({
@@ -242,11 +264,7 @@ export class AgentTaskRunner {
         }
         messages.push({
           role: 'tool',
-          content: JSON.stringify({
-            status: toolExecution.output.status,
-            summary: toolExecution.output.summary,
-            output: toolExecution.output.output,
-          }),
+          content: serializeToolResultForModel(toolExecution.output),
           toolCallId: toolCall.toolCallId,
           toolName: toolCall.toolName,
         });
@@ -256,7 +274,7 @@ export class AgentTaskRunner {
     throw new Error(`Agent task exceeded ${this.maxSteps} steps without producing a final response`);
   }
 
-  private executeToolCall(taskId: string, result: ProviderToolCall) {
+  private executeToolCall(taskId: string, result: ProviderToolCall, executionCwd?: string) {
     if (!this.toolService) {
       throw new Error(`Tool service is required to execute tool call: ${result.toolName}`);
     }
@@ -267,34 +285,93 @@ export class AgentTaskRunner {
       args: result.args,
     });
 
-    switch (result.toolName) {
+    return this.executeToolCallWithApproval({ taskId, result, inputSummary, executionCwd });
+  }
+
+  private async executeToolCallWithApproval(args: {
+    readonly taskId: string;
+    readonly result: ProviderToolCall;
+    readonly inputSummary: string;
+    readonly executionCwd?: string;
+  }) {
+    if (!this.toolService) {
+      throw new Error(`Tool service is required to execute tool call: ${args.result.toolName}`);
+    }
+
+    if (getToolExecutionPolicy(args.result.toolName) === 'approval-required') {
+      const approvalDescription = this.toolService.describeApproval(args.result);
+      const approved = await this.requestToolApproval?.({
+        taskId: args.taskId,
+        toolName: args.result.toolName,
+        args: args.result.args,
+        title: approvalDescription.title,
+        summary: approvalDescription.summary,
+        detail: approvalDescription.detail,
+      }) ?? false;
+
+      if (!approved) {
+        const output: ToolExecutionResult = {
+          toolName: args.result.toolName,
+          status: 'failed',
+          summary: `Execution denied: user approval is required before running ${args.result.toolName}`,
+          output: [
+            `tool: ${args.result.toolName}`,
+            'approvalRequired: true',
+            'approved: false',
+          ],
+        };
+        const invocation = this.toolService.recordInvocation({
+          toolName: args.result.toolName,
+          taskId: args.taskId,
+          inputSummary: args.inputSummary,
+          resultStatus: output.status,
+          resultSummary: output.summary,
+        });
+
+        return { invocation, output };
+      }
+    }
+
+    switch (args.result.toolName) {
       case 'glob':
         return this.toolService.execute({
-          taskId,
+          taskId: args.taskId,
           toolName: 'glob',
-          args: result.args,
-          inputSummary,
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
         });
       case 'grep':
         return this.toolService.execute({
-          taskId,
+          taskId: args.taskId,
           toolName: 'grep',
-          args: result.args,
-          inputSummary,
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
         });
       case 'exec':
         return this.toolService.execute({
-          taskId,
+          taskId: args.taskId,
           toolName: 'exec',
-          args: result.args,
-          inputSummary,
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
         });
       case 'read':
         return this.toolService.execute({
-          taskId,
+          taskId: args.taskId,
           toolName: 'read',
-          args: result.args,
-          inputSummary,
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
+        });
+      case 'edit':
+        return this.toolService.execute({
+          taskId: args.taskId,
+          toolName: 'edit',
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
         });
     }
   }
@@ -325,6 +402,12 @@ export class AgentTaskRunner {
           toolName: result.toolName,
           args: result.args,
         };
+      case 'edit':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
     }
   }
 
@@ -340,8 +423,8 @@ export class AgentTaskRunner {
     return input.taskContext?.prompts ?? input.prompts ?? [];
   }
 
-  private getMemories(input: RunAgentTaskInput): MemoryRecord[] {
-    return input.taskContext?.memories ?? input.memories ?? [];
+  private getMemoryIds(input: RunAgentTaskInput): string[] {
+    return input.taskContext?.resultItems.map((item) => item.memoryId) ?? input.memoryIds ?? [];
   }
 
   private createCompletedOutputSummary(
@@ -352,11 +435,16 @@ export class AgentTaskRunner {
     stepTrace: AgentStepTraceEntry[],
     modelMessageTrace: ModelMessageTraceEntry[],
   ) {
+    const targetDirectory = input.taskContext?.targetDirectory ?? null;
+    const toolExecutionCwd = this.resolveTaskExecutionCwd(input);
+
     return withSourceAttribution(
       {
         outputSummary: response.outputSummary,
+        targetDirectory,
+        toolExecutionCwd,
         promptIds: this.getPrompts(input).map((prompt) => prompt.id),
-        memoryIds: this.getMemories(input).map((memory) => memory.id),
+        memoryIds: this.getMemoryIds(input),
         toolInvocationIds,
         toolNames: toolOutputs.map((output) => output.toolName),
         modelMessageTrace,
@@ -365,12 +453,13 @@ export class AgentTaskRunner {
           toolName: output.toolName,
           status: output.status,
           summary: output.summary,
+          executionCwd: toolExecutionCwd,
         })),
       },
       {
         modelOutput: response.outputSummary,
         promptIds: this.getPrompts(input).map((prompt) => prompt.id),
-        memoryIds: this.getMemories(input).map((memory) => memory.id),
+        memoryIds: this.getMemoryIds(input),
         toolNames: toolOutputs.map((output) => output.toolName),
       },
     );
@@ -387,11 +476,15 @@ export class AgentTaskRunner {
     modelMessageTrace: ModelMessageTraceEntry[],
     error: unknown,
   ): void {
+    const targetDirectory = input.taskContext?.targetDirectory ?? null;
+    const toolExecutionCwd = this.resolveTaskExecutionCwd(input);
     const failureOutput = withSourceAttribution(
       {
         outputSummary: `Task failed: ${this.getErrorMessage(error)}`,
+        targetDirectory,
+        toolExecutionCwd,
         promptIds: this.getPrompts(input).map((prompt) => prompt.id),
-        memoryIds: this.getMemories(input).map((memory) => memory.id),
+        memoryIds: this.getMemoryIds(input),
         toolInvocationIds,
         toolNames: toolOutputs.map((output) => output.toolName),
         modelMessageTrace,
@@ -400,12 +493,13 @@ export class AgentTaskRunner {
           toolName: output.toolName,
           status: output.status,
           summary: output.summary,
+          executionCwd: toolExecutionCwd,
         })),
       },
       {
         modelOutput: response?.outputSummary,
         promptIds: this.getPrompts(input).map((prompt) => prompt.id),
-        memoryIds: this.getMemories(input).map((memory) => memory.id),
+        memoryIds: this.getMemoryIds(input),
         toolNames: toolOutputs.map((output) => output.toolName),
       },
     );
@@ -432,6 +526,84 @@ export class AgentTaskRunner {
     }
 
     return String(error);
+  }
+
+  private resolveTaskExecutionCwd(input: RunAgentTaskInput): string | null {
+    if (input.taskContext?.targetDirectory) {
+      return input.taskContext.targetDirectory;
+    }
+
+    const toolServiceWithDefaultCwd = this.toolService as { getDefaultExecutionCwd?: () => string } | undefined;
+    return toolServiceWithDefaultCwd?.getDefaultExecutionCwd?.() ?? null;
+  }
+}
+
+function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[] {
+  let firstTrailingToolIndex = messages.length;
+  while (firstTrailingToolIndex > 0 && messages[firstTrailingToolIndex - 1]?.role === 'tool') {
+    firstTrailingToolIndex -= 1;
+  }
+
+  return messages.map((message, index) => {
+    if (message.role !== 'tool' || index >= firstTrailingToolIndex) {
+      return message;
+    }
+
+    return {
+      ...message,
+      content: compactSerializedToolMessage(message),
+    };
+  });
+}
+
+function serializeToolResultForModel(output: ToolExecutionResult): string {
+  return JSON.stringify({
+    status: output.status,
+    summary: output.summary,
+    output: output.output,
+  });
+}
+
+function compactSerializedToolMessage(message: ProviderMessage): string {
+  const parsed = parseSerializedToolContent(message.content);
+  if (!parsed) {
+    return message.content;
+  }
+
+  const previewLimit = message.toolName === 'read' ? READ_TOOL_PREVIEW_ITEM_LIMIT : DEFAULT_TOOL_PREVIEW_ITEM_LIMIT;
+  const preview = parsed.output.slice(0, previewLimit);
+
+  return JSON.stringify({
+    status: parsed.status,
+    summary: parsed.summary,
+    outputPreview: preview,
+    outputCount: parsed.output.length,
+    outputTruncated: preview.length < parsed.output.length,
+    compression: 'older-tool-result-compacted',
+    guidance: 'Older tool result was compacted to reduce prompt size. Re-run the tool with narrower arguments if exact full output is needed again.',
+  });
+}
+
+function parseSerializedToolContent(content: string): { status: string; summary: string; output: string[] } | null {
+  try {
+    const parsed = JSON.parse(content) as {
+      status?: unknown;
+      summary?: unknown;
+      output?: unknown;
+    };
+
+    if (typeof parsed.status !== 'string' || typeof parsed.summary !== 'string' || !Array.isArray(parsed.output)) {
+      return null;
+    }
+
+    const output = parsed.output.filter((entry): entry is string => typeof entry === 'string');
+    return {
+      status: parsed.status,
+      summary: parsed.summary,
+      output,
+    };
+  } catch {
+    return null;
   }
 }
 

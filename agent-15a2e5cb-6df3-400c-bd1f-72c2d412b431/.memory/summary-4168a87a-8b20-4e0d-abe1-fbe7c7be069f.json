@@ -1,0 +1,20 @@
+{
+  "id": "4168a87a-8b20-4e0d-abe1-fbe7c7be069f",
+  "type": "short-term",
+  "title": "Summary: Turn 797",
+  "content": "The `knowledge-base` project (D:\\workspace\\KnowledgeBase\\knowledgeBase) is a Java 8 Maven engine that extracts concepts from multimedia via LLM OCR/ASR and fallback, infers relations (e.g., DEPENDS_ON) using OpenAI API, and visualizes a knowledge graph with Cytoscape.js + React/Vite; it runs as CLI demo, web API, or full-stack app with H2/JSON storage.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "478dff01-19f5-42b6-af0d-9236521eb95e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:29:33.639Z",
+  "updatedAt": "2026-05-02T15:29:33.639Z"
+}

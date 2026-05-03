@@ -1,0 +1,18 @@
+{
+  "id": "00e2a12f-1bfa-4f66-b27d-592ddc9bd3a6",
+  "type": "short-term",
+  "title": "Turn 7",
+  "content": "User:\n中美局势\n\nAssistant:\n请您具体说明您希望讨论的中美局势的哪一方面，比如经济、军事、科技合作等，这样我能提供更为具体的帮助。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T03:38:36.706Z",
+  "updatedAt": "2026-04-30T03:38:36.706Z"
+}

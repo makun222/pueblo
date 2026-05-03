@@ -1,0 +1,20 @@
+{
+  "id": "251ed747-87f2-4ffd-b2cb-57ddc0bf6648",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "The `src/agent` directory at `D:\\workspace\\trends\\pueblo\\src\\agent` contains 21 files including agent services, embedding clients, memory mirror, worker, task runner, and type definitions. Key entities: path, file list.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:48.769Z",
+  "updatedAt": "2026-05-01T14:45:48.769Z"
+}

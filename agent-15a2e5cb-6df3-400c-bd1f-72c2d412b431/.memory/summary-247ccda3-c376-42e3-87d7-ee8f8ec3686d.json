@@ -1,0 +1,20 @@
+{
+  "id": "247ccda3-c376-42e3-87d7-ee8f8ec3686d",
+  "type": "short-term",
+  "title": "Summary: Turn 793",
+  "content": "知识库引擎项目 `knowledge-base`（Java 8, Maven）使用 LLM 从多媒体（图片/视频/音频/文档）中提取概念与关系，通过 H2 或 JSON 持久化，并借助 Cytoscape.js 在 Web 或 CLI 中呈现交互式知识图谱。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2936de03-c5a1-4fe4-aade-bb5251d92fdb",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:28:04.940Z",
+  "updatedAt": "2026-05-02T15:28:04.940Z"
+}

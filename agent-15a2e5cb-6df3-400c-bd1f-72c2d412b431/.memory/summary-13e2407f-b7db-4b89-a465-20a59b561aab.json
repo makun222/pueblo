@@ -1,0 +1,20 @@
+{
+  "id": "13e2407f-b7db-4b89-a465-20a59b561aab",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe memory distillation system: a background thread that monitors agent context token usage, summarizes each conversation-turn memory via LLM, computes local n-gram vectors (256-dim), and filters memories by cosine similarity to current goal, writing relevant IDs back to session. Integration is optional via `PepeService`, with cooldown to prevent over-triggering.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.637Z",
+  "updatedAt": "2026-05-01T14:46:11.637Z"
+}

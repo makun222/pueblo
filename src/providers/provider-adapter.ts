@@ -1,15 +1,23 @@
 import { z } from 'zod';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'read';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'read' | 'edit';
+export type ToolExecutionPolicy = 'free' | 'approval-required';
 
 interface ProviderJsonSchemaStringProperty {
   readonly type: 'string';
   readonly description?: string;
 }
 
+interface ProviderJsonSchemaIntegerProperty {
+  readonly type: 'integer';
+  readonly description?: string;
+}
+
+type ProviderJsonSchemaProperty = ProviderJsonSchemaStringProperty | ProviderJsonSchemaIntegerProperty;
+
 interface ProviderToolInputSchema {
   readonly type: 'object';
-  readonly properties: Record<string, ProviderJsonSchemaStringProperty>;
+  readonly properties: Record<string, ProviderJsonSchemaProperty>;
   readonly required: readonly string[];
   readonly additionalProperties: false;
 }
@@ -31,11 +39,48 @@ export const providerReadToolArgsSchema = z.object({
   path: z.string().trim().min(1),
 });
 
+export const providerEditToolArgsSchema = z.object({
+  path: z.string().trim().min(1),
+  oldText: z.string().min(1),
+  newText: z.string(),
+  startLine: z.coerce.number().int().positive().optional(),
+  endLine: z.coerce.number().int().positive().optional(),
+}).superRefine((value, context) => {
+  const hasStartLine = value.startLine !== undefined;
+  const hasEndLine = value.endLine !== undefined;
+
+  if (hasStartLine !== hasEndLine) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'startLine and endLine must be provided together',
+      path: hasStartLine ? ['endLine'] : ['startLine'],
+    });
+  }
+
+  if (hasStartLine && hasEndLine) {
+    const startLine = value.startLine;
+    const endLine = value.endLine;
+
+    if (startLine === undefined || endLine === undefined) {
+      return;
+    }
+
+    if (startLine > endLine) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startLine must be less than or equal to endLine',
+        path: ['startLine'],
+      });
+    }
+  }
+});
+
 export type ProviderGlobToolArgs = z.infer<typeof providerGlobToolArgsSchema>;
 export type ProviderGrepToolArgs = z.infer<typeof providerGrepToolArgsSchema>;
 export type ProviderExecToolArgs = z.infer<typeof providerExecToolArgsSchema>;
 export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
-export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs;
+export type ProviderEditToolArgs = z.infer<typeof providerEditToolArgsSchema>;
+export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs;
 export type ProviderToolCall =
   | {
       readonly toolCallId: string;
@@ -56,6 +101,11 @@ export type ProviderToolCall =
       readonly toolCallId: string;
       readonly toolName: 'read';
       readonly args: ProviderReadToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'edit';
+      readonly args: ProviderEditToolArgs;
     };
 
 export const providerGlobToolInputSchema: ProviderToolInputSchema = {
@@ -103,10 +153,38 @@ export const providerReadToolInputSchema: ProviderToolInputSchema = {
   properties: {
     path: {
       type: 'string',
-      description: 'Workspace-relative file path to read as UTF-8 text.',
+      description: 'Workspace-relative file path or absolute file path within the workspace to read as UTF-8 text.',
     },
   },
   required: ['path'],
+  additionalProperties: false,
+};
+
+export const providerEditToolInputSchema: ProviderToolInputSchema = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Workspace-relative file path or absolute file path within the workspace to edit.',
+    },
+    oldText: {
+      type: 'string',
+      description: 'Exact existing text to replace. Must match exactly once in the target file.',
+    },
+    newText: {
+      type: 'string',
+      description: 'Replacement text that will be written into the target file.',
+    },
+    startLine: {
+      type: 'integer',
+      description: 'Optional 1-based starting line for a constrained block edit. Must be provided with endLine.',
+    },
+    endLine: {
+      type: 'integer',
+      description: 'Optional 1-based ending line for a constrained block edit. Must be provided with startLine.',
+    },
+  },
+  required: ['path', 'oldText', 'newText'],
   additionalProperties: false,
 };
 
@@ -124,6 +202,7 @@ export interface ProviderToolDefinition {
   readonly name: ProviderToolName;
   readonly description: string;
   readonly inputSchema: ProviderToolInputSchema;
+  readonly executionPolicy: ToolExecutionPolicy;
 }
 
 export interface ProviderStepContext {
@@ -166,6 +245,14 @@ export type ProviderStepResult =
       readonly toolCallId: string;
       readonly toolName: 'read';
       readonly args: ProviderReadToolArgs;
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
+    }
+  | {
+      readonly type: 'tool-call';
+      readonly toolCallId: string;
+      readonly toolName: 'edit';
+      readonly args: ProviderEditToolArgs;
       readonly rationale?: string;
       readonly reasoningContent?: string;
     }
@@ -238,6 +325,7 @@ export function parseProviderToolArgs(toolName: 'glob', rawArgs: unknown): Provi
 export function parseProviderToolArgs(toolName: 'grep', rawArgs: unknown): ProviderGrepToolArgs;
 export function parseProviderToolArgs(toolName: 'exec', rawArgs: unknown): ProviderExecToolArgs;
 export function parseProviderToolArgs(toolName: 'read', rawArgs: unknown): ProviderReadToolArgs;
+export function parseProviderToolArgs(toolName: 'edit', rawArgs: unknown): ProviderEditToolArgs;
 export function parseProviderToolArgs(toolName: ProviderToolName, rawArgs: unknown): ProviderToolArgs {
   switch (toolName) {
     case 'glob':
@@ -248,5 +336,19 @@ export function parseProviderToolArgs(toolName: ProviderToolName, rawArgs: unkno
       return providerExecToolArgsSchema.parse(rawArgs);
     case 'read':
       return providerReadToolArgsSchema.parse(rawArgs);
+    case 'edit':
+      return providerEditToolArgsSchema.parse(rawArgs);
+  }
+}
+
+export function getToolExecutionPolicy(toolName: ProviderToolName): ToolExecutionPolicy {
+  switch (toolName) {
+    case 'exec':
+    case 'edit':
+      return 'approval-required';
+    case 'glob':
+    case 'grep':
+    case 'read':
+      return 'free';
   }
 }

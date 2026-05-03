@@ -1,0 +1,20 @@
+{
+  "id": "f0a1f859-1b23-4327-8b22-7f1edb67d83f",
+  "type": "short-term",
+  "title": "Summary: Turn 6",
+  "content": "User sought to discuss current situation; assistant requested clarification. User now shifts focus to Pueblo's overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f410c21d-38e6-4f24-8373-ec8049b8f408",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.323Z",
+  "updatedAt": "2026-05-01T14:46:24.323Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "37f66fa5-781b-488c-a135-5e262193183b",
+  "type": "short-term",
+  "title": "Summary: Turn 22",
+  "content": "User asked to parse \"pepe-worker-process\" but assistant couldn't find it in the repository; advised verifying the name or location.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa33d793-fdda-4e8a-b3e2-c3184e629c7e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:26.303Z",
+  "updatedAt": "2026-05-01T14:45:26.303Z"
+}

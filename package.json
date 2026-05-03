@@ -15,6 +15,8 @@
     "dev:renderer": "vite --config vite.desktop.config.ts",
     "dev:desktop": "npm run build:main && electron .",
     "rebuild:electron-native": "electron-rebuild -f -w better-sqlite3",
+    "package:win": "powershell -ExecutionPolicy Bypass -File ./scripts/release-windows.ps1 -SkipBuild",
+    "release:win": "powershell -ExecutionPolicy Bypass -File ./scripts/release-windows.ps1",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -23,7 +25,6 @@
   "dependencies": {
     "better-sqlite3": "^12.1.1",
     "commander": "^14.0.0",
-    "electron": "^37.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^4.1.12"
@@ -37,6 +38,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^37.10.3",
     "eslint": "^9.38.0",
     "jsdom": "^27.0.0",
     "prettier": "^3.6.2",

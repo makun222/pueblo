@@ -620,6 +620,27 @@ body {
   background: #fff5f5;
 }
 
+.chat-entry-answer-pending {
+  border-style: dashed;
+  border-color: rgba(141, 167, 197, 0.95);
+  color: #3d5874;
+}
+
+.chat-entry-answer-pending .chat-entry-body {
+  position: relative;
+}
+
+.chat-entry-answer-pending .chat-entry-body::after {
+  content: '';
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: rgba(17, 103, 196, 0.7);
+  animation: pueblo-caret-blink 0.9s steps(1, end) infinite;
+}
+
 .chat-entry-label {
   margin-bottom: 6px;
   font-size: 11px;
@@ -657,6 +678,16 @@ body {
 
 .output-block-system summary {
   cursor: pointer;
+}
+
+@keyframes pueblo-caret-blink {
+  0%, 49% {
+    opacity: 1;
+  }
+
+  50%, 100% {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 720px) {

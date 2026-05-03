@@ -1,0 +1,20 @@
+{
+  "id": "e7b2094c-2515-4648-92a3-857d3184db9e",
+  "type": "short-term",
+  "title": "Summary: Turn 26",
+  "content": "User asked about `pepe-worker-process.ts`; it was not found in the repository.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "47c7dedb-cd43-4875-9b13-c732b6e22734",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.284Z",
+  "updatedAt": "2026-05-01T14:46:24.284Z"
+}

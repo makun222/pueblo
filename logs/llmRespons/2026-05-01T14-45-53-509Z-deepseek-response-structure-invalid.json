@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-05-01T14:45:53.509Z",
+  "providerId": "deepseek",
+  "category": "response-structure-invalid",
+  "message": "DeepSeek response payload did not include message content",
+  "requestUrl": "https://api.deepseek.com/chat/completions",
+  "modelId": "deepseek-v4-flash",
+  "payload": {
+    "id": "e9718d2d-91f0-4189-b097-84e433969932",
+    "object": "chat.completion",
+    "created": 1777646751,
+    "model": "deepseek-v4-flash",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "reasoning_content": "我们分析当前输入\"让我们看一下pueblo的整体架构吧\"与记忆\"Turn 8\"（用户说\"军事方面\"助理回应）的关系。当前输入转向讨论pueblo架构，与之前军事话题无关。记忆蒸馏应忽略不相关记忆，输出空或简洁说明。但指令要求输出蒸馏摘要，若无关则输出空字符串？通常应只输出相关蒸馏。此处无相关，故输出空。"
+        },
+        "logprobs": null,
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 110,
+      "completion_tokens": 90,
+      "total_tokens": 200,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 89
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 110
+    },
+    "system_fingerprint": "fp_058df29938_prod0820_fp8_kvcache_20260402"
+  },
+  "details": {
+    "name": "ProviderError",
+    "message": "DeepSeek response payload did not include message content",
+    "stack": "ProviderError: DeepSeek response payload did not include message content\n    at extractDeepSeekStepResult (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:212:11)\n    at DeepSeekAdapter.runStep (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:58:20)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async DeepSeekAdapter.runTask (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:74:24)\n    at async PepeSemanticClient.summarizeMemory (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\pepe-semantic-client.js:41:24)\n    at async processPepeSessionSnapshot (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\pepe-worker-process.js:16:29)\n    at async MessagePort.<anonymous> (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\pepe-worker.js:25:24)"
+  }
+}

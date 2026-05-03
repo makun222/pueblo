@@ -1,0 +1,20 @@
+{
+  "id": "e609300d-597b-4b25-94a0-24f882611ceb",
+  "type": "short-term",
+  "title": "Summary: Turn 790",
+  "content": "User inquired about project at D:\\workspace\\KnowledgeBase\\knowledgeBase; assistant failed due to DeepSeek API network request error.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "ea9f4467-4277-43e0-ad7f-57c354f4298b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:26:45.756Z",
+  "updatedAt": "2026-05-02T15:26:45.756Z"
+}

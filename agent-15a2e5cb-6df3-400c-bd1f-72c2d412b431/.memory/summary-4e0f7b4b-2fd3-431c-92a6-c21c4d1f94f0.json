@@ -1,0 +1,20 @@
+{
+  "id": "4e0f7b4b-2fd3-431c-92a6-c21c4d1f94f0",
+  "type": "short-term",
+  "title": "Summary: Turn 25",
+  "content": "在`pueblo`的`src/agent`目录下列出21个文件，包括`pepe-*`、`task-*`、`agent-*`等，用于展示代理模块的整体架构。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "81fa592b-93f3-4a01-836a-330b6554e2c3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.824Z",
+  "updatedAt": "2026-05-01T14:46:08.824Z"
+}

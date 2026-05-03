@@ -1,0 +1,20 @@
+{
+  "id": "b18d2683-1192-4c12-ae08-0a907b75850a",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "User requested to examine the overall architecture of Pueblo. Assistant asked for more specific details about the operation or discussion topic.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "88b8775f-a224-40e2-b0ed-5c4bd8cc6325",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.852Z",
+  "updatedAt": "2026-05-01T14:46:08.852Z"
+}

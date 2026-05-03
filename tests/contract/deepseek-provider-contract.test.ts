@@ -5,7 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { DeepSeekAdapter } from '../../src/providers/deepseek-adapter';
 import { resolveDeepSeekAuth } from '../../src/providers/deepseek-auth';
 import { createDeepSeekProfile } from '../../src/providers/deepseek-profile';
-import { providerGlobToolInputSchema, providerReadToolInputSchema, type ProviderAdapter, type ProviderStepContext } from '../../src/providers/provider-adapter';
+import {
+  getToolExecutionPolicy,
+  providerGlobToolInputSchema,
+  providerReadToolInputSchema,
+  type ProviderAdapter,
+  type ProviderStepContext,
+} from '../../src/providers/provider-adapter';
 import { createTestAppConfig } from '../helpers/test-config';
 
 describe('DeepSeek Provider Contract', () => {
@@ -197,6 +203,7 @@ describe('DeepSeek Provider Contract', () => {
         {
           name: 'glob',
           description: 'Find files by glob pattern',
+          executionPolicy: getToolExecutionPolicy('glob'),
           inputSchema: providerGlobToolInputSchema,
         },
       ],
@@ -312,11 +319,13 @@ describe('DeepSeek Provider Contract', () => {
         {
           name: 'glob',
           description: 'Find files by glob pattern',
+          executionPolicy: getToolExecutionPolicy('glob'),
           inputSchema: providerGlobToolInputSchema,
         },
         {
           name: 'grep',
           description: 'Search file contents',
+          executionPolicy: getToolExecutionPolicy('grep'),
           inputSchema: {
             type: 'object',
             properties: {
@@ -417,6 +426,7 @@ describe('DeepSeek Provider Contract', () => {
         {
           name: 'read',
           description: 'Read a file',
+          executionPolicy: getToolExecutionPolicy('read'),
           inputSchema: providerReadToolInputSchema,
         },
       ],

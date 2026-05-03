@@ -1,0 +1,20 @@
+{
+  "id": "28a2b71c-722b-4fe1-a85d-c5edf6d4a220",
+  "type": "short-term",
+  "title": "Summary: Turn 5",
+  "content": "User failed to start agent, then requested overview of Pueblo architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c39b8d48-0f74-459a-9a86-feb680935318",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.424Z",
+  "updatedAt": "2026-05-01T14:46:23.424Z"
+}

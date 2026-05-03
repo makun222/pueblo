@@ -1,0 +1,20 @@
+{
+  "id": "161e271a-5f3a-4809-811a-782980be1465",
+  "type": "short-term",
+  "title": "Summary: Turn 7",
+  "content": "用户提及“中美局势”，助手要求用户具体说明经济、军事或科技等具体方面。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "00e2a12f-1bfa-4f66-b27d-592ddc9bd3a6",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.919Z",
+  "updatedAt": "2026-05-01T14:46:40.919Z"
+}

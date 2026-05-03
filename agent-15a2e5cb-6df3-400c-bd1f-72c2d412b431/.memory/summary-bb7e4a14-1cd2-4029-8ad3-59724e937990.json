@@ -1,0 +1,20 @@
+{
+  "id": "bb7e4a14-1cd2-4029-8ad3-59724e937990",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "pepe进程优化中，similarity阈值过低导致对话飘忽；建议调整阈值、保留上下文、动态调参并增强语义分析以稳定对话。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.398Z",
+  "updatedAt": "2026-05-01T14:46:23.398Z"
+}

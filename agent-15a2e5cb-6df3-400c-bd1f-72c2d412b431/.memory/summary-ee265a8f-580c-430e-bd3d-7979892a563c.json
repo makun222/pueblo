@@ -1,0 +1,20 @@
+{
+  "id": "ee265a8f-580c-430e-bd3d-7979892a563c",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "Pepe进程需优化：相似度阈值过低会导致对话飘忽；建议调整阈值、保留上下文、动态调整相似度及增强语义分析。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:06.961Z",
+  "updatedAt": "2026-05-01T14:45:06.961Z"
+}

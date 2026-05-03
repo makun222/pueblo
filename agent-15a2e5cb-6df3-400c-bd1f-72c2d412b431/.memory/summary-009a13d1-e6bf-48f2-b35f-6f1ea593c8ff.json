@@ -1,0 +1,20 @@
+{
+  "id": "009a13d1-e6bf-48f2-b35f-6f1ea593c8ff",
+  "type": "short-term",
+  "title": "Summary: Turn 8",
+  "content": "用户提及“军事方面”但未具体说明，助手要求澄清具体关注点（军备竞赛、战略布局、海洋安全等）。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7cf1fe56-9d6e-452f-8a23-fe3d71279a0c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.319Z",
+  "updatedAt": "2026-05-01T14:46:24.319Z"
+}

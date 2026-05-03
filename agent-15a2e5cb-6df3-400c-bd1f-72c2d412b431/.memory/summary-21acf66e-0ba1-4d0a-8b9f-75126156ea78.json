@@ -1,0 +1,20 @@
+{
+  "id": "21acf66e-0ba1-4d0a-8b9f-75126156ea78",
+  "type": "short-term",
+  "title": "Summary: Turn 28",
+  "content": "Pueblo v0.1.0 is a CLI-first + Electron desktop code agent framework written in TypeScript (Node.js 22 LTS), built with tsc and Vite, tested with Vitest, and persisted via SQLite (better-sqlite3). Core architecture: input routing → command dispatch or agent execution → LLM provider adapters (GitHub Copilot, DeepSeek) → tool calls (exec, glob, grep, read) → SQLite persistence, with a built-in Pepe semantic memory system (embedding, retrieval, ranking).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "53c4740c-ee32-4193-a0e6-a321b792e445",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:34.001Z",
+  "updatedAt": "2026-05-01T14:45:34.001Z"
+}

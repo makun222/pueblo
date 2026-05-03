@@ -1,0 +1,20 @@
+{
+  "id": "e6327783-bbe3-4c34-a8ea-11a06d865c45",
+  "type": "short-term",
+  "title": "Summary: Turn 753",
+  "content": "KnowledgeBase Maven project at D:\\workspace\\KnowledgeBase\\knowledgeBase includes inference/LLM config, SQLite databases, web UI, `knowledge-map.html`, scripts, source code, README, and optimization roadmap.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4f51840f-978d-40fc-a634-cc3a5871e662",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T12:31:58.211Z",
+  "updatedAt": "2026-05-02T12:31:58.211Z"
+}

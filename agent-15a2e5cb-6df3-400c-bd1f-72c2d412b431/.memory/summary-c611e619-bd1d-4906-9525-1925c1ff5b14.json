@@ -1,0 +1,20 @@
+{
+  "id": "c611e619-bd1d-4906-9525-1925c1ff5b14",
+  "type": "short-term",
+  "title": "Summary: Turn 780",
+  "content": "User greeted with \"你好\", assistant replied with greeting and offer of help.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "9bd8adec-2fea-4673-939b-f3dfd392c74b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T14:26:21.298Z",
+  "updatedAt": "2026-05-02T14:26:21.298Z"
+}

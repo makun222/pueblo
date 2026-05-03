@@ -1,10 +1,11 @@
 import { createElement } from 'react';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/desktop/renderer/App';
 import type { ProviderProfile, RendererOutputBlock } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
+let submitInputMock: ReturnType<typeof vi.fn>;
 
 const availableProviders: ProviderProfile[] = [
   {
@@ -19,44 +20,46 @@ const availableProviders: ProviderProfile[] = [
 ];
 
 beforeEach(() => {
+  vi.useRealTimers();
   outputListener = null;
+  submitInputMock = vi.fn().mockResolvedValue({
+    result: undefined,
+    blocks: [],
+    runtimeStatus: {
+      providerId: 'github-copilot',
+      providerName: 'GitHub Copilot',
+      agentProfileId: 'code-master',
+      agentProfileName: 'Code Master',
+      agentInstanceId: 'agent-1',
+      modelId: 'copilot-chat',
+      modelName: 'GPT-5.4',
+      activeSessionId: 'session-1',
+      contextCount: {
+        estimatedTokens: 12,
+        contextWindowLimit: 32000,
+        utilizationRatio: 0.0004,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+      },
+      modelMessageCount: 0,
+      modelMessageCharCount: 0,
+      selectedPromptCount: 0,
+      selectedMemoryCount: 0,
+      availableProviders,
+      backgroundSummaryStatus: {
+        state: 'idle',
+        activeSummarySessionId: null,
+        lastSummaryAt: null,
+        lastSummaryMemoryId: null,
+      },
+    },
+  });
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
-      submitInput: vi.fn().mockResolvedValue({
-        result: undefined,
-        blocks: [],
-        runtimeStatus: {
-          providerId: 'github-copilot',
-          providerName: 'GitHub Copilot',
-          agentProfileId: 'code-master',
-          agentProfileName: 'Code Master',
-          agentInstanceId: 'agent-1',
-          modelId: 'copilot-chat',
-          modelName: 'GPT-5.4',
-          activeSessionId: 'session-1',
-          contextCount: {
-            estimatedTokens: 12,
-            contextWindowLimit: 32000,
-            utilizationRatio: 0.0004,
-            messageCount: 0,
-            selectedPromptCount: 0,
-            selectedMemoryCount: 0,
-            derivedMemoryCount: 0,
-          },
-          modelMessageCount: 0,
-          modelMessageCharCount: 0,
-          selectedPromptCount: 0,
-          selectedMemoryCount: 0,
-          availableProviders,
-          backgroundSummaryStatus: {
-            state: 'idle',
-            activeSummarySessionId: null,
-            lastSummaryAt: null,
-            lastSummaryMemoryId: null,
-          },
-        },
-      }),
+      submitInput: submitInputMock,
       getRuntimeStatus: vi.fn().mockResolvedValue({
         providerId: 'github-copilot',
         providerName: 'GitHub Copilot',
@@ -128,6 +131,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
 });
 
@@ -167,5 +171,103 @@ describe('Desktop Renderer', () => {
     const details = screen.getByText('Model Output').closest('details');
     expect(details).toBeTruthy();
     expect(details?.hasAttribute('open')).toBe(false);
+  });
+
+  it('clears the input immediately, shows a thinking placeholder, and streams the final answer', async () => {
+    let resolveSubmit: ((value: unknown) => void) | null = null;
+    submitInputMock.mockImplementation(() => new Promise((resolve) => {
+      resolveSubmit = resolve;
+    }));
+
+    render(createElement(App));
+
+    const input = await screen.findByPlaceholderText('Enter command or task...');
+    const form = screen.getByLabelText('input-region');
+
+    vi.useFakeTimers();
+
+    fireEvent.change(input, { target: { value: 'Inspect the current failure' } });
+
+    act(() => {
+      fireEvent.submit(form);
+    });
+
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(screen.getByText('让我想想该怎么做...')).toBeTruthy();
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'task-result-1',
+        type: 'task-result',
+        title: 'Output Summary',
+        content: 'First line of the answer. Second line of the answer.',
+        collapsed: false,
+        messageTrace: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(screen.getByText(/First line/)).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+      resolveSubmit?.({
+        result: undefined,
+        blocks: [
+          {
+            id: 'task-result-1',
+            type: 'task-result',
+            title: 'Output Summary',
+            content: 'First line of the answer. Second line of the answer.',
+            collapsed: false,
+            messageTrace: [],
+            sourceRefs: [],
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        },
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.runAllTimers();
+    });
+
+    expect(screen.getByText('First line of the answer. Second line of the answer.')).toBeTruthy();
   });
 });

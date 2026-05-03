@@ -1,0 +1,20 @@
+{
+  "id": "af98cc42-a35a-4250-9785-7494e33675b8",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "User requested code evaluation; Copilot failed due to prompt exceeding 64k token limit (83,233 tokens).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:56.847Z",
+  "updatedAt": "2026-05-01T14:45:56.847Z"
+}

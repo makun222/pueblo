@@ -1,0 +1,20 @@
+{
+  "id": "7d2edacb-360e-4285-bd52-a2610d708e3c",
+  "type": "short-term",
+  "title": "Summary: Turn 6",
+  "content": "User expressed interest in discussing current situation but did not specify a topic; assistant requested clarification on domain or subject.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f410c21d-38e6-4f24-8373-ec8049b8f408",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.921Z",
+  "updatedAt": "2026-05-01T14:46:40.921Z"
+}

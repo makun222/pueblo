@@ -1,0 +1,20 @@
+{
+  "id": "208e0f23-77a0-4833-a335-512bb4b7834f",
+  "type": "short-term",
+  "title": "Summary: Turn 13",
+  "content": "Working directory: `D:\\workspace\\trends\\pueblo`. GitHub Copilot request failed with token limit exceeded (180081 > 64000).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2a4080a4-a3f7-4e9a-976c-d5d9a91a091c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.109Z",
+  "updatedAt": "2026-05-01T14:45:17.109Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "ccdfd473-5f77-4c29-847c-2b1d27d8aeb5",
+  "type": "short-term",
+  "title": "Summary: Turn 25",
+  "content": "In `src/agent` directory, found 21 files including core Pepe modules: `pepe-worker.ts`, `pepe-supervisor.ts`, `pepe-types.ts`, `pepe-local-embedding-client.ts`, `pepe-memory-mirror.ts`, `pepe-result-service.ts`, and others.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "81fa592b-93f3-4a01-836a-330b6554e2c3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.385Z",
+  "updatedAt": "2026-05-01T14:46:23.385Z"
+}

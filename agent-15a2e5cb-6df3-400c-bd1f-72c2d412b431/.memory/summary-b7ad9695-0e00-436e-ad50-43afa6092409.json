@@ -1,0 +1,20 @@
+{
+  "id": "b7ad9695-0e00-436e-ad50-43afa6092409",
+  "type": "short-term",
+  "title": "Summary: Turn 793",
+  "content": "knowledge-base 是一个将多媒体学习材料自动转化为结构化知识图谱的 Java 引擎，使用 LLM 从图片/视频/音频/文档中提取概念及关系，通过 H2 或 JSON 持久化，前端以 Cytoscape.js 渲染交互式图谱。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2936de03-c5a1-4fe4-aade-bb5251d92fdb",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:28:02.425Z",
+  "updatedAt": "2026-05-02T15:28:02.425Z"
+}

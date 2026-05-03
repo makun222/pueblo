@@ -1,0 +1,20 @@
+{
+  "id": "e37ced8a-eeb9-49e0-9fff-a92abb61bab3",
+  "type": "short-term",
+  "title": "Summary: Turn 15",
+  "content": "User requested file parsing; assistant asked for file path. Then user shifted to discussing pueblo's overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "554dc564-e8ad-4c8b-9838-1154962f86fd",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.405Z",
+  "updatedAt": "2026-05-01T14:46:23.405Z"
+}

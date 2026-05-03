@@ -1,0 +1,20 @@
+{
+  "id": "929d6db9-9c9c-4043-a863-0967de284147",
+  "type": "short-term",
+  "title": "Summary: Turn 18",
+  "content": "User greeted; assistant attempted response but failed due to network error (GitHub Copilot request failed).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "30996acf-d7b1-4651-96d7-86c3c4721e2d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.400Z",
+  "updatedAt": "2026-05-01T14:46:23.400Z"
+}

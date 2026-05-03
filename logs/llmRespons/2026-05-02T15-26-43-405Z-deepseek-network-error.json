@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-05-02T15:26:43.405Z",
+  "providerId": "deepseek",
+  "category": "network-error",
+  "message": "DeepSeek network request failed",
+  "requestUrl": "https://api.deepseek.com/chat/completions",
+  "details": {
+    "name": "TypeError",
+    "message": "fetch failed",
+    "stack": "TypeError: fetch failed\n    at node:internal/deps/undici/undici:14900:13\n    at async DeepSeekAdapter.fetchWithProviderError (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:91:20)\n    at async DeepSeekAdapter.runStep (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:23:26)\n    at async AgentTaskRunner.runAgentLoop (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\task-runner.js:107:28)\n    at async AgentTaskRunner.run (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\task-runner.js:57:24)\n    at async runTask (D:\\workspace\\trends\\pueblo\\dist\\src\\cli\\index.js:289:26)\n    at async D:\\workspace\\trends\\pueblo\\dist\\src\\desktop\\main\\ipc.js:52:28\n    at async Session.<anonymous> (node:electron/js2c/browser_init:2:107253)"
+  },
+  "payload": null
+}

@@ -1,0 +1,20 @@
+{
+  "id": "5254d19a-113c-4a3e-963b-9b12b3d4aaed",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "User requested an overview of Pueblo's overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fbd37c65-1c24-4d8b-8051-ff9428fe10b9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.950Z",
+  "updatedAt": "2026-05-01T14:45:55.950Z"
+}

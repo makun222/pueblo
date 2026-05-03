@@ -1,0 +1,20 @@
+{
+  "id": "cbce48d1-6320-4fa2-b7f0-6cad71fd45f5",
+  "type": "short-term",
+  "title": "Summary: Turn 12",
+  "content": "User requested analysis of current directory code's purpose; assistant asked for specific path or files.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "41437adf-4674-4ff2-a001-d63759598d1a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:35.163Z",
+  "updatedAt": "2026-05-01T14:45:35.163Z"
+}

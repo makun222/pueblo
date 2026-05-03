@@ -1,0 +1,20 @@
+{
+  "id": "a38693c3-d209-4596-b793-21cbe09df640",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "Pepe process optimization: lower similarity thresholds cause erratic dialogue. Adjust threshold, retain context, dynamically tune similarity, and enhance semantic analysis to maintain stability.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.605Z",
+  "updatedAt": "2026-05-01T14:46:11.605Z"
+}

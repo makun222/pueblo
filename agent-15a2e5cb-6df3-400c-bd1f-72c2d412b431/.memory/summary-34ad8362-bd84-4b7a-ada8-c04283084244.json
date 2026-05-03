@@ -1,0 +1,20 @@
+{
+  "id": "34ad8362-bd84-4b7a-ada8-c04283084244",
+  "type": "short-term",
+  "title": "Summary: Turn 17",
+  "content": "Provided general optimization suggestions: performance, complexity reduction, testability, readability, error handling, and resource management. No specific code or decision given.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4361ee59-526a-4d12-80ad-da8d1684a884",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:48.775Z",
+  "updatedAt": "2026-05-01T14:45:48.775Z"
+}

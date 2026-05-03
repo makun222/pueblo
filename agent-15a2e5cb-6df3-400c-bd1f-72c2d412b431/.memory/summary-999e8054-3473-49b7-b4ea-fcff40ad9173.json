@@ -1,0 +1,20 @@
+{
+  "id": "999e8054-3473-49b7-b4ea-fcff40ad9173",
+  "type": "short-term",
+  "title": "Summary: Turn 8",
+  "content": "User inquired about US-China military aspects; assistant requested specification on focus areas like arms race, strategic layout, or maritime security.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7cf1fe56-9d6e-452f-8a23-fe3d71279a0c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.124Z",
+  "updatedAt": "2026-05-01T14:45:17.124Z"
+}

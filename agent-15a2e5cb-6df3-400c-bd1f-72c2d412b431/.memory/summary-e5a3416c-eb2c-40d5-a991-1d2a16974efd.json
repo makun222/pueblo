@@ -1,0 +1,20 @@
+{
+  "id": "e5a3416c-eb2c-40d5-a991-1d2a16974efd",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "Claude, a senior software engineer, is set up to assist with development and maintenance of the Pueblo codebase, including code review, bug fixes, feature implementation, and architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fbd37c65-1c24-4d8b-8051-ff9428fe10b9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:30.189Z",
+  "updatedAt": "2026-05-01T14:45:30.189Z"
+}

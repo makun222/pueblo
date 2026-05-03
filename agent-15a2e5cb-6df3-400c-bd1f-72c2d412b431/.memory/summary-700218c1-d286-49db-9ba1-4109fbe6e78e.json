@@ -1,0 +1,20 @@
+{
+  "id": "700218c1-d286-49db-9ba1-4109fbe6e78e",
+  "type": "short-term",
+  "title": "Summary: Turn 28",
+  "content": "Pueblo is a CLI-first + Electron desktop code agent framework written in TypeScript (Node.js 22 LTS). Core architecture: input routing → command dispatch / agent execution → provider adapters (GitHub Copilot, DeepSeek) → tool calls (exec/glob/grep/read) → SQLite persistence (better-sqlite3) with Pepe semantic memory system (embeddings + retrieval).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "53c4740c-ee32-4193-a0e6-a321b792e445",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:14.780Z",
+  "updatedAt": "2026-05-01T14:45:14.780Z"
+}

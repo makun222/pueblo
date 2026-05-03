@@ -1,0 +1,20 @@
+{
+  "id": "509339a6-a933-4f0a-ba45-2912a970f889",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "Claude (senior software engineer for Pueblo) introduces himself; user requests an overview of Pueblo's overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fbd37c65-1c24-4d8b-8051-ff9428fe10b9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.928Z",
+  "updatedAt": "2026-05-01T14:46:40.928Z"
+}

@@ -1,9 +1,10 @@
 import path from 'node:path';
 import type { AppConfig } from '../../src/shared/config';
 
-type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'githubCopilot'>> & {
+type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'pepe' | 'githubCopilot'>> & {
   desktopWindow?: Partial<AppConfig['desktopWindow']>;
   deepseek?: Partial<AppConfig['deepseek']>;
+  pepe?: Partial<AppConfig['pepe']>;
   githubCopilot?: Partial<AppConfig['githubCopilot']>;
 };
 
@@ -31,6 +32,21 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       apiKey: overrides.deepseek?.apiKey,
       credentialTarget: overrides.deepseek?.credentialTarget,
       baseUrl: overrides.deepseek?.baseUrl ?? 'https://api.deepseek.com',
+    },
+    pepe: {
+      enabled: overrides.pepe?.enabled ?? true,
+      providerId: overrides.pepe?.providerId ?? null,
+      modelId: overrides.pepe?.modelId ?? null,
+      embeddingProviderId: overrides.pepe?.embeddingProviderId ?? null,
+      embeddingModelId: overrides.pepe?.embeddingModelId ?? null,
+      embeddingBackend: overrides.pepe?.embeddingBackend ?? 'sentence-transformers',
+      localEmbeddingModel: overrides.pepe?.localEmbeddingModel ?? 'all-MiniLM-L6-v2',
+      pythonCommand: overrides.pepe?.pythonCommand ?? 'python',
+      flushIntervalMs: overrides.pepe?.flushIntervalMs ?? 2_000,
+      summaryIntervalMs: overrides.pepe?.summaryIntervalMs ?? 5_000,
+      resultTopK: overrides.pepe?.resultTopK ?? 8,
+      similarityThreshold: overrides.pepe?.similarityThreshold ?? 0.2,
+      workingDirectoryPattern: overrides.pepe?.workingDirectoryPattern ?? 'agent-{agentInstanceId}',
     },
     githubCopilot: {
       apiUrl: overrides.githubCopilot?.apiUrl ?? 'https://api.githubcopilot.com/chat/completions',

@@ -1,0 +1,20 @@
+{
+  "id": "50ad80a7-3ac3-4667-a2c6-d19c45c02494",
+  "type": "short-term",
+  "title": "Summary: Turn 27",
+  "content": "File `pepe-worker-process.ts` defines `processPepeSessionSnapshot(snapshot, semanticClient, embeddingClient, config) → Promise<PepeWorkerProcessResult>`. It checks `shouldSummarizeMemory` helper, summarizes qualifying memories via semantic client, prepares embedding batch (user input + summarized memory), and ranks candidates with `rankMemoryCandidatesWithVectors` using summary overrides. Returns session details, summaries, candidates, timestamps.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "009e5872-010e-4fa8-bcd2-7cf5edc87487",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:46.498Z",
+  "updatedAt": "2026-05-01T14:45:46.498Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "1552e1ac-52e3-47c2-b4b6-4a118fa32652",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe monitoring thread periodically checks context token utilization; when exceeding threshold (default 0.85), it summarizes each conversation-turn memory via LLM, computes 256‑dim character 3‑gram TF vectors locally, filters by cosine similarity to current goal, and writes kept memory ids back to session.selectedMemoryIds.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:24.027Z",
+  "updatedAt": "2026-05-01T14:45:24.027Z"
+}

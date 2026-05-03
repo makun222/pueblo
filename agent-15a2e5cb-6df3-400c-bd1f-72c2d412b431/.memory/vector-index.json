@@ -1,0 +1,11 @@
+{
+  "sessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "updatedAt": "2026-05-02T15:43:38.310Z",
+  "items": [
+    {
+      "memoryId": "3ab4f115-c96c-46a9-bd0a-268766809793",
+      "similarity": 0.1601,
+      "vectorVersion": "pepe-local-hash-v1"
+    }
+  ]
+}

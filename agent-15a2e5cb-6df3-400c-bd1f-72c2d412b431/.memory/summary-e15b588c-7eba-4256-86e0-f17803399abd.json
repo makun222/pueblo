@@ -1,0 +1,20 @@
+{
+  "id": "e15b588c-7eba-4256-86e0-f17803399abd",
+  "type": "short-term",
+  "title": "Summary: Turn 12",
+  "content": "User requested code parsing of current directory; assistant requested specific path. Now user wants to examine Pueblo overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "41437adf-4674-4ff2-a001-d63759598d1a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.623Z",
+  "updatedAt": "2026-05-01T14:46:11.623Z"
+}

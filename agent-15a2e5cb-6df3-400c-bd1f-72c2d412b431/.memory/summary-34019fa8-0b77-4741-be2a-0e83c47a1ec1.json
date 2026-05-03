@@ -1,0 +1,20 @@
+{
+  "id": "34019fa8-0b77-4741-be2a-0e83c47a1ec1",
+  "type": "short-term",
+  "title": "Summary: Turn 737",
+  "content": "Pueblo supports configurable max agent steps (default 24) with trace persistence on failure, unlike DeepSeek V4 Pro and Copilot GPT 5.4 which silently fail at fixed 8- or 24-step limits without retaining intermediate results.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "24c717b8-f3fa-4121-a9a9-8d8ff75373e7",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:58:02.462Z",
+  "updatedAt": "2026-05-01T14:58:02.462Z"
+}

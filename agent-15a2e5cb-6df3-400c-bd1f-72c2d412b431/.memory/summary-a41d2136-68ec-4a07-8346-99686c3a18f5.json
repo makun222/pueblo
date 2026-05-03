@@ -1,0 +1,20 @@
+{
+  "id": "a41d2136-68ec-4a07-8346-99686c3a18f5",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "User greeted. Assistant introduced as Claude, a senior software engineer focused on the Pueblo code repository.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fbd37c65-1c24-4d8b-8051-ff9428fe10b9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.526Z",
+  "updatedAt": "2026-05-01T14:45:19.526Z"
+}

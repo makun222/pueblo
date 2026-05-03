@@ -1,0 +1,20 @@
+{
+  "id": "6d2ccb00-7bf2-42f3-af1b-8ab2b6fa6a1e",
+  "type": "short-term",
+  "title": "Summary: Turn 4",
+  "content": "User requested recording plan as pepeplan.md; assistant encountered DeepSeek API error (400) with reasoning_content conflict in thinking mode. Pueblo architecture discussed.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7e10b4c9-80ee-4277-b625-5bff2cdc7baf",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:18.214Z",
+  "updatedAt": "2026-05-01T14:46:18.214Z"
+}

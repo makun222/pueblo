@@ -1,0 +1,20 @@
+{
+  "id": "fc4b686d-4db3-44e7-9034-0399adc25495",
+  "type": "short-term",
+  "title": "Summary: Turn 803",
+  "content": "User greeted; assistant recalled the `knowledge-base` Java knowledge base engine project and offered assistance.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3ab4f115-c96c-46a9-bd0a-268766809793",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:42:07.390Z",
+  "updatedAt": "2026-05-02T15:42:07.390Z"
+}

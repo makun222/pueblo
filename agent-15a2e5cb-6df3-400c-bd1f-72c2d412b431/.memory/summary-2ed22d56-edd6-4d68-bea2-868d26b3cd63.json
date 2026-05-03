@@ -1,0 +1,20 @@
+{
+  "id": "2ed22d56-edd6-4d68-bea2-868d26b3cd63",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe memory monitoring service: runs as background thread in AgentTaskRunner, periodically checks context token utilization (threshold 0.85), triggers summarization (LLM) and local vectorization (character 3-gram hash to 256D) of conversation-turn memories, then filters by cosine similarity to current dialog, updating session.selectedMemoryIds. Integration via optional PepeService, cooling cooldown 30s, min 3 memories to trigger, only short-term conversation-turn memories summarized.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.925Z",
+  "updatedAt": "2026-05-01T14:46:40.925Z"
+}

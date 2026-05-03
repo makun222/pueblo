@@ -1,0 +1,20 @@
+{
+  "id": "9af833a5-1b26-4639-9f2f-586590e72696",
+  "type": "short-term",
+  "title": "Summary: Turn 22",
+  "content": "User requested to parse \"pepe-worker-process\" but no file found; then asked to examine Pueblo's overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa33d793-fdda-4e8a-b3e2-c3184e629c7e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.603Z",
+  "updatedAt": "2026-05-01T14:46:11.603Z"
+}

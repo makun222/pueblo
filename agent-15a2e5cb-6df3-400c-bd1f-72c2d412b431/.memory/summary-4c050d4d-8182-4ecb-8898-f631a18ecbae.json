@@ -1,0 +1,20 @@
+{
+  "id": "4c050d4d-8182-4ecb-8898-f631a18ecbae",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "User requested code evaluation of current directory; Copilot failed due to prompt token count (83,233) exceeding limit (64,000).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:46.519Z",
+  "updatedAt": "2026-05-01T14:45:46.519Z"
+}

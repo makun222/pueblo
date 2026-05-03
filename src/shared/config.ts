@@ -43,6 +43,22 @@ const deepseekSchema = z.object({
   baseUrl: z.string().url().default('https://api.deepseek.com'),
 });
 
+const pepeSchema = z.object({
+  enabled: z.boolean().default(true),
+  providerId: z.string().trim().min(1).nullable().default(null),
+  modelId: z.string().trim().min(1).nullable().default(null),
+  embeddingProviderId: z.string().trim().min(1).nullable().default(null),
+  embeddingModelId: z.string().trim().min(1).nullable().default(null),
+  embeddingBackend: z.enum(['sentence-transformers', 'local-hash']).default('sentence-transformers'),
+  localEmbeddingModel: z.string().trim().min(1).default('all-MiniLM-L6-v2'),
+  pythonCommand: z.string().trim().min(1).default('python'),
+  flushIntervalMs: z.number().int().positive().default(2_000),
+  summaryIntervalMs: z.number().int().positive().default(5_000),
+  resultTopK: z.number().int().positive().default(8),
+  similarityThreshold: z.number().min(0).max(1).default(0.2),
+  workingDirectoryPattern: z.string().min(1).default('agent-{agentInstanceId}'),
+});
+
 const appConfigSchema = z.object({
   databasePath: z.string().min(1).default(path.join('.pueblo', 'pueblo.db')),
   defaultProviderId: z.string().min(1).nullable().default(null),
@@ -57,6 +73,21 @@ const appConfigSchema = z.object({
   }),
   deepseek: deepseekSchema.default({
     baseUrl: 'https://api.deepseek.com',
+  }),
+  pepe: pepeSchema.default({
+    enabled: true,
+    providerId: null,
+    modelId: null,
+    embeddingProviderId: null,
+    embeddingModelId: null,
+    embeddingBackend: 'sentence-transformers',
+    localEmbeddingModel: 'all-MiniLM-L6-v2',
+    pythonCommand: 'python',
+    flushIntervalMs: 2_000,
+    summaryIntervalMs: 5_000,
+    resultTopK: 50,
+    similarityThreshold: 0.8,
+    workingDirectoryPattern: 'agent-{agentInstanceId}',
   }),
   githubCopilot: githubCopilotSchema.default({
     apiUrl: DEFAULT_GITHUB_COPILOT_API_URL,
@@ -74,6 +105,7 @@ const appConfigSchema = z.object({
 export type ProviderSetting = z.infer<typeof providerSettingSchema>;
 export type DesktopWindowConfig = z.infer<typeof desktopWindowSchema>;
 export type DeepSeekConfig = z.infer<typeof deepseekSchema>;
+export type PepeConfig = z.infer<typeof pepeSchema>;
 export type GitHubCopilotConfig = z.infer<typeof githubCopilotSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;
 

@@ -1,0 +1,20 @@
+{
+  "id": "fe53a112-1767-4edc-bbb8-91ee0addaa93",
+  "type": "short-term",
+  "title": "Summary: Turn 5",
+  "content": "User attempted to start an agent with \"启动\" but failed because the system couldn't find the executable; assistant requested the correct command or path.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c39b8d48-0f74-459a-9a86-feb680935318",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:34.093Z",
+  "updatedAt": "2026-05-01T14:45:34.093Z"
+}

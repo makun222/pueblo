@@ -1,0 +1,20 @@
+{
+  "id": "f7024154-c9da-4a1f-8c10-e64fa717b4dd",
+  "type": "short-term",
+  "title": "Summary: Turn 28",
+  "content": "Pueblo 是一个 CLI-first + Electron 桌面的代码 Agent 框架（TypeScript/Node.js 22），核心架构为输入路由 → 命令分发/Agent 执行 → Provider 适配 → 工具调用 → SQLite 持久化，内置 Pepe 语义记忆系统（嵌入向量 + 语义检索）。源码模块包括 agent、commands、memory、providers、tools 等，支持 CLI 和 Electron 桌面两种运行模式。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "53c4740c-ee32-4193-a0e6-a321b792e445",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.379Z",
+  "updatedAt": "2026-05-01T14:46:23.379Z"
+}

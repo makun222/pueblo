@@ -24,6 +24,8 @@ interface TaskModelMessageTraceEntry {
 
 interface TaskResultPayload {
   readonly outputSummary?: string;
+  readonly targetDirectory?: string | null;
+  readonly toolExecutionCwd?: string | null;
   readonly attribution?: SourceAttribution;
   readonly modelMessageTrace?: TaskModelMessageTraceEntry[];
   readonly stepTrace?: Array<{
@@ -37,6 +39,7 @@ interface TaskResultPayload {
     readonly toolName: string;
     readonly status: string;
     readonly summary: string;
+    readonly executionCwd?: string | null;
   }>;
 }
 
@@ -69,6 +72,8 @@ export function successResult<TData>(code: string, message: string, data?: TData
 
 export interface ParsedTaskOutputSummary {
   readonly outputSummary?: string;
+  readonly targetDirectory?: string | null;
+  readonly toolExecutionCwd?: string | null;
   readonly attribution?: SourceAttribution;
   readonly modelMessageTrace?: TaskModelMessageTraceEntry[];
   readonly stepTrace?: Array<{
@@ -82,6 +87,7 @@ export interface ParsedTaskOutputSummary {
     readonly toolName: string;
     readonly status: string;
     readonly summary: string;
+    readonly executionCwd?: string | null;
   }>;
 }
 

@@ -1,0 +1,20 @@
+{
+  "id": "0ffa2b77-1a19-43dc-836d-52bdd61bcf65",
+  "type": "short-term",
+  "title": "Summary: Turn 13",
+  "content": "User requested overview of pueblo architecture; assistant failed due to token limit (180081 > 64000) with \"model_max_prompt_tokens_exceeded\".",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2a4080a4-a3f7-4e9a-976c-d5d9a91a091c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:18.200Z",
+  "updatedAt": "2026-05-01T14:46:18.200Z"
+}

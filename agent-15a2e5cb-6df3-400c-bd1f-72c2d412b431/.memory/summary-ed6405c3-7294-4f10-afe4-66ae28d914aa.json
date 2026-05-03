@@ -1,0 +1,20 @@
+{
+  "id": "ed6405c3-7294-4f10-afe4-66ae28d914aa",
+  "type": "short-term",
+  "title": "Summary: Turn 15",
+  "content": "User requested file parsing; assistant requested file path or content.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "554dc564-e8ad-4c8b-9838-1154962f86fd",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.101Z",
+  "updatedAt": "2026-05-01T14:45:17.101Z"
+}

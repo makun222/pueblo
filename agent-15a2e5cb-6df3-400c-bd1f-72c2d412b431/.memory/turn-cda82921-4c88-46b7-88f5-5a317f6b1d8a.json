@@ -1,0 +1,18 @@
+{
+  "id": "cda82921-4c88-46b7-88f5-5a317f6b1d8a",
+  "type": "short-term",
+  "title": "Turn 19",
+  "content": "User:\n你好\n\nAssistant:\n你好！请问今天有什么我可以帮助你进行 Pueblo 项目的开发或维护的工作吗？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T06:25:39.728Z",
+  "updatedAt": "2026-04-30T06:25:39.728Z"
+}

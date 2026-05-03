@@ -6,6 +6,7 @@ import { ContextResolver } from '../../src/agent/context-resolver';
 import { InMemoryAgentInstanceRepository } from '../../src/agent/agent-instance-repository';
 import { AgentInstanceService } from '../../src/agent/agent-instance-service';
 import { AgentTemplateLoader } from '../../src/agent/agent-template-loader';
+import { PepeResultService } from '../../src/agent/pepe-result-service';
 import { MemoryService } from '../../src/memory/memory-service';
 import { InMemoryMemoryRepository } from '../../src/memory/memory-repository';
 import { PromptService } from '../../src/prompts/prompt-service';
@@ -29,7 +30,7 @@ afterEach(() => {
 });
 
 describe('context resolver', () => {
-  it('resolves pueblo profile, session-backed selections, and context counts', () => {
+  it('resolves pueblo profile, session-backed selections, and result-backed context counts', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-resolver-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -93,6 +94,22 @@ describe('context resolver', () => {
     sessionService.addAssistantMessage(session.id, 'I will inspect the failing workflow.');
     sessionService.addSelectedPrompt(session.id, prompt.id);
     sessionService.addSelectedMemory(session.id, memory.id);
+    const pepeResultService = new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'openai' }).pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [memory.id],
+      pendingUserInput: 'Inspect the failing workflow',
+      resultItems: [
+        {
+          memoryId: memory.id,
+          summary: 'Cached result: sqlite persistence is relevant.',
+          similarity: 0.99,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+      ],
+    });
 
     const resolver = new ContextResolver({
       config: createTestAppConfig({ defaultProviderId: 'openai' }),
@@ -101,6 +118,7 @@ describe('context resolver', () => {
       memoryService,
       agentInstanceService,
       providerRegistry,
+      pepeResultService,
     });
     const resolved = resolver.resolve({
       activeSessionId: session.id,
@@ -111,6 +129,11 @@ describe('context resolver', () => {
     expect(resolved.taskContext.puebloProfile.roleDirectives).toContain('focused agent');
     expect(resolved.taskContext.selectedPromptIds).toEqual([prompt.id]);
     expect(resolved.taskContext.selectedMemoryIds).toEqual([memory.id]);
+    expect(resolved.taskContext.resultSet?.sessionId).toBe(session.id);
+    expect(resolved.taskContext.targetDirectory).toBeNull();
+    expect(resolved.taskContext.resultItems).toHaveLength(1);
+    expect(resolved.taskContext.resultItems[0]?.memoryId).toBe(memory.id);
+    expect(resolved.taskContext.resultItems[0]?.summary).toContain('Cached result');
     expect(resolved.taskContext.sessionMessages).toHaveLength(2);
     expect(resolved.taskContext.recentMessages).toEqual([
       'User: Inspect the failing workflow',
@@ -120,8 +143,53 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.agentProfileId).toBe('code-master');
     expect(resolved.runtimeStatus.selectedPromptCount).toBe(1);
     expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);
-    expect(resolved.runtimeStatus.contextCount.messageCount).toBe(0);
+    expect(resolved.runtimeStatus.contextCount.messageCount).toBe(2);
     expect(resolved.runtimeStatus.contextCount.estimatedTokens).toBeGreaterThan(0);
     expect(resolved.runtimeStatus.contextCount.contextWindowLimit).toBe(16000);
+  });
+
+  it('extracts the target directory from the latest user path when the new turn omits it', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-target-dir-'));
+    tempDirs.push(tempDir);
+    const externalRepoDir = path.join(tempDir, 'external-repo');
+    fs.mkdirSync(externalRepoDir, { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Resolver session', 'gpt-4.1-mini');
+    sessionService.addUserMessage(session.id, `${externalRepoDir}，解析一下这个地址的项目。`);
+    sessionService.addAssistantMessage(session.id, 'I will inspect that repository.');
+
+    const resolver = new ContextResolver({
+      config: createTestAppConfig({ defaultProviderId: 'openai' }),
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'openai' }).pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: '继续分析 source code',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.targetDirectory).toBe(externalRepoDir);
   });
 });

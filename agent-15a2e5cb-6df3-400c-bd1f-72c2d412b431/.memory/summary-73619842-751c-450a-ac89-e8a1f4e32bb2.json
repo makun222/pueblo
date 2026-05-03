@@ -1,0 +1,20 @@
+{
+  "id": "73619842-751c-450a-ac89-e8a1f4e32bb2",
+  "type": "short-term",
+  "title": "Summary: Turn 6",
+  "content": "用户希望讨论当前局势，助手要求其明确具体领域或主题以便提供有效帮助。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f410c21d-38e6-4f24-8373-ec8049b8f408",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.944Z",
+  "updatedAt": "2026-05-01T14:45:55.944Z"
+}

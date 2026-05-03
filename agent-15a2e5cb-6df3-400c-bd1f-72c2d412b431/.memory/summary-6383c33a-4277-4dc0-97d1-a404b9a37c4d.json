@@ -1,0 +1,20 @@
+{
+  "id": "6383c33a-4277-4dc0-97d1-a404b9a37c4d",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe is an optional background memory monitoring service integrated into AgentTaskRunner. It uses a local character 3‑gram hash vectorizer (256‑dim) and a separate LLM connection to summarize conversation‑turn memories and filter them by cosine similarity with the current goal when context token utilization exceeds a threshold (default 0.85). Filtered memory IDs are written back to session.selectedMemoryIds, affecting subsequent context resolution. Key design: local embedding zero external dependency, cooling mechanism (30s cooldown, min 3 memories), optional dependency with PepeService.start/stop lifecycle.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:56.860Z",
+  "updatedAt": "2026-05-01T14:45:56.860Z"
+}

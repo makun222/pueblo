@@ -1,0 +1,20 @@
+{
+  "id": "d26e2bf3-e4d3-4ab6-9271-94b8c9a655da",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "用户请求评估当前目录代码，但助手因提示词令牌数超限（83233 > 64000）而失败。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.314Z",
+  "updatedAt": "2026-05-01T14:46:24.314Z"
+}

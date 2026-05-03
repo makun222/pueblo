@@ -1,0 +1,18 @@
+{
+  "id": "30996acf-d7b1-4651-96d7-86c3c4721e2d",
+  "type": "short-term",
+  "title": "Turn 18",
+  "content": "User:\n你好\n\nAssistant:\nTask failed: GitHub Copilot network request failed to https://api.githubcopilot.com/chat/completions: fetch failed",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T06:25:05.529Z",
+  "updatedAt": "2026-04-30T06:25:05.529Z"
+}

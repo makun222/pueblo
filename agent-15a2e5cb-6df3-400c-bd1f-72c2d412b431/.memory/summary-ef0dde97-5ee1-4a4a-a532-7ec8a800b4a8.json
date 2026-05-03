@@ -1,0 +1,20 @@
+{
+  "id": "ef0dde97-5ee1-4a4a-a532-7ec8a800b4a8",
+  "type": "short-term",
+  "title": "Summary: Turn 7",
+  "content": "User raised topic of China-US situation; assistant requested specific aspect (economic, military, tech, etc.) for further help.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "00e2a12f-1bfa-4f66-b27d-592ddc9bd3a6",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.510Z",
+  "updatedAt": "2026-05-01T14:45:19.510Z"
+}

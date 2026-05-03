@@ -1,0 +1,20 @@
+{
+  "id": "c1b24e8e-e319-4b86-a471-831a579790f7",
+  "type": "short-term",
+  "title": "Summary: Turn 18",
+  "content": "GitHub Copilot API request failed (fetch error) when responding to user's Chinese greeting \"你好\" at Turn 18.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "30996acf-d7b1-4651-96d7-86c3c4721e2d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:26.315Z",
+  "updatedAt": "2026-05-01T14:45:26.315Z"
+}

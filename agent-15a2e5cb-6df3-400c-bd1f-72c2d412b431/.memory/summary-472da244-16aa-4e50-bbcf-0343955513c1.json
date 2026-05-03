@@ -1,0 +1,20 @@
+{
+  "id": "472da244-16aa-4e50-bbcf-0343955513c1",
+  "type": "short-term",
+  "title": "Summary: Turn 28",
+  "content": "Pueblo is a TypeScript CLI + Electron desktop agent framework (v0.1.0) with SQLite persistence, Vitest tests, and a layered architecture (input routing → command/agent execution → LLM provider adapters → tools → SQLite). Core modules include agent runtime, commands, memory (semantic embeddings), sessions, providers (GitHub Copilot, DeepSeek), and desktop (Electron with React renderer).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "53c4740c-ee32-4193-a0e6-a321b792e445",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.429Z",
+  "updatedAt": "2026-05-01T14:45:19.429Z"
+}

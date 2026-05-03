@@ -1,0 +1,20 @@
+{
+  "id": "0bd62958-6d3d-4465-920c-25a5e351a44e",
+  "type": "short-term",
+  "title": "Summary: Turn 25",
+  "content": "Found 21 files in `D:\\workspace\\trends\\pueblo\\src\\agent\\`, including core agent modules (`agent-instance-repository.ts`, `agent-instance-service.ts`, `agent-profile-templates.ts`), Pepe-specific components (`pepe-local-embedding.ts`, `pepe-semantic-client.ts`, `pepe-supervisor.ts`), and task-related files (`task-runner.ts`, `task-repository.ts`). Key entities: agent, Pepe, task, embedding, supervisor, worker.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "81fa592b-93f3-4a01-836a-330b6554e2c3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:30.085Z",
+  "updatedAt": "2026-05-01T14:45:30.085Z"
+}

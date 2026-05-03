@@ -1,0 +1,20 @@
+{
+  "id": "952dd990-071c-4888-9e4e-eb7357def8df",
+  "type": "short-term",
+  "title": "Summary: Turn 793",
+  "content": "knowledge-base 是一个 Java 8 构建的轻量级知识库引擎，将图片、视频、音频、文档等多媒体材料通过 LLM 提取概念与关系，生成结构化知识图谱，并支持 H2/JSON 持久化、Cytoscape.js 交互式 Web 图谱和 CLI 文本地图。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2936de03-c5a1-4fe4-aade-bb5251d92fdb",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:28:02.963Z",
+  "updatedAt": "2026-05-02T15:28:02.963Z"
+}

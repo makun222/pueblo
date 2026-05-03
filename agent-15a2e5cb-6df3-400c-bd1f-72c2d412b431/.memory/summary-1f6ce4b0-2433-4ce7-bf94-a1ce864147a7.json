@@ -1,0 +1,20 @@
+{
+  "id": "1f6ce4b0-2433-4ce7-bf94-a1ce864147a7",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "pepe进程优化：需适当提高similarity阈值防止对话飘忽，可结合上下文保留、动态调整相似度及增强语义分析来提升稳定性。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.723Z",
+  "updatedAt": "2026-05-01T14:45:16.723Z"
+}

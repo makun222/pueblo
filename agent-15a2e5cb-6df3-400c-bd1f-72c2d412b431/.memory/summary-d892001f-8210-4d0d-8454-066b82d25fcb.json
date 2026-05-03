@@ -1,0 +1,20 @@
+{
+  "id": "d892001f-8210-4d0d-8454-066b82d25fcb",
+  "type": "short-term",
+  "title": "Summary: Turn 763",
+  "content": "Attempted to parse project at D:\\workspace\\KnowledgeBase\\knowledgeBase; request failed due to network error in DeepSeek API call.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "599d26c7-b8e3-4174-880e-a739efc097b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:36:58.627Z",
+  "updatedAt": "2026-05-02T13:36:58.627Z"
+}

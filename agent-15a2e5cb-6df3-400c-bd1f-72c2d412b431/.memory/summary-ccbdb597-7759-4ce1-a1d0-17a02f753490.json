@@ -1,0 +1,20 @@
+{
+  "id": "ccbdb597-7759-4ce1-a1d0-17a02f753490",
+  "type": "short-term",
+  "title": "Summary: Turn 756",
+  "content": "User asked to further parse the source code part; assistant found no matching paths and requested a specific file or path.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "edd84569-5692-47d8-b6c6-87ad0bf59218",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T12:52:10.126Z",
+  "updatedAt": "2026-05-02T12:52:10.126Z"
+}

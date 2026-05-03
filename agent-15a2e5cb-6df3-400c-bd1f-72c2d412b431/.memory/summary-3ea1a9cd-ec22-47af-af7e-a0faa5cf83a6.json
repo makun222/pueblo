@@ -1,0 +1,20 @@
+{
+  "id": "3ea1a9cd-ec22-47af-af7e-a0faa5cf83a6",
+  "type": "short-term",
+  "title": "Summary: Turn 13",
+  "content": "User referenced path `D:\\workspace\\trends\\pueblo` to examine pueblo's architecture. Assistant's attempt to process using GitHub Copilot failed because prompt token count (180081) exceeded the 64,000 token limit.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2a4080a4-a3f7-4e9a-976c-d5d9a91a091c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.931Z",
+  "updatedAt": "2026-05-01T14:45:55.931Z"
+}

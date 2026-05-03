@@ -170,6 +170,40 @@ class RepeatedToolCallingProviderAdapter implements ProviderAdapter {
   }
 }
 
+class InspectingRepeatedReadProviderAdapter implements ProviderAdapter {
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const toolMessages = context.messages.filter((message) => message.role === 'tool');
+
+    if (toolMessages.length < 2) {
+      const nextToolCallIndex = toolMessages.length + 1;
+      return {
+        type: 'tool-call',
+        toolCallId: `call-${nextToolCallIndex}`,
+        toolName: 'read',
+        args: { path: 'notes.txt' },
+        rationale: `Read attempt ${nextToolCallIndex}`,
+      };
+    }
+
+    const firstToolPayload = JSON.parse(toolMessages[0]!.content) as Record<string, unknown>;
+    const secondToolPayload = JSON.parse(toolMessages[1]!.content) as Record<string, unknown>;
+    return {
+      type: 'final',
+      outputSummary: JSON.stringify({
+        firstCompressed: firstToolPayload.compression,
+        firstHasPreview: Array.isArray(firstToolPayload.outputPreview),
+        firstHasFullOutput: Array.isArray(firstToolPayload.output),
+        secondHasFullOutput: Array.isArray(secondToolPayload.output),
+        secondCompressed: secondToolPayload.compression ?? null,
+      }),
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
 describeIfNodeSqlite('agent task persistence integration', () => {
   it('runs a provider-backed task and persists task history to sqlite', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-task-'));
@@ -520,6 +554,74 @@ describeIfNodeSqlite('agent task persistence integration', () => {
     expect(result.status).toBe('completed');
     expect(invocationCount).toBe(8);
     expect(result.outputSummary).toContain('Completed after 8 tool call(s)');
+
+    database.close();
+  });
+
+  it('compacts older tool results while preserving the latest tool output for the next step', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-compact-tool-history-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new InspectingRepeatedReadProviderAdapter());
+
+    const repository = new AgentTaskRepository({ connection: database.connection });
+    let invocationCount = 0;
+    const runner = new AgentTaskRunner(registry, repository, {
+      describeTools: () => [
+        {
+          name: 'read',
+          description: 'Read file contents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+            },
+            required: ['path'],
+            additionalProperties: false,
+          },
+        },
+      ],
+      async execute(input: ExecuteToolRequest) {
+        invocationCount += 1;
+        return {
+          invocation: { id: `tool-invocation-${invocationCount}` },
+          output: {
+            toolName: input.toolName,
+            status: 'succeeded',
+            summary: `Executed ${input.toolName} ${invocationCount}`,
+            output: Array.from({ length: 40 }, (_, index) => `${index + 1}: line ${invocationCount}-${index + 1}`),
+          },
+        };
+      },
+    } as unknown as ToolService);
+
+    const result = await runner.run({
+      goal: 'Inspect repository state with repeated reads',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(invocationCount).toBe(2);
+
+    const inspection = JSON.parse(result.outputSummary ?? '{}') as Record<string, unknown>;
+    expect(inspection.firstCompressed).toBe('older-tool-result-compacted');
+    expect(inspection.firstHasPreview).toBe(true);
+    expect(inspection.firstHasFullOutput).toBe(false);
+    expect(inspection.secondHasFullOutput).toBe(true);
+    expect(inspection.secondCompressed).toBeNull();
 
     database.close();
   });

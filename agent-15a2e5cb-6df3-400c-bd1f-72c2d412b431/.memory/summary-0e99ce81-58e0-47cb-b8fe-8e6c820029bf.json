@@ -1,0 +1,20 @@
+{
+  "id": "0e99ce81-58e0-47cb-b8fe-8e6c820029bf",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "User requested overview of pueblo architecture; `src/agent` contains 21 files: agent services, repositories, templates, Pepe embedding/semantic/supervisor/worker modules, task runner, and context resolver.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:56.833Z",
+  "updatedAt": "2026-05-01T14:45:56.833Z"
+}

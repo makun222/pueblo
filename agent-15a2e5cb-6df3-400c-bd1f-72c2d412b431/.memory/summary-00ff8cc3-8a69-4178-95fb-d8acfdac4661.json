@@ -1,0 +1,20 @@
+{
+  "id": "00ff8cc3-8a69-4178-95fb-d8acfdac4661",
+  "type": "short-term",
+  "title": "Summary: Turn 24",
+  "content": "Assistant cannot directly access file system directories but can assist with codebase operations. User now wants to examine pueblo's overall architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2a8e3219-0116-4e6c-9aa4-47a2a3aa8d8f",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.916Z",
+  "updatedAt": "2026-05-01T14:45:55.916Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "eea60597-9945-4295-8ab8-9c59c0a75ee3",
+  "type": "short-term",
+  "title": "Summary: Turn 4",
+  "content": "User requested to save plan as pepeplan.md; assistant failed with DeepSeek API error 400 requiring `reasoning_content` to be passed back in thinking mode.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7e10b4c9-80ee-4277-b625-5bff2cdc7baf",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:35.189Z",
+  "updatedAt": "2026-05-01T14:45:35.189Z"
+}

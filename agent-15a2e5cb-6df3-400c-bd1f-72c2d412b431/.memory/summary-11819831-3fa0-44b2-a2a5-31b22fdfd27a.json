@@ -1,0 +1,20 @@
+{
+  "id": "11819831-3fa0-44b2-a2a5-31b22fdfd27a",
+  "type": "short-term",
+  "title": "Summary: Turn 769",
+  "content": "Project at `D:\\workspace\\KnowledgeBase\\knowledgeBase` has a `src` directory containing modular components: `agent`, `app`, `cli`, `commands`, `desktop`, `memory`, `persistence`, `prompts`, `providers`, and `sessions`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0ba68c9e-05ff-43f5-8d6c-11c70f74fec7",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:43:36.098Z",
+  "updatedAt": "2026-05-02T13:43:36.098Z"
+}

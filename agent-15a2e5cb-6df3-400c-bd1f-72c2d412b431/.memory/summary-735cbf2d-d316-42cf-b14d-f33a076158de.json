@@ -1,0 +1,20 @@
+{
+  "id": "735cbf2d-d316-42cf-b14d-f33a076158de",
+  "type": "short-term",
+  "title": "Summary: Turn 786",
+  "content": "`D:\\workspace\\KnowledgeBase\\knowledgeBase` is a lightweight Java 8 + Maven knowledge base engine that extracts \"notions\" from multimedia (images, video, audio, documents) via OpenAI-compatible LLM, stores them in JSON or H2 database, infers relations, and visualizes as an interactive graph using React + Vite + Cytoscape.js.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "8fe0a5a0-d72d-4ca5-8973-bacde823e1cc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T14:57:50.076Z",
+  "updatedAt": "2026-05-02T14:57:50.076Z"
+}

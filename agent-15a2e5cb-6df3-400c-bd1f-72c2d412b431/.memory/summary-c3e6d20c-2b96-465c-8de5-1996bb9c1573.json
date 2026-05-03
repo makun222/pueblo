@@ -1,0 +1,20 @@
+{
+  "id": "c3e6d20c-2b96-465c-8de5-1996bb9c1573",
+  "type": "short-term",
+  "title": "Summary: Turn 23",
+  "content": "User asked about pepe-worker-process.ts; file not found in repository.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b0cea7e3-7e90-4f12-80a0-73e3ad38454a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.387Z",
+  "updatedAt": "2026-05-01T14:46:23.387Z"
+}

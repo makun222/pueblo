@@ -1,0 +1,20 @@
+{
+  "id": "c99550f1-b0e5-4cdf-800a-33c326f51f9f",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "用户请求查看Pueblo架构，助手回应了Pepe记忆监控系统方案：后台线程利用LLM归纳、本地n-gram向量化，按相关性过滤记忆并更新session.selectedMemoryIds，可选集成于task-runner中。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.327Z",
+  "updatedAt": "2026-05-01T14:46:24.327Z"
+}

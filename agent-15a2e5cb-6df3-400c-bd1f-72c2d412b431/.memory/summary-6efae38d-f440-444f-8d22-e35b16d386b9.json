@@ -1,0 +1,20 @@
+{
+  "id": "6efae38d-f440-444f-8d22-e35b16d386b9",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "Pepe 进程需优化 similarity 阈值，避免过低导致对话飘忽；建议适当提高阈值或动态调整，并增强上下文与语义分析。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.907Z",
+  "updatedAt": "2026-05-01T14:45:16.907Z"
+}

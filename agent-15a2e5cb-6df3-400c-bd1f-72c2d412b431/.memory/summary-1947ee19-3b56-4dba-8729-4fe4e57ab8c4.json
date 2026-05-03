@@ -1,0 +1,20 @@
+{
+  "id": "1947ee19-3b56-4dba-8729-4fe4e57ab8c4",
+  "type": "short-term",
+  "title": "Summary: Turn 7",
+  "content": "User inquired about China-US situation; assistant requested specification on economic, military, or tech cooperation.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "00e2a12f-1bfa-4f66-b27d-592ddc9bd3a6",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:30.163Z",
+  "updatedAt": "2026-05-01T14:45:30.163Z"
+}

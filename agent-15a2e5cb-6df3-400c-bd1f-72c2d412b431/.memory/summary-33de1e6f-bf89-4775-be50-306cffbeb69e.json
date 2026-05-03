@@ -1,0 +1,20 @@
+{
+  "id": "33de1e6f-bf89-4775-be50-306cffbeb69e",
+  "type": "short-term",
+  "title": "Summary: Turn 25",
+  "content": "Listed 21 files in `D:\\workspace\\trends\\pueblo\\src\\agent\\`, including `agent-instance-repository`, `pepe-supervisor`, `pepe-worker`, `pepe-semantic-client`, and `task-runner`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "81fa592b-93f3-4a01-836a-330b6554e2c3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:18.174Z",
+  "updatedAt": "2026-05-01T14:46:18.174Z"
+}

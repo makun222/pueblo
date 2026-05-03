@@ -1,0 +1,20 @@
+{
+  "id": "3e487b0d-cb91-4bbb-a44f-2f2d9a17fb47",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "Pepe's dialogue stability degrades when the similarity threshold is too low; optimize by setting a higher, possibly dynamic threshold and retaining more context to prevent drifting.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.460Z",
+  "updatedAt": "2026-05-01T14:45:19.460Z"
+}

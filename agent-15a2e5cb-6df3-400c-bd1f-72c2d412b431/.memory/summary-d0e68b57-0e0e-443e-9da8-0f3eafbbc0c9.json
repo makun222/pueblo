@@ -1,0 +1,20 @@
+{
+  "id": "d0e68b57-0e0e-443e-9da8-0f3eafbbc0c9",
+  "type": "short-term",
+  "title": "Summary: Turn 766",
+  "content": "User requested parsing of project at D:\\workspace\\KnowledgeBase\\knowledgeBase; assistant failed due to DeepSeek network error.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "d8bf95cf-d233-4f1a-a4bf-5b16372b4533",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:43:08.099Z",
+  "updatedAt": "2026-05-02T13:43:08.099Z"
+}

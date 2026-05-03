@@ -1,0 +1,20 @@
+{
+  "id": "090221b2-2f6c-4328-a2bf-0914c84acd64",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "Pueblo code review attempt (Turn 11) failed: GitHub Copilot rejected request (400) because prompt token count (83,233) exceeded limit (64,000). Need to handle large context for future architecture discussions.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.934Z",
+  "updatedAt": "2026-05-01T14:45:55.934Z"
+}

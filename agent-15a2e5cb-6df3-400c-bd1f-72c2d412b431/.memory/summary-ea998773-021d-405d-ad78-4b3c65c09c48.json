@@ -1,0 +1,20 @@
+{
+  "id": "ea998773-021d-405d-ad78-4b3c65c09c48",
+  "type": "short-term",
+  "title": "Summary: Turn 17",
+  "content": "提出了六项代码优化方向：性能分析、降低复杂度、提高可测试性、代码可读性、错误处理、资源管理，需结合具体目标或代码进一步细化。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4361ee59-526a-4d12-80ad-da8d1684a884",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.016Z",
+  "updatedAt": "2026-05-01T14:46:08.016Z"
+}

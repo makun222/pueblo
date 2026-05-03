@@ -1,0 +1,20 @@
+{
+  "id": "706e8848-cda1-48bc-96d4-342f2be373eb",
+  "type": "short-term",
+  "title": "Summary: Turn 16",
+  "content": "User requested parsing of README.md for Pueblo project; summary includes overview (CLI code agent with TypeScript/Node.js, features, environment requirements Node.js 22 LTS, installation via npm install, configuration from .pueblo/config.json, build with npm run build to dist/, tests with npm test, and launch via node dist/cli/index.js).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3b00890d-51ec-4ba6-b0b2-dd486c8e216a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:48.776Z",
+  "updatedAt": "2026-05-01T14:45:48.776Z"
+}

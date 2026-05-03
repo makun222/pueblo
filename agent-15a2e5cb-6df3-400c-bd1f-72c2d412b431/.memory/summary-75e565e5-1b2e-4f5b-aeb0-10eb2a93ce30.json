@@ -1,0 +1,20 @@
+{
+  "id": "75e565e5-1b2e-4f5b-aeb0-10eb2a93ce30",
+  "type": "short-term",
+  "title": "Summary: Turn 26",
+  "content": "User referenced `pepe-worker-process.ts`, but the file does not exist in the repository.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "47c7dedb-cd43-4875-9b13-c732b6e22734",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.060Z",
+  "updatedAt": "2026-05-01T14:45:17.060Z"
+}

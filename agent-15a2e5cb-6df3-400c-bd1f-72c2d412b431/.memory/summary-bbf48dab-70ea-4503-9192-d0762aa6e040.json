@@ -1,0 +1,20 @@
+{
+  "id": "bbf48dab-70ea-4503-9192-d0762aa6e040",
+  "type": "short-term",
+  "title": "Summary: Turn 28",
+  "content": "Pueblo (v0.1.0) is a TypeScript CLI + Electron desktop code agent framework with a layered architecture: input routing → command dispatch / agent execution → LLM provider adapters → tool calls → SQLite persistence, using tsc for main process and Vite for renderer, tested with Vitest. Core modules include agent runtime, memory with semantic embeddings, desktop three‑layer IPC (main/preload/renderer), and a command dispatcher routing slash commands or plain text to agent.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "53c4740c-ee32-4193-a0e6-a321b792e445",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.699Z",
+  "updatedAt": "2026-05-01T14:45:16.699Z"
+}

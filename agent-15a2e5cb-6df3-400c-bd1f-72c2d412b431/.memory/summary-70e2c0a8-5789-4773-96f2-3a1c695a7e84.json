@@ -1,0 +1,20 @@
+{
+  "id": "70e2c0a8-5789-4773-96f2-3a1c695a7e84",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "pepe process optimization: adjust similarity threshold to avoid low values causing erratic dialogues; retain context and consider dynamic similarity adjustments for stability.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.012Z",
+  "updatedAt": "2026-05-01T14:46:08.012Z"
+}

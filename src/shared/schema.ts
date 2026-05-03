@@ -69,6 +69,22 @@ export const backgroundSummaryStatusSchema = z.object({
   lastSummaryMemoryId: z.string().min(1).nullable(),
 });
 
+export const pepeResultItemSchema = z.object({
+  memoryId: z.string().min(1),
+  summary: z.string().min(1),
+  similarity: z.number().min(0).max(1),
+  sourceSessionId: z.string().min(1).nullable(),
+  vectorVersion: z.string().min(1),
+});
+
+export const pepeResultSetSchema = z.object({
+  sessionId: z.string().min(1),
+  agentInstanceId: z.string().min(1).nullable(),
+  inputFingerprint: z.string().min(1),
+  items: z.array(pepeResultItemSchema),
+  generatedAt: z.string().datetime(),
+});
+
 export const puebloSummaryPolicySchema = z.object({
   autoSummarize: z.boolean(),
   thresholdHint: z.number().int().positive().nullable(),
@@ -225,7 +241,7 @@ export const commandActionSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const toolNameSchema = z.enum(['grep', 'glob', 'exec', 'read']);
+export const toolNameSchema = z.enum(['grep', 'glob', 'exec', 'read', 'edit']);
 export const toolResultStatusSchema = z.enum(['succeeded', 'failed', 'empty']);
 
 export const toolInvocationSchema = z.object({
@@ -300,6 +316,8 @@ export type SessionMessage = z.infer<typeof sessionMessageSchema>;
 export type ContextCount = z.infer<typeof contextCountSchema>;
 export type BackgroundSummaryState = z.infer<typeof backgroundSummaryStateSchema>;
 export type BackgroundSummaryStatus = z.infer<typeof backgroundSummaryStatusSchema>;
+export type PepeResultItem = z.infer<typeof pepeResultItemSchema>;
+export type PepeResultSet = z.infer<typeof pepeResultSetSchema>;
 export type PuebloProfile = z.infer<typeof puebloProfileSchema>;
 export type AgentProfileTemplate = z.infer<typeof agentProfileTemplateSchema>;
 export type AgentInstanceStatus = z.infer<typeof agentInstanceStatusSchema>;

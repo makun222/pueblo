@@ -1,0 +1,20 @@
+{
+  "id": "ce270f00-05e3-49c0-8a7a-64e429c0559b",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "pepe process optimized by adjusting similarity threshold to prevent unfocused conversations; suggested enhancements include dynamic threshold adjustment and additional context retention.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:14.811Z",
+  "updatedAt": "2026-05-01T14:45:14.811Z"
+}

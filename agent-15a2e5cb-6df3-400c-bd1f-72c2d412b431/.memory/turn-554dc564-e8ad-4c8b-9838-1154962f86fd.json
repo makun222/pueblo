@@ -1,0 +1,18 @@
+{
+  "id": "554dc564-e8ad-4c8b-9838-1154962f86fd",
+  "type": "short-term",
+  "title": "Turn 15",
+  "content": "User:\n解析一下这个文件\n\nAssistant:\n请提供要解析的文件的路径或文件内容，以便我能够帮助您进行解析。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T05:45:49.826Z",
+  "updatedAt": "2026-04-30T05:45:49.826Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "07a5dada-e2db-48f4-af8f-a1e0c84ddc37",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe is a background monitoring service in AgentTaskRunner that triggers when context token utilization exceeds 85%: it summarizes each conversation-turn memory via LLM, computes local 256-d vectors using character 3-gram hashing, filters to memories with cosine similarity >= 0.3 to current goal, and updates session.selectedMemoryIds (optional dependency, cooldown 30s, only processes `conversation-turn` tagged memories).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.783Z",
+  "updatedAt": "2026-05-01T14:45:16.783Z"
+}

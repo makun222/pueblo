@@ -1,0 +1,20 @@
+{
+  "id": "cd199570-5163-441f-8969-78e2708fab08",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "用户从讨论美国战略布局转向要求查看pueblo的整体架构。之前的对话涵盖了美国全球军事基地、亚太战略、北约防务、信息战、反恐及经济科技竞争等要点。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.935Z",
+  "updatedAt": "2026-05-01T14:45:55.935Z"
+}

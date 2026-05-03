@@ -1,0 +1,20 @@
+{
+  "id": "700e806a-de0b-4f6d-b108-79a5652445d3",
+  "type": "short-term",
+  "title": "Summary: Turn 759",
+  "content": "User referred to the `src` directory; the assistant enumerated its subdirectories (Agent, App, CLI, Commands, Desktop, Memory, Persistence, Prompts, Providers, Sessions, Shared) for context.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "09dd6ca1-326a-402a-b656-cbb049802be2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T12:52:52.081Z",
+  "updatedAt": "2026-05-02T12:52:52.081Z"
+}

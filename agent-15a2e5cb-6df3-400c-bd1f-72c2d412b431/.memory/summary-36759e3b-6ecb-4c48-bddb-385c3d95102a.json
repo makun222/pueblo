@@ -1,0 +1,20 @@
+{
+  "id": "36759e3b-6ecb-4c48-bddb-385c3d95102a",
+  "type": "short-term",
+  "title": "Summary: Turn 14",
+  "content": "In `D:\\workspace\\trends\\pueblo`, the README file is `README.md`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fc931c90-bf2c-4b0a-a320-9a49f5813f03",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.106Z",
+  "updatedAt": "2026-05-01T14:45:17.106Z"
+}

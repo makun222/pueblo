@@ -1,0 +1,20 @@
+{
+  "id": "2d47a227-19b8-463c-b621-49d4d9820ee0",
+  "type": "short-term",
+  "title": "Summary: Turn 14",
+  "content": "Located README.md in D:\\workspace\\trends\\pueblo.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fc931c90-bf2c-4b0a-a320-9a49f5813f03",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:23.974Z",
+  "updatedAt": "2026-05-01T14:45:23.974Z"
+}

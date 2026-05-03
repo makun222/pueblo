@@ -1,0 +1,20 @@
+{
+  "id": "b5cac063-2f5c-4a5d-9c4b-e951c11a8f0c",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "US strategic layout includes global military bases, counter-China Asia-Pacific alliances (Japan, Australia, India), NATO/Europe deterrence against Russia, cyber warfare, counterterrorism, and economic-tech competition (AI, 5G, critical minerals).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.316Z",
+  "updatedAt": "2026-05-01T14:46:24.316Z"
+}

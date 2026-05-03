@@ -1,0 +1,20 @@
+{
+  "id": "1a2fcb05-586d-4be9-a6cb-bb52277fb09a",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "The US strategic layout centers on global military bases, Asia-Pacific counterbalance to China via Indo-Pacific alliances, NATO/European deterrence of Russia, cyber/information warfare, ongoing counterterrorism, and economic-tech competition in AI/5G/critical minerals.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:06.994Z",
+  "updatedAt": "2026-05-01T14:45:06.994Z"
+}

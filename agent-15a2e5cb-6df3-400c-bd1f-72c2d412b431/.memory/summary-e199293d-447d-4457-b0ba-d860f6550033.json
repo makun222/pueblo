@@ -1,0 +1,20 @@
+{
+  "id": "e199293d-447d-4457-b0ba-d860f6550033",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "pepe process: similarity threshold must be set reasonably to prevent dialogue drifting; adjust similarity, add context retention, or use dynamic adjustment and enhanced semantic analysis for stability.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:24.293Z",
+  "updatedAt": "2026-05-01T14:46:24.293Z"
+}

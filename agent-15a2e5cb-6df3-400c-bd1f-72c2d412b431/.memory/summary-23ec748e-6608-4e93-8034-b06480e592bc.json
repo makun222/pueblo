@@ -1,0 +1,20 @@
+{
+  "id": "23ec748e-6608-4e93-8034-b06480e592bc",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Pepe monitoring service design: start background thread in AgentTaskRunner to summarize conversation-turn memories via LLM, vectorize with local character n-gram (256-dim), filter by cosine similarity to current goal, and update `session.selectedMemoryIds` when context utilization exceeds 0.85 threshold.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:35.192Z",
+  "updatedAt": "2026-05-01T14:45:35.192Z"
+}

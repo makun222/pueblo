@@ -1,0 +1,20 @@
+{
+  "id": "6da20f51-2110-42be-99cc-9f5125d01939",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "用户询问美国战略布局，助手总结了全球军事基地、亚太战略、北约与欧洲防务、信息战与网络安全、反恐战略、经济与科技竞争六个关键方面。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.626Z",
+  "updatedAt": "2026-05-01T14:46:11.626Z"
+}

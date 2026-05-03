@@ -1,0 +1,20 @@
+{
+  "id": "1b548936-b8ec-4830-b7e1-a6b842d0f0b1",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "User expressed openness to any topic; assistant requested specific direction for further assistance.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "88b8775f-a224-40e2-b0ed-5c4bd8cc6325",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.505Z",
+  "updatedAt": "2026-05-01T14:45:19.505Z"
+}

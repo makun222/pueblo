@@ -1,0 +1,20 @@
+{
+  "id": "89af2c70-d836-405f-b7ff-dca5427c5b89",
+  "type": "short-term",
+  "title": "Summary: Turn 799",
+  "content": "User greeted with \"你好\" in a session where the knowledge-base project (Java knowledge base engine extracting concepts and relationships from multimedia) was previously discussed.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "587726fe-5879-460a-bcf0-9f6b3245c676",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T15:29:32.377Z",
+  "updatedAt": "2026-05-02T15:29:32.377Z"
+}

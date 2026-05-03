@@ -1,0 +1,20 @@
+{
+  "id": "30520452-1057-48df-ab75-c76d21c7d9f5",
+  "type": "short-term",
+  "title": "Summary: Turn 28",
+  "content": "Pueblo 0.1.0 is a TypeScript CLI + Electron code agent framework with SQLite persistence, organized into src/ modules for agent runtime, CLI, commands, desktop, memory, providers, sessions, and tools, plus unit/integration/contract tests; it uses a layered architecture from input routing to provider adaptation and semantic memory.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "53c4740c-ee32-4193-a0e6-a321b792e445",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:36.168Z",
+  "updatedAt": "2026-05-01T14:45:36.168Z"
+}

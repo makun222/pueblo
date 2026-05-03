@@ -12,9 +12,9 @@ const MAX_READ_CHARS = 12000;
 
 export function createReadTool() {
   return async (request: ReadToolRequest): Promise<ToolExecutionResult> => {
-    const relativePath = request.path.trim();
+    const requestedPath = request.path.trim();
 
-    if (!relativePath) {
+    if (!requestedPath) {
       return {
         toolName: 'read',
         status: 'failed',
@@ -24,8 +24,9 @@ export function createReadTool() {
     }
 
     try {
-      const absolutePath = path.resolve(request.cwd, relativePath);
-      const normalizedRelativePath = path.relative(request.cwd, absolutePath);
+      const workspaceRoot = path.resolve(request.cwd);
+      const absolutePath = resolveRequestedPath(workspaceRoot, requestedPath);
+      const normalizedRelativePath = path.relative(workspaceRoot, absolutePath);
 
       if (normalizedRelativePath.startsWith('..') || path.isAbsolute(normalizedRelativePath)) {
         return {
@@ -79,4 +80,11 @@ export function createReadTool() {
       };
     }
   };
+}
+
+function resolveRequestedPath(workspaceRoot: string, requestedPath: string): string {
+  const normalizedRequestedPath = path.normalize(requestedPath);
+  return path.isAbsolute(normalizedRequestedPath)
+    ? normalizedRequestedPath
+    : path.resolve(workspaceRoot, normalizedRequestedPath);
 }

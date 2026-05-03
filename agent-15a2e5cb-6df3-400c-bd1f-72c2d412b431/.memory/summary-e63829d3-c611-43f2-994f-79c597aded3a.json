@@ -1,0 +1,20 @@
+{
+  "id": "e63829d3-c611-43f2-994f-79c597aded3a",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "User explored `src/agent` directory containing 21 files (agent services, embeddings, workers, types, etc.) and now requests to view the overall architecture of Pueblo.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:09.258Z",
+  "updatedAt": "2026-05-01T14:46:09.258Z"
+}

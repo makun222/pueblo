@@ -1,0 +1,20 @@
+{
+  "id": "fbab36b0-b374-4202-a737-d67896b9a734",
+  "type": "short-term",
+  "title": "Summary: Turn 20",
+  "content": "To optimize pepe's dialogue stability, adjust the similarity threshold to prevent low values causing erratic responses, and consider dynamic adjustment or enhanced semantic analysis.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:36.198Z",
+  "updatedAt": "2026-05-01T14:45:36.198Z"
+}

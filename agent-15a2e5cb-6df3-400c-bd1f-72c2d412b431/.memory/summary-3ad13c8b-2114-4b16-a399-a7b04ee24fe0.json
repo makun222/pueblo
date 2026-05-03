@@ -1,0 +1,20 @@
+{
+  "id": "3ad13c8b-2114-4b16-a399-a7b04ee24fe0",
+  "type": "short-term",
+  "title": "Summary: Turn 18",
+  "content": "GitHub Copilot API request failed due to network error when responding to a Chinese greeting.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "30996acf-d7b1-4651-96d7-86c3c4721e2d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:30.119Z",
+  "updatedAt": "2026-05-01T14:45:30.119Z"
+}

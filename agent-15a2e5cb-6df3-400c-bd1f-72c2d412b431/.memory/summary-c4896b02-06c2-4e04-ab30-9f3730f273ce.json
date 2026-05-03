@@ -1,0 +1,20 @@
+{
+  "id": "c4896b02-06c2-4e04-ab30-9f3730f273ce",
+  "type": "short-term",
+  "title": "Summary: Turn 22",
+  "content": "User requested parsing of `pepe-worker-process`; assistant could not find matching files or directories in the repository.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa33d793-fdda-4e8a-b3e2-c3184e629c7e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.918Z",
+  "updatedAt": "2026-05-01T14:45:55.918Z"
+}

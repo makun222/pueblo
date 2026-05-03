@@ -3,6 +3,10 @@ import type { AgentProfileTemplate, ProviderProfile, RendererMessageTraceStep, R
 import type { DesktopMenuAction, DesktopProviderStatus, DesktopRuntimeStatus, DesktopSubmitResponse } from '../shared/ipc-contract';
 import './styles.css';
 
+const THINKING_PLACEHOLDER = '让我想想该怎么做...';
+const STREAM_CHUNK_SIZE = 24;
+const STREAM_TICK_MS = 18;
+
 interface UserTranscriptEntry {
   readonly id: string;
   readonly role: 'user';
@@ -11,7 +15,17 @@ interface UserTranscriptEntry {
   readonly messageTrace: RendererMessageTraceStep[];
 }
 
-type TranscriptEntry = UserTranscriptEntry | RendererOutputBlock;
+interface AssistantTranscriptEntry {
+  readonly id: string;
+  readonly role: 'assistant';
+  readonly content: string;
+  readonly createdAt: string;
+  readonly messageTrace: RendererMessageTraceStep[];
+  readonly status: 'pending' | 'streaming' | 'complete';
+  readonly blockType: 'task-result' | 'command-result' | 'error';
+}
+
+type TranscriptEntry = UserTranscriptEntry | AssistantTranscriptEntry | RendererOutputBlock;
 type ProviderConfigMode = 'github-copilot' | 'deepseek';
 
 const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
@@ -93,7 +107,11 @@ export function App() {
   const [deepSeekModelId, setDeepSeekModelId] = useState('deepseek-v4-flash');
   const [deepSeekBaseUrl, setDeepSeekBaseUrl] = useState('https://api.deepseek.com');
   const [isDeepSeekEditing, setIsDeepSeekEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const runtimeStatusRef = useRef(runtimeStatus);
+  const pendingAssistantEntryIdRef = useRef<string | null>(null);
+  const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamRunIdRef = useRef(0);
 
   useEffect(() => {
     void window.electronAPI.getRuntimeStatus().then(setRuntimeStatus).catch(() => {
@@ -104,10 +122,19 @@ export function App() {
     });
 
     window.electronAPI.onOutput((event, data) => {
-      setTranscriptEntries((previous) => [...previous, data]);
+      if (isAnswerBlock(data) && pendingAssistantEntryIdRef.current) {
+        streamAssistantResponse(data);
+        return;
+      }
+
+      setTranscriptEntries((previous) => upsertRendererBlock(previous, data));
     });
 
     return () => {
+      if (streamTimerRef.current) {
+        clearTimeout(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
       window.electronAPI.removeAllListeners('output');
     };
   }, []);
@@ -157,6 +184,82 @@ export function App() {
     ]);
   };
 
+  const appendPendingAssistantEntry = (createdAt: string): string => {
+    const assistantEntryId = `${createdAt}-assistant-${Math.random().toString(16).slice(2)}`;
+    pendingAssistantEntryIdRef.current = assistantEntryId;
+    setTranscriptEntries((previous) => [
+      ...previous,
+      {
+        id: assistantEntryId,
+        role: 'assistant',
+        content: THINKING_PLACEHOLDER,
+        createdAt,
+        messageTrace: [],
+        status: 'pending',
+        blockType: 'task-result',
+      },
+    ]);
+    return assistantEntryId;
+  };
+
+  const streamAssistantResponse = (block: RendererOutputBlock) => {
+    const assistantEntryId = pendingAssistantEntryIdRef.current;
+    if (!assistantEntryId) {
+      setTranscriptEntries((previous) => upsertRendererBlock(previous, block));
+      return;
+    }
+
+    if (!isAnswerBlock(block)) {
+      setTranscriptEntries((previous) => upsertRendererBlock(previous, block));
+      return;
+    }
+
+    const answerBlockType = block.type;
+
+    streamRunIdRef.current += 1;
+    const currentRunId = streamRunIdRef.current;
+
+    if (streamTimerRef.current) {
+      clearTimeout(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+
+    const streamFrame = (cursor: number) => {
+      if (streamRunIdRef.current !== currentRunId) {
+        return;
+      }
+
+      const nextCursor = Math.min(cursor + STREAM_CHUNK_SIZE, block.content.length);
+      const nextContent = block.content.slice(0, nextCursor);
+
+      setTranscriptEntries((previous) => previous.map((entry) => {
+        if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          content: nextContent,
+          messageTrace: block.messageTrace,
+          status: nextCursor >= block.content.length ? 'complete' : 'streaming',
+          blockType: answerBlockType,
+        };
+      }));
+
+      if (nextCursor >= block.content.length) {
+        pendingAssistantEntryIdRef.current = null;
+        streamTimerRef.current = null;
+        return;
+      }
+
+      streamTimerRef.current = setTimeout(() => {
+        streamFrame(nextCursor);
+      }, STREAM_TICK_MS);
+    };
+
+    streamFrame(0);
+  };
+
   const executeInput = async (submittedInput: string, options: { recordUserEntry: boolean } = { recordUserEntry: true }) => {
     const trimmedInput = submittedInput.trim();
 
@@ -166,6 +269,8 @@ export function App() {
 
     const createdAt = new Date().toISOString();
     const transcriptEntryId = `${createdAt}-${Math.random().toString(16).slice(2)}`;
+    const shouldShowPendingAssistant = options.recordUserEntry && !trimmedInput.startsWith('/');
+    let assistantEntryId: string | null = null;
 
     try {
       if (options.recordUserEntry) {
@@ -179,8 +284,13 @@ export function App() {
             messageTrace: [],
           },
         ]);
+
+        if (shouldShowPendingAssistant) {
+          assistantEntryId = appendPendingAssistantEntry(createdAt);
+        }
       }
 
+      setIsSubmitting(true);
       const response = await window.electronAPI.submitInput(trimmedInput);
       const messageTrace = response.blocks.find((block) => block.messageTrace.length > 0)?.messageTrace ?? [];
 
@@ -197,10 +307,31 @@ export function App() {
         }));
       }
 
+      if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
+        pendingAssistantEntryIdRef.current = null;
+        setTranscriptEntries((previous) => previous.filter((entry) => !('role' in entry) || entry.id !== assistantEntryId));
+      }
+
       setRuntimeStatus(response.runtimeStatus);
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+
+      if (assistantEntryId) {
+        pendingAssistantEntryIdRef.current = null;
+        setTranscriptEntries((previous) => previous.map((entry) => {
+          if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
+            return entry;
+          }
+
+          return {
+            ...entry,
+            content: message,
+            status: 'complete',
+            blockType: 'error',
+          };
+        }));
+      }
 
       setTranscriptEntries((previous) => [
         ...previous,
@@ -217,16 +348,22 @@ export function App() {
       ]);
 
       return null;
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const response = await executeInput(input, { recordUserEntry: true });
+    const submittedInput = input;
+    const trimmedInput = submittedInput.trim();
 
-    if (response) {
-      setInput('');
+    if (!trimmedInput || needsAgentSelection || isSubmitting) {
+      return;
     }
+
+    setInput('');
+    await executeInput(submittedInput, { recordUserEntry: true });
   };
 
   const handleStartAgentSession = async (profileId: string) => {
@@ -468,10 +605,10 @@ export function App() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={needsAgentSelection ? 'Select an agent profile to begin...' : 'Enter command or task...'}
-          disabled={needsAgentSelection}
+          disabled={needsAgentSelection || isSubmitting}
           autoFocus
         />
-        <button type="submit" disabled={needsAgentSelection}>Send</button>
+        <button type="submit" disabled={needsAgentSelection || isSubmitting}>Send</button>
       </form>
     </div>
   );
@@ -702,6 +839,16 @@ function renderAgentPicker(
 
 function renderTranscriptEntry(entry: TranscriptEntry) {
   if ('role' in entry) {
+    if (entry.role === 'assistant') {
+      return (
+        <article key={entry.id} className={`chat-entry chat-entry-answer chat-entry-answer-${entry.blockType} ${entry.status === 'pending' ? 'chat-entry-answer-pending' : ''}`}>
+          <header className="chat-entry-label">Pueblo</header>
+          <p className="chat-entry-body">{entry.content}</p>
+          {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
+        </article>
+      );
+    }
+
     return (
       <article key={entry.id} className="chat-entry chat-entry-user">
         <header className="chat-entry-label">You</header>
@@ -744,6 +891,22 @@ function renderTranscriptEntry(entry: TranscriptEntry) {
       {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
     </div>
   );
+}
+
+function isAnswerBlock(entry: RendererOutputBlock): entry is RendererOutputBlock & { type: 'task-result' | 'command-result' | 'error' } {
+  return entry.type === 'task-result' || entry.type === 'command-result' || entry.type === 'error';
+}
+
+function upsertRendererBlock(previous: TranscriptEntry[], nextBlock: RendererOutputBlock): TranscriptEntry[] {
+  const existingIndex = previous.findIndex((entry) => !('role' in entry) && entry.id === nextBlock.id);
+
+  if (existingIndex === -1) {
+    return [...previous, nextBlock];
+  }
+
+  const nextEntries = [...previous];
+  nextEntries[existingIndex] = nextBlock;
+  return nextEntries;
 }
 
 function renderMessageTrace(id: string, messageTrace: RendererMessageTraceStep[] | null | undefined) {

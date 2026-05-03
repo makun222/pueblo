@@ -63,4 +63,28 @@ export class MemoryService {
       },
     );
   }
+
+  createDerivedSummaryMemory(args: {
+    readonly sessionId: string;
+    readonly parentMemory: MemoryRecord;
+    readonly summary: string;
+  }): MemoryRecord {
+    return this.createMemory(
+      `Summary: ${args.parentMemory.title}`,
+      args.summary.trim(),
+      args.parentMemory.scope,
+      {
+        type: args.parentMemory.type,
+        tags: uniqueTags([...args.parentMemory.tags, 'pepe-summary', 'semantic-summary']),
+        parentId: args.parentMemory.id,
+        derivationType: 'summary',
+        summaryDepth: args.parentMemory.summaryDepth + 1,
+        sourceSessionId: args.sessionId,
+      },
+    );
+  }
+}
+
+function uniqueTags(tags: string[]): string[] {
+  return [...new Set(tags)];
 }

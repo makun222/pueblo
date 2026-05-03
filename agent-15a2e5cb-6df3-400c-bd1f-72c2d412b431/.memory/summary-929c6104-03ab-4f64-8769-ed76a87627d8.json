@@ -1,0 +1,20 @@
+{
+  "id": "929c6104-03ab-4f64-8769-ed76a87627d8",
+  "type": "short-term",
+  "title": "Summary: Turn 19",
+  "content": "用户问候后，助手主动询问Pueblo项目开发或维护的相关工作。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "cda82921-4c88-46b7-88f5-5a317f6b1d8a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.839Z",
+  "updatedAt": "2026-05-01T14:46:08.839Z"
+}

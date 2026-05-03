@@ -1,0 +1,20 @@
+{
+  "id": "80ed77cd-6f1e-4561-b3c3-c259aadc3aea",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Agent启动后同步启动Pepe监控线程，利用独立LLM连接对conversation-turn记忆进行归纳（LLM摘要）、向量化（字符3-gram哈希至256维）和相关性过滤（余弦相似度≥0.3），仅保留高相关记忆写入session.selectedMemoryIds，并配置0.85上下文利用率阈值、30s冷却和3条最小记忆数触发条件，可选的Pepe服务集成于task-runner，支持渐进采纳。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:19.522Z",
+  "updatedAt": "2026-05-01T14:45:19.522Z"
+}

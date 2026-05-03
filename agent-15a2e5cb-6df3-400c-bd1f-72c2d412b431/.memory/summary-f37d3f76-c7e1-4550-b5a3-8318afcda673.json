@@ -1,0 +1,20 @@
+{
+  "id": "f37d3f76-c7e1-4550-b5a3-8318afcda673",
+  "type": "short-term",
+  "title": "Summary: Turn 8",
+  "content": "用户此前关注军事领域但未明确方向，现转向请求分析pueblo整体架构，形成新要点。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7cf1fe56-9d6e-452f-8a23-fe3d71279a0c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.941Z",
+  "updatedAt": "2026-05-01T14:45:55.941Z"
+}

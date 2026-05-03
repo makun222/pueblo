@@ -2,7 +2,8 @@ import type { AppConfig } from '../shared/config';
 import type {
   BackgroundSummaryStatus,
   ContextCount,
-  MemoryRecord,
+  PepeResultItem,
+  PepeResultSet,
   PromptAsset,
   PuebloProfile,
   Session,
@@ -12,6 +13,7 @@ import type {
 export interface TaskContext {
   readonly sessionId: string | null;
   readonly session: Session | null;
+  readonly targetDirectory: string | null;
   readonly providerId: string | null;
   readonly providerName: string | null;
   readonly selectedModelId: string | null;
@@ -19,7 +21,8 @@ export interface TaskContext {
   readonly selectedPromptIds: string[];
   readonly selectedMemoryIds: string[];
   readonly prompts: PromptAsset[];
-  readonly memories: MemoryRecord[];
+  readonly resultSet: PepeResultSet | null;
+  readonly resultItems: PepeResultItem[];
   readonly sessionMessages: SessionMessage[];
   readonly recentMessages: string[];
   readonly puebloProfile: PuebloProfile;
@@ -30,8 +33,10 @@ export interface TaskContext {
 
 export interface TaskContextInput {
   readonly session?: Session | null;
+  readonly targetDirectory?: string | null;
   readonly prompts?: PromptAsset[];
-  readonly memories?: MemoryRecord[];
+  readonly resultSet?: PepeResultSet | null;
+  readonly resultItems?: PepeResultItem[];
   readonly selectedModelId?: string | null;
   readonly providerId?: string | null;
   readonly providerName?: string | null;
@@ -48,21 +53,24 @@ export interface TaskContextInput {
 export function createTaskContext(input: TaskContextInput): TaskContext {
   const session = input.session ?? null;
   const prompts = input.prompts ?? [];
-  const memories = input.memories ?? [];
+  const resultSet = input.resultSet ?? null;
+  const resultItems = input.resultItems ?? resultSet?.items ?? [];
   const selectedModelId = input.selectedModelId ?? session?.currentModelId ?? null;
   const sessionMessages = input.sessionMessages ?? session?.messageHistory ?? [];
 
   return {
     sessionId: input.currentSessionId ?? session?.id ?? null,
     session,
+    targetDirectory: input.targetDirectory ?? null,
     providerId: input.providerId ?? null,
     providerName: input.providerName ?? null,
     selectedModelId,
     selectedModelName: input.selectedModelName ?? null,
     selectedPromptIds: session?.selectedPromptIds ?? prompts.map((prompt) => prompt.id),
-    selectedMemoryIds: session?.selectedMemoryIds ?? memories.map((memory) => memory.id),
+    selectedMemoryIds: session?.selectedMemoryIds ?? resultItems.map((item) => item.memoryId),
     prompts,
-    memories,
+    resultSet,
+    resultItems,
     sessionMessages,
     recentMessages: input.recentMessages ?? sessionMessages.map(formatSessionMessageForContext),
     puebloProfile: input.puebloProfile,

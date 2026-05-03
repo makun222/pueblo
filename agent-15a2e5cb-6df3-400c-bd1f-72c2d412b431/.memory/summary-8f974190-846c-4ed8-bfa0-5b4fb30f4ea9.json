@@ -1,0 +1,20 @@
+{
+  "id": "8f974190-846c-4ed8-bfa0-5b4fb30f4ea9",
+  "type": "short-term",
+  "title": "Summary: Turn 19",
+  "content": "Greeted user; offered assistance with Pueblo project development or maintenance.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "cda82921-4c88-46b7-88f5-5a317f6b1d8a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:48.772Z",
+  "updatedAt": "2026-05-01T14:45:48.772Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "f6d41c70-a2b2-47a5-9360-296d7b3cdc86",
+  "type": "short-term",
+  "title": "Summary: Turn 18",
+  "content": "User greeted with \"你好\" but assistant failed due to GitHub Copilot network request error.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "30996acf-d7b1-4651-96d7-86c3c4721e2d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:34.032Z",
+  "updatedAt": "2026-05-01T14:45:34.032Z"
+}

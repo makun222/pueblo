@@ -1,0 +1,20 @@
+{
+  "id": "4268725c-f5a2-454e-b92c-845b69afe7e4",
+  "type": "short-term",
+  "title": "Summary: Turn 4",
+  "content": "User attempted to save plan as `pepeplan.md` but DeepSeek API request failed (400) due to missing `reasoning_content` in thinking mode. Plan was not recorded.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7e10b4c9-80ee-4277-b625-5bff2cdc7baf",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:46.544Z",
+  "updatedAt": "2026-05-01T14:45:46.544Z"
+}

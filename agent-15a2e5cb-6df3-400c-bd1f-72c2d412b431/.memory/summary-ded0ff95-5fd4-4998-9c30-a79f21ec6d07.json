@@ -1,0 +1,20 @@
+{
+  "id": "ded0ff95-5fd4-4998-9c30-a79f21ec6d07",
+  "type": "short-term",
+  "title": "Summary: Turn 15",
+  "content": "User requested overview of Pueblo architecture. Previous turn: user asked to parse a file but did not provide path.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "554dc564-e8ad-4c8b-9838-1154962f86fd",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:09.273Z",
+  "updatedAt": "2026-05-01T14:46:09.273Z"
+}

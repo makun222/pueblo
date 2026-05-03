@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubCopilotAdapter } from '../../src/providers/github-copilot-adapter';
+import { getToolExecutionPolicy } from '../../src/providers/provider-adapter';
 import { resolveGitHubCopilotAuth } from '../../src/providers/github-copilot-auth';
 import { createGitHubCopilotProfile } from '../../src/providers/github-copilot-profile';
 import type { ProviderAdapter } from '../../src/providers/provider-adapter';
@@ -221,6 +222,7 @@ describe('GitHub Copilot Provider Contract', () => {
         {
           name: 'glob',
           description: 'Match files',
+          executionPolicy: getToolExecutionPolicy('glob'),
           inputSchema: {
             type: 'object',
             properties: {

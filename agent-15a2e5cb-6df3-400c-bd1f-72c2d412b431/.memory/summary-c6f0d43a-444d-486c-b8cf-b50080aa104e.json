@@ -1,0 +1,20 @@
+{
+  "id": "c6f0d43a-444d-486c-b8cf-b50080aa104e",
+  "type": "short-term",
+  "title": "Summary: Turn 27",
+  "content": "`pepe-worker-process.ts` defines `processPepeSessionSnapshot(snapshot, semanticClient, embeddingClient, config) -> PepeWorkerProcessResult`. It summarizes memories via `shouldSummarizeMemory`, creates embedding batches (user input + summarized memory), and ranks results with `rankMemoryCandidatesWithVectors`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "009e5872-010e-4fa8-bcd2-7cf5edc87487",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:29.897Z",
+  "updatedAt": "2026-05-01T14:45:29.897Z"
+}

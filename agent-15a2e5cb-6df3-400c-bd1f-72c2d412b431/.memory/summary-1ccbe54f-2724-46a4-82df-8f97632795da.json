@@ -1,0 +1,20 @@
+{
+  "id": "1ccbe54f-2724-46a4-82df-8f97632795da",
+  "type": "short-term",
+  "title": "Summary: Turn 17",
+  "content": "用户询问Pueblo架构的优化方案，助手列出了性能、复杂度、可测试性、可读性、错误处理和资源管理六个通用方向。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4361ee59-526a-4d12-80ad-da8d1684a884",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.896Z",
+  "updatedAt": "2026-05-01T14:46:40.896Z"
+}

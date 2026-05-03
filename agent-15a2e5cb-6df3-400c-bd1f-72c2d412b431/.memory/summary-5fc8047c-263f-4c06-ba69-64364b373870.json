@@ -1,0 +1,20 @@
+{
+  "id": "5fc8047c-263f-4c06-ba69-64364b373870",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "User greeted in Chinese; assistant introduced as Claude, senior software engineer focused on Pueblo codebase, offering help with code review, bug fixes, features, and architecture.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fbd37c65-1c24-4d8b-8051-ff9428fe10b9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.789Z",
+  "updatedAt": "2026-05-01T14:45:16.789Z"
+}

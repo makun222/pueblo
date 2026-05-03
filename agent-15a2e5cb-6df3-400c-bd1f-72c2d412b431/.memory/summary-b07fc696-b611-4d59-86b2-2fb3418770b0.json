@@ -1,0 +1,20 @@
+{
+  "id": "b07fc696-b611-4d59-86b2-2fb3418770b0",
+  "type": "short-term",
+  "title": "Summary: Turn 6",
+  "content": "User wanted to discuss current situation; assistant requested specification of topic or domain for effective help.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f410c21d-38e6-4f24-8373-ec8049b8f408",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:56.855Z",
+  "updatedAt": "2026-05-01T14:45:56.855Z"
+}

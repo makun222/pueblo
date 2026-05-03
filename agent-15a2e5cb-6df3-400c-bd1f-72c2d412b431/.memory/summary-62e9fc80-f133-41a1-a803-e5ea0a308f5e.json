@@ -1,0 +1,20 @@
+{
+  "id": "62e9fc80-f133-41a1-a803-e5ea0a308f5e",
+  "type": "short-term",
+  "title": "Summary: Turn 57",
+  "content": "Pueblo is a TypeScript/Node.js CLI+Desktop code agent with dual-modal entry (CLI or Electron), layered architecture (CLI→Command→Agent→Provider→Tool→Persistence), and a Pepe sub-framework for long-term memory and semantic search. Key decisions: provider abstraction (GitHub Copilot, DeepSeek), slash command routing vs. plain text task execution, SQLite local persistence, and credential management via Windows Credential Manager or config file.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "90ec59f9-10f5-47f6-ac86-5304c73c9e67",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:18.008Z",
+  "updatedAt": "2026-05-01T14:45:18.008Z"
+}

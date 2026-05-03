@@ -1,0 +1,20 @@
+{
+  "id": "8f174dc3-6486-4575-8e23-d9d70e68f3ef",
+  "type": "short-term",
+  "title": "Summary: Turn 4",
+  "content": "Distilled memory: User requested to examine Pueblo's overall architecture. Previously, user asked to document a plan as `pepeplan.md`, but a DeepSeek API error (reasoning_content mismatch) prevented completion.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7e10b4c9-80ee-4277-b625-5bff2cdc7baf",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:09.287Z",
+  "updatedAt": "2026-05-01T14:46:09.287Z"
+}

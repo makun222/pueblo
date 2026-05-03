@@ -1,0 +1,20 @@
+{
+  "id": "0b08dd39-4a71-4d43-b985-31963bf245ca",
+  "type": "short-term",
+  "title": "Summary: Turn 19",
+  "content": "User greeted assistant; assistant offered help with Pueblo project.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "cda82921-4c88-46b7-88f5-5a317f6b1d8a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.013Z",
+  "updatedAt": "2026-05-01T14:46:08.013Z"
+}

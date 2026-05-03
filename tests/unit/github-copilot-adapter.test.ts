@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubCopilotAdapter } from '../../src/providers/github-copilot-adapter';
+import { getToolExecutionPolicy } from '../../src/providers/provider-adapter';
 
 describe('github copilot adapter', () => {
   it('fails fast when token is missing', async () => {
@@ -184,6 +185,7 @@ describe('github copilot adapter', () => {
         {
           name: 'grep',
           description: 'Search files',
+          executionPolicy: getToolExecutionPolicy('grep'),
           inputSchema: {
             type: 'object',
             properties: {
@@ -261,6 +263,7 @@ describe('github copilot adapter', () => {
         {
           name: 'exec',
           description: 'Run command',
+          executionPolicy: getToolExecutionPolicy('exec'),
           inputSchema: {
             type: 'object',
             properties: {

@@ -1,0 +1,20 @@
+{
+  "id": "26d57642-1afa-450d-843d-b73add789614",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "User requested to examine the overall architecture of Pueblo. The `src/agent` directory contains core Pepe-related modules: agent-instance, profile templates, context resolver, embedding, memory mirror, result ranking, semantic client, supervisor, worker, task runner, and more.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:18.179Z",
+  "updatedAt": "2026-05-01T14:46:18.179Z"
+}

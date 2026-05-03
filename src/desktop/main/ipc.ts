@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { createRuntimeCoordinator, RuntimeMessage } from '../../app/runtime';
 import { createCliDependencies } from '../../cli/index';
 import { loadAppConfig } from '../../shared/config';
@@ -9,6 +9,20 @@ import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 export function setupIpcHandlers(mainWindow: BrowserWindow): void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
+  cli.setToolApprovalHandler(async (request) => {
+    const response = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: 'Tool Approval Required',
+      message: request.summary,
+      detail: [request.title, request.detail].join('\n\n'),
+      buttons: ['Allow', 'Deny'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+
+    return response.response === 0;
+  });
   const runtime = createRuntimeCoordinator({
     config,
     submitInput: cli.submitInput,

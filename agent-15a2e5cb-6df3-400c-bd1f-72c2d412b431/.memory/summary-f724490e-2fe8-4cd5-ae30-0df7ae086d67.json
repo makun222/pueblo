@@ -1,0 +1,20 @@
+{
+  "id": "f724490e-2fe8-4cd5-ae30-0df7ae086d67",
+  "type": "short-term",
+  "title": "Summary: Turn 733",
+  "content": "**Memory Distillation**  \nComplex instructions like “explain entire system architecture with code paths” do not crash the LLM but degrade predictably: attention sparsity, fact confusion, pattern collapse, truncation. For Pueblo, a 3-layer architecture (CLI → InputRouter → CommandDispatcher/AgentTaskRunner, persistence, desktop) was outlined with accurate core module details (~70% reliability on inferred parts). Optimal strategy: ask layered, file-focused questions (1–2 files per turn) to maintain high accuracy.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "be6dd3d7-c696-4b6b-8707-d497d596bf3b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:48:53.176Z",
+  "updatedAt": "2026-05-01T14:48:53.176Z"
+}

@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-02T08:44:22.613Z",
+  "providerId": "github-copilot",
+  "category": "response-structure-invalid",
+  "message": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"command\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+  "requestUrl": "https://api.githubcopilot.com/chat/completions",
+  "modelId": "copilot-chat",
+  "payload": {
+    "choices": [
+      {
+        "message": {
+          "tool_calls": [
+            {
+              "id": "call-1",
+              "type": "function",
+              "function": {
+                "name": "exec",
+                "arguments": "{\"command\":\"\"}"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "details": {
+    "name": "ZodError",
+    "message": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"command\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+    "stack": "ZodError: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"command\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]\n    at parseProviderToolArgs (D:\\workspace\\trends\\pueblo\\src\\providers\\provider-adapter.ts:291:41)\n    at parseGitHubCopilotToolCall (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:484:15)\n    at D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:502:55\n    at Array.map (<anonymous>)\n    at parseGitHubCopilotToolCalls (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:502:37)\n    at extractGitHubCopilotStepResult (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:415:12)\n    at GitHubCopilotAdapter.runStep (D:\\workspace\\trends\\pueblo\\src\\providers\\github-copilot-adapter.ts:126:14)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at D:\\workspace\\trends\\pueblo\\tests\\unit\\github-copilot-adapter.test.ts:259:5\n    at file:///D:/workspace/trends/pueblo/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+  }
+}

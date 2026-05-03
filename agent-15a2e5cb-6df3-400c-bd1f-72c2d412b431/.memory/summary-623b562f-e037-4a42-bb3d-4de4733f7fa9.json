@@ -1,0 +1,20 @@
+{
+  "id": "623b562f-e037-4a42-bb3d-4de4733f7fa9",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "GitHub Copilot request failed due to token limit (83233 tokens exceeded 64000), indicating the current codebase is too large for standard evaluation.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:29.956Z",
+  "updatedAt": "2026-05-01T14:45:29.956Z"
+}

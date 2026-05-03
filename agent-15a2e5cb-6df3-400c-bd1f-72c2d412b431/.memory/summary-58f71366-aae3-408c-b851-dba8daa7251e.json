@@ -1,0 +1,20 @@
+{
+  "id": "58f71366-aae3-408c-b851-dba8daa7251e",
+  "type": "short-term",
+  "title": "Summary: Turn 2",
+  "content": "Pueblo project has Python backend and TypeScript/React frontend; assistant is ready for code review, bug fixes, feature implementation, or architecture discussions.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "9d88da27-a81f-4567-9c41-181c8327bb88",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:34.111Z",
+  "updatedAt": "2026-05-01T14:45:34.111Z"
+}

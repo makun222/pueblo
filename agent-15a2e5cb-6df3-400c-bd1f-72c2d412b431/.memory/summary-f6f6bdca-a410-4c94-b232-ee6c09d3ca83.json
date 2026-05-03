@@ -1,0 +1,20 @@
+{
+  "id": "f6f6bdca-a410-4c94-b232-ee6c09d3ca83",
+  "type": "short-term",
+  "title": "Summary: Turn 14",
+  "content": "在 `D:\\workspace\\trends\\pueblo` 目录下，README 文件为 `README.md`。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fc931c90-bf2c-4b0a-a320-9a49f5813f03",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.929Z",
+  "updatedAt": "2026-05-01T14:45:55.929Z"
+}

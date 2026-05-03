@@ -1,0 +1,18 @@
+{
+  "id": "41437adf-4674-4ff2-a001-d63759598d1a",
+  "type": "short-term",
+  "title": "Turn 12",
+  "content": "User:\n解析一下当前目录的代码，说说它是做什么用的\n\nAssistant:\n请提供当前目录的具体路径或相关代码文件，以便我可以对其进行解析和评估。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T03:42:46.790Z",
+  "updatedAt": "2026-04-30T03:42:46.790Z"
+}

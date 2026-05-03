@@ -1,0 +1,20 @@
+{
+  "id": "ac627093-7eb6-4c30-9032-ac4c924d1e90",
+  "type": "short-term",
+  "title": "Summary: Turn 3",
+  "content": "Agent运行时由TaskRunner驱动循环，ContextResolver从SessionService选取记忆ID并组装system prompt，MemoryService存储对话轮次记忆，Pepe后台服务监控token利用率，超过阈值时归纳记忆并基于向量相似度过滤无关记忆，结果写回SessionService的选择列表。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e2074fa7-ccd4-46b7-8538-a80077c900b2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:23.426Z",
+  "updatedAt": "2026-05-01T14:46:23.426Z"
+}

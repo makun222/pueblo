@@ -1,0 +1,20 @@
+{
+  "id": "44304fe3-c2c2-403c-b4e5-4eb8094a95c4",
+  "type": "short-term",
+  "title": "Summary: Turn 8",
+  "content": "User raised \"军事方面\" (military aspects) topic; assistant requested clarification on specific focus (e.g., arms race, strategic layout, maritime security).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7cf1fe56-9d6e-452f-8a23-fe3d71279a0c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:35.177Z",
+  "updatedAt": "2026-05-01T14:45:35.177Z"
+}

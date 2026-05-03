@@ -1,0 +1,20 @@
+{
+  "id": "12b515a1-4611-47e9-955d-c2cd822977da",
+  "type": "short-term",
+  "title": "Summary: Turn 16",
+  "content": "User requested an overview of Pueblo architecture; the assistant provided a summary of the README.md covering its CLI code agent design with TypeScript/Node.js, GitHub Copilot and DeepSeek provider support, session management, tool utilities (`grep`, `glob`, `exec`), SQLite persistence, and configuration via `.pueblo/config.json`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3b00890d-51ec-4ba6-b0b2-dd486c8e216a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.898Z",
+  "updatedAt": "2026-05-01T14:46:40.898Z"
+}

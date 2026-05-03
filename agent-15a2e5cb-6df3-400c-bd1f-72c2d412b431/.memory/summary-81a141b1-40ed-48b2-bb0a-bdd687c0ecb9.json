@@ -1,0 +1,20 @@
+{
+  "id": "81a141b1-40ed-48b2-bb0a-bdd687c0ecb9",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "User requested a look at Pueblo's overall architecture. Assistant introduced as Claude, senior software engineer focused on Pueblo codebase.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fbd37c65-1c24-4d8b-8051-ff9428fe10b9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:18.218Z",
+  "updatedAt": "2026-05-01T14:46:18.218Z"
+}

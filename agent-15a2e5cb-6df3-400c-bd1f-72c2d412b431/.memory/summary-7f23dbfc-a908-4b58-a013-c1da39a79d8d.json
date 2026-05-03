@@ -1,0 +1,20 @@
+{
+  "id": "7f23dbfc-a908-4b58-a013-c1da39a79d8d",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "用户同意助手提议，但未提供具体操作或主题，助手请求进一步明确。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "88b8775f-a224-40e2-b0ed-5c4bd8cc6325",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.917Z",
+  "updatedAt": "2026-05-01T14:46:40.917Z"
+}

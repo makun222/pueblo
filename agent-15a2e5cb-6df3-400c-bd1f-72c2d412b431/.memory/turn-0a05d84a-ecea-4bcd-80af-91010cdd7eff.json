@@ -1,0 +1,18 @@
+{
+  "id": "0a05d84a-ecea-4bcd-80af-91010cdd7eff",
+  "type": "short-term",
+  "title": "Turn 773",
+  "content": "User:\n看一下这个目录下有哪些文件，D:\\workspace\\KnowledgeBase\\knowledgeBase\n\nAssistant:\nTask failed: GitHub Copilot request failed (400): {\"error\":{\"message\":\"prompt token count of 82198 exceeds the limit of 64000\",\"code\":\"model_max_prompt_tokens_exceeded\"}}",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:45:16.983Z",
+  "updatedAt": "2026-05-02T13:45:16.983Z"
+}

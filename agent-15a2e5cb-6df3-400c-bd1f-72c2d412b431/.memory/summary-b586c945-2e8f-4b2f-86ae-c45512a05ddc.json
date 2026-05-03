@@ -1,0 +1,20 @@
+{
+  "id": "b586c945-2e8f-4b2f-86ae-c45512a05ddc",
+  "type": "short-term",
+  "title": "Summary: Turn 2",
+  "content": "用户问候后，助手确认Pueblo项目包含Python后端和TypeScript/React前端，待命处理新任务。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "9d88da27-a81f-4567-9c41-181c8327bb88",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:55.949Z",
+  "updatedAt": "2026-05-01T14:45:55.949Z"
+}

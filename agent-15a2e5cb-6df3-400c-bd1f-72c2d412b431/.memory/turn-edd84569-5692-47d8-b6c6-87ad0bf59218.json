@@ -1,0 +1,18 @@
+{
+  "id": "edd84569-5692-47d8-b6c6-87ad0bf59218",
+  "type": "short-term",
+  "title": "Turn 756",
+  "content": "User:\n进一步解析source code部分。\n\nAssistant:\nIt seems that there are no matching paths for the `source code` portion in the repository. Please provide a specific path or file name to analyze further!",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T12:52:06.618Z",
+  "updatedAt": "2026-05-02T12:52:06.618Z"
+}

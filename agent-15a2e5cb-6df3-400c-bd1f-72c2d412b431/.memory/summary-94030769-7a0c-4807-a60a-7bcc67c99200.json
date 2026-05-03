@@ -1,0 +1,20 @@
+{
+  "id": "94030769-7a0c-4807-a60a-7bcc67c99200",
+  "type": "short-term",
+  "title": "Summary: Turn 16",
+  "content": "README.md for Pueblo (CLI code agent, TypeScript/Node.js) details setup: Node.js 22 LTS, npm install, configure via `.pueblo/config.json`, build with `npm run build`, test with `npm test`, launch via `node dist/cli/index.js`. Key features include GitHub Copilot/DeepSeek support, session lifecycle, tools (grep, glob, exec), and SQLite persistence.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3b00890d-51ec-4ba6-b0b2-dd486c8e216a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:17.091Z",
+  "updatedAt": "2026-05-01T14:45:17.091Z"
+}

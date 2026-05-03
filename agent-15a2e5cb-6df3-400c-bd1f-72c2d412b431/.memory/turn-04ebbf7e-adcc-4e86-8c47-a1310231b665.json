@@ -1,0 +1,18 @@
+{
+  "id": "04ebbf7e-adcc-4e86-8c47-a1310231b665",
+  "type": "short-term",
+  "title": "Turn 20",
+  "content": "User:\npepe进程需要进行优化，如果将similarity设定过低，则对话出现飘忽。\n\nAssistant:\n为了优化 `pepe` 进程的对话稳定性，我们可以考虑以下几点：\n\n1. **适当调整相似度阈值**：\n   - 将 `similarity` 参数设置为一个合理的值，确保它不会过低，以防止过于松散的匹配导致对话内容偏离主题。\n\n2. **增加上下文信息的保留**：\n   - 除了计算相似度，还可以维护一部分上下文信息，以便在对话中出现不相关问题时，保持一定的稳定性和一致性。\n\n3. **动态调整相似度**：\n   - 在对话进行中，根据用户的反馈和交互内容，动态调整 `similarity` 值，以实现更好的对话适应性。\n\n4. **增强语义分析**：\n   - 利用现有的 LLM 进行更高效的语义分析，确保即使在低相似度情况下，也能捕捉到对话的核心内容。\n\n这些步骤可以通过修改 `pepe` 进程的代码实现，确保对话的稳定性和流畅性。请提供具体的代码路径，我将帮助您进行相应的修改。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T06:27:51.356Z",
+  "updatedAt": "2026-04-30T06:27:51.356Z"
+}

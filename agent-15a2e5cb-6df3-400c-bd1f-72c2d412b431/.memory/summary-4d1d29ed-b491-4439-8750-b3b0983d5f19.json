@@ -1,0 +1,20 @@
+{
+  "id": "4d1d29ed-b491-4439-8750-b3b0983d5f19",
+  "type": "short-term",
+  "title": "Summary: Turn 5",
+  "content": "User command \"启动\" (start) failed because executable not found; assistant requested correct path or command to initiate process.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c39b8d48-0f74-459a-9a86-feb680935318",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:26.361Z",
+  "updatedAt": "2026-05-01T14:45:26.361Z"
+}

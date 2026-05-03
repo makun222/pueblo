@@ -1,0 +1,20 @@
+{
+  "id": "5d1b8e00-4d7b-4abd-8ff2-5ff78ccf6d06",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "User sought Pueblo architecture overview and code evaluation; assistant failed due to token limit (83233 > 64000).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.850Z",
+  "updatedAt": "2026-05-01T14:46:08.850Z"
+}

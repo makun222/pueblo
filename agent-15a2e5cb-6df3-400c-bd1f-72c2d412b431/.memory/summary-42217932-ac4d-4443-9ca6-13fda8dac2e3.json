@@ -1,0 +1,20 @@
+{
+  "id": "42217932-ac4d-4443-9ca6-13fda8dac2e3",
+  "type": "short-term",
+  "title": "Summary: Turn 750",
+  "content": "User instructed to read README or main-containing files in `D:\\workspace\\KnowledgeBase\\knowledgeBase` to understand project; no such files found, so alternative search for `def main` in Python files suggested.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f101f9bc-45c8-470a-bd05-02f9cd822783",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T03:42:54.242Z",
+  "updatedAt": "2026-05-02T03:42:54.242Z"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "f410c21d-38e6-4f24-8373-ec8049b8f408",
+  "type": "short-term",
+  "title": "Turn 6",
+  "content": "User:\n我想谈一下当前局势\n\nAssistant:\n请具体说明您想讨论的当前局势的领域或主题，以便我能提供更有效的帮助。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-04-30T03:38:13.922Z",
+  "updatedAt": "2026-04-30T03:38:13.922Z"
+}

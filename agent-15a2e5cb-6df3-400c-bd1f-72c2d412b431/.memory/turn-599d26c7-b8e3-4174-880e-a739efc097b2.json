@@ -1,0 +1,18 @@
+{
+  "id": "599d26c7-b8e3-4174-880e-a739efc097b2",
+  "type": "short-term",
+  "title": "Turn 763",
+  "content": "User:\nD:\\workspace\\KnowledgeBase\\knowledgeBase，解析一下这个地址的项目。\n\nAssistant:\nTask failed: DeepSeek network request failed to https://api.deepseek.com/chat/completions: fetch failed",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T13:36:55.604Z",
+  "updatedAt": "2026-05-02T13:36:55.604Z"
+}

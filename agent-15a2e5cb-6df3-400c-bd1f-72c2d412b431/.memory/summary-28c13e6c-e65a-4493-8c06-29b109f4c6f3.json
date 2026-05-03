@@ -1,0 +1,20 @@
+{
+  "id": "28c13e6c-e65a-4493-8c06-29b109f4c6f3",
+  "type": "short-term",
+  "title": "Summary: Turn 22",
+  "content": "User inquired about `pepe-worker-process` in the context of Pueblo architecture; no files or directories matching that pattern were found in the repository.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa33d793-fdda-4e8a-b3e2-c3184e629c7e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:40.889Z",
+  "updatedAt": "2026-05-01T14:46:40.889Z"
+}

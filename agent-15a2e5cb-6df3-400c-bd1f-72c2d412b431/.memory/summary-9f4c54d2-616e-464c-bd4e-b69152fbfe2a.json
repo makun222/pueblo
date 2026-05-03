@@ -1,0 +1,20 @@
+{
+  "id": "9f4c54d2-616e-464c-bd4e-b69152fbfe2a",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "User indicated \"anything is fine\" without specifying a request; assistant asked for specific topic or code changes to assist effectively.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "88b8775f-a224-40e2-b0ed-5c4bd8cc6325",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:29.963Z",
+  "updatedAt": "2026-05-01T14:45:29.963Z"
+}

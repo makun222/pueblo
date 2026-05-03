@@ -8,6 +8,8 @@ import { AgentTaskRepository } from '../../src/agent/task-repository';
 import { ToolInvocationRepository } from '../../src/tools/tool-invocation-repository';
 import { ToolService } from '../../src/tools/tool-service';
 import {
+  getToolExecutionPolicy,
+  providerEditToolInputSchema,
   providerExecToolInputSchema,
   providerGlobToolInputSchema,
   providerGrepToolInputSchema,
@@ -49,21 +51,31 @@ describeIfNodeSqlite('tool service', () => {
         name: 'glob',
         description: 'Match repository paths by glob pattern relative to the workspace root.',
         inputSchema: providerGlobToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('glob'),
       },
       {
         name: 'grep',
         description: 'Search repository files by regex pattern and optional include glob.',
         inputSchema: providerGrepToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('grep'),
       },
       {
         name: 'exec',
-        description: 'Run a local executable command without a shell using the workspace as cwd.',
+        description: 'Run a local executable command without a shell using the workspace as cwd. Requires user approval before execution.',
         inputSchema: providerExecToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('exec'),
       },
       {
         name: 'read',
-        description: 'Read a workspace text file and return numbered lines with bounded output.',
+        description: 'Read a workspace text file by relative path or absolute path within the workspace and return numbered lines with bounded output.',
         inputSchema: providerReadToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('read'),
+      },
+      {
+        name: 'edit',
+        description: 'Edit a workspace text file by replacing one exact text match, optionally constrained to a line range. Requires user approval before execution.',
+        inputSchema: providerEditToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('edit'),
       },
     ]);
   });

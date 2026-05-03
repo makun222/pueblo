@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-05-02T13:45:16.970Z",
+  "providerId": "github-copilot",
+  "category": "http-error",
+  "message": "GitHub Copilot request failed (400)",
+  "requestUrl": "https://api.githubcopilot.com/chat/completions",
+  "modelId": "copilot-chat",
+  "status": 400,
+  "statusText": "Bad Request",
+  "responseText": "{\"error\":{\"message\":\"prompt token count of 82198 exceeds the limit of 64000\",\"code\":\"model_max_prompt_tokens_exceeded\"}}\n",
+  "payload": null,
+  "details": null
+}

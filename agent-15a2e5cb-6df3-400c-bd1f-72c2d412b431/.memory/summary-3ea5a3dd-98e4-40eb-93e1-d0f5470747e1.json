@@ -1,0 +1,20 @@
+{
+  "id": "3ea5a3dd-98e4-40eb-93e1-d0f5470747e1",
+  "type": "short-term",
+  "title": "Summary: Turn 10",
+  "content": "User discussed US strategic layout: global military bases, Asia-Pacific (Indo-Pacific) focus, NATO/European defense, information warfare/cybersecurity, counterterrorism, and economic-tech competition in AI, 5G, critical minerals.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "48ba7e26-e948-4f5a-84ba-c90c436d3206",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.851Z",
+  "updatedAt": "2026-05-01T14:46:08.851Z"
+}

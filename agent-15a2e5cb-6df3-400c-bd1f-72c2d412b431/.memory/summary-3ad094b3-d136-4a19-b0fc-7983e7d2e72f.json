@@ -1,0 +1,20 @@
+{
+  "id": "3ad094b3-d136-4a19-b0fc-7983e7d2e72f",
+  "type": "short-term",
+  "title": "Summary: Turn 5",
+  "content": "User attempted to start agent, command failed due to missing executable.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c39b8d48-0f74-459a-9a86-feb680935318",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.858Z",
+  "updatedAt": "2026-05-01T14:46:08.858Z"
+}

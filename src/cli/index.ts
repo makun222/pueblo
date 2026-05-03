@@ -10,8 +10,11 @@ import { createTaskContext } from '../agent/task-context';
 import { AgentInstanceRepository } from '../agent/agent-instance-repository';
 import { AgentInstanceService } from '../agent/agent-instance-service';
 import { ContextResolver } from '../agent/context-resolver';
+import { PepeResultService } from '../agent/pepe-result-service';
+import { PepeSemanticClient } from '../agent/pepe-semantic-client';
+import { PepeSupervisor } from '../agent/pepe-supervisor';
 import { AgentTaskRepository } from '../agent/task-repository';
-import { AgentTaskRunner } from '../agent/task-runner';
+import { AgentTaskRunner, type ToolApprovalHandler, type ToolApprovalRequest } from '../agent/task-runner';
 import { InputRouter } from '../commands/input-router';
 import { createModelCommand } from '../commands/model-command';
 import { createProviderConfigCommand } from '../commands/provider-config-command';
@@ -58,6 +61,7 @@ import { InMemoryProviderAdapter } from '../providers/provider-adapter';
 import { ProviderError } from '../providers/provider-errors';
 import { ModelService } from '../providers/model-service';
 import { createProviderProfile } from '../providers/provider-profile';
+import { createConfiguredProviderRegistry } from '../providers/provider-registry-factory';
 import { ProviderRegistry } from '../providers/provider-registry';
 import { loadAppConfig } from '../shared/config';
 import {
@@ -135,6 +139,7 @@ export interface CliDependencies {
   readonly listAgentProfiles: () => AgentProfileTemplate[];
   readonly startAgentSession: (profileId: string) => DesktopRuntimeStatus;
   readonly setProgressReporter: (reporter: ((message: string) => void) | null) => void;
+  readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
   readonly databaseClose: () => void;
 }
 
@@ -190,6 +195,7 @@ export async function runInteractiveCliSession(
   }
 
   write('Enter /help for commands, type a slash command or plain-text task, or use /exit to quit.\n');
+  cli.setToolApprovalHandler(async (request) => promptForToolApproval(request, lineReader.readLine, write));
 
   try {
     while (true) {
@@ -209,6 +215,7 @@ export async function runInteractiveCliSession(
       write(formatCommandResult(result));
     }
   } finally {
+    cli.setToolApprovalHandler(null);
     lineReader.close();
   }
 }
@@ -313,59 +320,14 @@ export function createCliDependencies(
 ): CliDependencies {
   let currentConfig = config;
   let progressReporter: ((message: string) => void) | null = null;
+  let toolApprovalHandler: ToolApprovalHandler | null = null;
   const credentialStore = options.credentialStore ?? createDefaultCredentialStore();
   const database = createSqliteDatabase({ dbPath: config.databasePath });
   const dispatcher = new CommandDispatcher();
   const selectionState = createCommandSelectionState();
-  const providerRegistry = new ProviderRegistry();
   const githubCopilotAuth = resolveGitHubCopilotAuth(currentConfig, { credentialStore });
   const deepSeekAuth = resolveDeepSeekAuth(currentConfig, { credentialStore });
-  const fallbackProviders = currentConfig.providers.length > 0
-    ? currentConfig.providers
-    : [createFallbackProviderSetting(currentConfig.defaultProviderId, githubCopilotAuth.credentialSource, deepSeekAuth.credentialSource)];
-  const providerSettings = fallbackProviders.some((provider) => provider.providerId === 'github-copilot')
-    ? fallbackProviders
-    : [
-        ...fallbackProviders,
-        {
-          providerId: 'github-copilot',
-          defaultModelId: 'copilot-chat',
-          enabled: true,
-          credentialSource: githubCopilotAuth.credentialSource,
-        },
-      ];
-
-  for (const providerSetting of providerSettings) {
-    if (!providerSetting.enabled) {
-      continue;
-    }
-
-    if (providerSetting.providerId === 'github-copilot') {
-      registerGitHubCopilotProvider(providerRegistry, currentConfig, credentialStore);
-      continue;
-    }
-
-    if (providerSetting.providerId === 'deepseek') {
-      registerDeepSeekProvider(providerRegistry, currentConfig, providerSetting.defaultModelId, credentialStore);
-      continue;
-    }
-
-    const profile = createProviderProfile({
-      id: providerSetting.providerId,
-      name: providerSetting.providerId,
-      authState: 'configured',
-      defaultModelId: providerSetting.defaultModelId,
-      models: [
-        {
-          id: providerSetting.defaultModelId,
-          name: providerSetting.defaultModelId,
-          supportsTools: true,
-        },
-      ],
-    });
-
-    providerRegistry.register(profile, new InMemoryProviderAdapter(profile.id, 'Task completed'));
-  }
+  const providerRegistry = createConfiguredProviderRegistry(currentConfig, { credentialStore });
 
   const modelService = new ModelService(providerRegistry);
   const taskRepository = new AgentTaskRepository({ connection: database.connection });
@@ -375,11 +337,23 @@ export function createCliDependencies(
   const promptService = new PromptService(promptRepository);
   const memoryService = new MemoryService(memoryRepository);
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository);
+  const pepeSemanticClient = new PepeSemanticClient(providerRegistry, currentConfig);
+  const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
   const toolService = new ToolService({ repository: toolInvocationRepository, cwd: process.cwd() });
-  const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService);
+  const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService, {
+    requestToolApproval: async (request) => toolApprovalHandler?.(request) ?? false,
+  });
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository, memoryService);
+  const pepeSupervisor = new PepeSupervisor({
+    appConfig: currentConfig,
+    config: currentConfig.pepe,
+    memoryService,
+    sessionService,
+    agentInstanceService,
+    resultService: pepeResultService,
+  });
   const contextResolver = new ContextResolver({
     config: currentConfig,
     sessionService,
@@ -387,6 +361,8 @@ export function createCliDependencies(
     memoryService,
     agentInstanceService,
     providerRegistry,
+    pepeResultService,
+    resolveBackgroundSummaryStatus: (sessionId) => pepeSupervisor.getBackgroundSummaryStatus(sessionId),
   });
   let lastModelMessageCount = 0;
   let lastModelMessageCharCount = 0;
@@ -431,6 +407,8 @@ export function createCliDependencies(
       cwd: process.cwd(),
     });
 
+    pepeSupervisor.recordInput(sessionId, trimmedGoal);
+
     sessionService.addUserMessage(sessionId, trimmedGoal);
 
     try {
@@ -448,7 +426,7 @@ export function createCliDependencies(
         }),
         taskContext: executionContext.taskContext,
         prompts: executionContext.taskContext.prompts,
-        memories: executionContext.taskContext.memories,
+        memoryIds: executionContext.taskContext.resultItems.map((item) => item.memoryId),
       });
 
       const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
@@ -472,6 +450,7 @@ export function createCliDependencies(
         assistantOutput: assistantOutput ?? 'No assistant output recorded.',
       });
       sessionService.addSelectedMemory(sessionId, turnMemory.id);
+      await pepeSupervisor.flushSession(sessionId);
 
       return successResult('TASK_COMPLETED', 'Agent task completed', task);
     } catch (error) {
@@ -484,6 +463,7 @@ export function createCliDependencies(
           assistantOutput: `Task failed: ${error.message}`,
         });
         sessionService.addSelectedMemory(sessionId, turnMemory.id);
+        await pepeSupervisor.flushSession(sessionId);
         return failureResult('TASK_RUN_FAILED', error.message, [
           'Use /model to review the active provider configuration.',
           'Use /provider-config github-copilot login when GitHub Copilot credentials are missing.',
@@ -511,6 +491,7 @@ export function createCliDependencies(
     const session = sessionService.getSession(sessionId);
     activeAgentInstanceId = session?.agentInstanceId ?? null;
     activeAgentProfileId = agentInstanceService.getAgentInstance(activeAgentInstanceId)?.profileId ?? activeAgentProfileId;
+    pepeSupervisor.startSession(sessionId);
 
     const resolved = contextResolver.resolve({
       activeSessionId: sessionId,
@@ -680,7 +661,11 @@ export function createCliDependencies(
     setProgressReporter(reporter: ((message: string) => void) | null): void {
       progressReporter = reporter;
     },
+    setToolApprovalHandler(handler: ToolApprovalHandler | null): void {
+      toolApprovalHandler = handler;
+    },
     databaseClose(): void {
+      pepeSupervisor.stopAll();
       database.close();
     },
   };
@@ -741,6 +726,33 @@ export function createCliDependencies(
       },
     };
   }
+}
+
+async function promptForToolApproval(
+  request: ToolApprovalRequest,
+  readLine: (prompt: string) => Promise<string>,
+  write: (text: string) => void,
+): Promise<boolean> {
+  write(renderToolApprovalPrompt(request));
+
+  const response = (await readLine('approval> ')).trim().toLowerCase();
+  return response === 'y' || response === 'yes';
+}
+
+export function renderToolApprovalPrompt(request: ToolApprovalRequest): string {
+  const sections = [
+    '',
+    `[TOOL APPROVAL] ${request.toolName}`,
+    request.title,
+  ];
+
+  if (request.summary.trim() && request.summary !== request.title) {
+    sections.push(request.summary);
+  }
+
+  sections.push(request.detail, 'Approve? (y/N)');
+
+  return sections.join('\n\n');
 }
 
 function createSessionTitle(goal: string): string {

@@ -1,0 +1,20 @@
+{
+  "id": "f589e9a7-c3ba-4137-9910-38e0c8dbf499",
+  "type": "short-term",
+  "title": "Summary: Turn 740",
+  "content": "User attempted to analyze project at path `D:\\workspace\\KnowledgeBase\\knowledgeBase` but Copilot failed due to prompt exceeding 64,000 token limit (81954 tokens). Suggests need to reduce input scope or split context.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "1b0f0d46-f38a-404d-a385-af5e1b2e2419",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-02T03:39:17.932Z",
+  "updatedAt": "2026-05-02T03:39:17.932Z"
+}

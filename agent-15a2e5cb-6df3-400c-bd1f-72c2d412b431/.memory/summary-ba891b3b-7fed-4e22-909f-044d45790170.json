@@ -1,0 +1,20 @@
+{
+  "id": "ba891b3b-7fed-4e22-909f-044d45790170",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "用户表示同意（\"都可以\"），助手请求用户指定具体操作或讨论主题。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "88b8775f-a224-40e2-b0ed-5c4bd8cc6325",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:08.028Z",
+  "updatedAt": "2026-05-01T14:46:08.028Z"
+}

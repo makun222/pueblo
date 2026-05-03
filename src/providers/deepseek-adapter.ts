@@ -326,6 +326,12 @@ function parseDeepSeekToolCall(
         toolName,
         args: parseProviderToolArgs('read', parsedArguments),
       };
+    case 'edit':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgs('edit', parsedArguments),
+      };
   }
 }
 

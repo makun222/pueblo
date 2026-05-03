@@ -1,0 +1,20 @@
+{
+  "id": "2ba9a22c-6798-45d8-b33a-11eb5d23c41a",
+  "type": "short-term",
+  "title": "Summary: Turn 21",
+  "content": "The `pueblo/src/agent` directory contains 21 core files for agent management, including instance services, profile templates, task runners, memory mirror, embedding clients (both TypeScript and Python), semantic client, supervisor, worker process, and types/modules for context resolution, result ranking, and protocol definitions.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b175d749-61b8-4c37-b8ae-fd5665fb7136",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:14.807Z",
+  "updatedAt": "2026-05-01T14:45:14.807Z"
+}

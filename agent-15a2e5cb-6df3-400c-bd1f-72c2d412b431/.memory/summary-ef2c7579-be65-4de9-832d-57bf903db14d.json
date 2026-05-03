@@ -1,0 +1,20 @@
+{
+  "id": "ef2c7579-be65-4de9-832d-57bf903db14d",
+  "type": "short-term",
+  "title": "Summary: Turn 11",
+  "content": "User requested code evaluation; assistant failed due to GitHub Copilot prompt token limit (83k > 64k).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "e96afc05-3ee9-4c9b-9835-f9e3973ba4a3",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:46:11.624Z",
+  "updatedAt": "2026-05-01T14:46:11.624Z"
+}

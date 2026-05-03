@@ -106,6 +106,32 @@ npm run build
 
 构建产物输出到 `dist/`。
 
+## 发布 Windows 可执行文件
+
+当前仓库内置了一个 Windows 发布脚本，会产出一个便携版目录，目录中包含可直接启动的 `Pueblo.exe`。
+
+完整发布流程：
+
+```powershell
+npm run release:win
+```
+
+如果你已经执行过 `npm run build`，只想基于当前构建产物重新组装可执行目录：
+
+```powershell
+npm run package:win
+```
+
+发布输出目录：
+
+- `release/Pueblo-win32-x64/Pueblo.exe`
+
+说明：
+
+- 这是一种便携版发布方式，不是安装器。
+- 发布脚本会先构建主进程和 renderer，再重建 `better-sqlite3` 的 Electron 原生依赖，然后组装 Electron runtime。
+- 发布目录同级会保留 `package.json` 和 `puebl-profile/`，以兼容当前桌面端基于相对路径的模板与配置查找逻辑。
+
 如果在新机器上执行 `npm run build` 时看到 `tsc` 不是内部或外部命令，通常不是脚本错误，而是 `typescript` 这个本地开发依赖没有安装成功。当前构建脚本会执行 `package.json` 中的 `build:main = tsc -p tsconfig.json`，因此需要确保 `node_modules/.bin/tsc` 存在。
 
 常见原因：

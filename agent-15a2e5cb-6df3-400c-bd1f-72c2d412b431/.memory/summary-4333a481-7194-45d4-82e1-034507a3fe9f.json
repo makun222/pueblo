@@ -1,0 +1,20 @@
+{
+  "id": "4333a481-7194-45d4-82e1-034507a3fe9f",
+  "type": "short-term",
+  "title": "Summary: Turn 15",
+  "content": "用户请求解析文件，助手要求提供文件路径或内容。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "554dc564-e8ad-4c8b-9838-1154962f86fd",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-01T14:45:16.740Z",
+  "updatedAt": "2026-05-01T14:45:16.740Z"
+}
