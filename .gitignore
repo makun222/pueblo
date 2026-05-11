@@ -17,3 +17,4 @@ Thumbs.db
 .kilocode
 .pueblo/*.json
 .pueblo/*.db
+.plans/

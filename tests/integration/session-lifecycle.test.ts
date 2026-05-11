@@ -104,6 +104,62 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     database.close();
   });
 
+  it('persists aggregated provider usage stats in sqlite', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-provider-usage-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const repository = new SessionRepository({ connection: database.connection });
+    const service = new SessionService(repository);
+
+    const created = service.createSession('Usage session');
+    service.addProviderUsage(created.id, {
+      promptTokens: 10,
+      completionTokens: 4,
+      totalTokens: 14,
+      promptCacheHitTokens: 6,
+      promptCacheMissTokens: 4,
+      promptTokensDetails: {
+        cachedTokens: 6,
+      },
+      completionTokensDetails: {
+        reasoningTokens: 4,
+      },
+    });
+    service.addProviderUsage(created.id, {
+      promptTokens: 5,
+      completionTokens: 2,
+      totalTokens: 7,
+      promptCacheHitTokens: 1,
+      promptCacheMissTokens: 4,
+      promptTokensDetails: {
+        cachedTokens: 1,
+      },
+      completionTokensDetails: {
+        reasoningTokens: 2,
+      },
+    });
+
+    const restoredService = new SessionService(new SessionRepository({ connection: database.connection }));
+    const restored = restoredService.getSession(created.id);
+
+    expect(restored?.providerUsageStats).toEqual({
+      promptTokens: 15,
+      completionTokens: 6,
+      totalTokens: 21,
+      promptCacheHitTokens: 7,
+      promptCacheMissTokens: 8,
+      cachedPromptTokens: 7,
+      reasoningTokens: 6,
+      promptTokensSent: 15,
+      cacheHitRatio: 0.4667,
+    });
+
+    database.close();
+  });
+
   it('creates a fresh empty session when desktop mode requests a new session', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-desktop-session-'));
     tempDirs.push(tempDir);
@@ -111,6 +167,7 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       databasePath: path.join(tempDir, 'pueblo.db'),
       defaultProviderId: 'openai',
       defaultSessionId: null,
+      pepe: { enabled: false },
       providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
     }), {
       startNewSession: true,
@@ -125,6 +182,72 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       expect(sessions[0]?.selectedMemoryIds).toEqual([]);
       expect(sessions[0]?.messageHistory).toEqual([]);
       expect(cli.getRuntimeStatus().activeSessionId).toBeTruthy();
+    } finally {
+      cli.databaseClose();
+    }
+  });
+
+  it('reuses the same default agent instance across repeated profile selection and /new', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-solo-'));
+    tempDirs.push(tempDir);
+    const cli = createCliDependencies(createTestAppConfig({
+      databasePath: path.join(tempDir, 'pueblo.db'),
+      defaultProviderId: 'openai',
+      defaultSessionId: null,
+      pepe: { enabled: false },
+      providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
+    }), {
+      deferAgentSelection: true,
+    });
+
+    try {
+      const firstRuntime = cli.startAgentSession('code-master');
+      const firstSessionId = firstRuntime.activeSessionId;
+      const firstInstanceId = firstRuntime.agentInstanceId;
+
+      const secondRuntime = cli.startAgentSession('code-master');
+
+      expect(secondRuntime.agentInstanceId).toBe(firstInstanceId);
+      expect(secondRuntime.activeSessionId).toBe(firstSessionId);
+
+      const newSessionResult = await cli.dispatcher.dispatch({ input: '/new follow-up session' });
+      const newSessionRuntime = cli.getRuntimeStatus();
+
+      expect(newSessionResult.ok).toBe(true);
+      expect(newSessionRuntime.agentInstanceId).toBe(firstInstanceId);
+      expect(newSessionRuntime.activeSessionId).not.toBe(secondRuntime.activeSessionId);
+    } finally {
+      cli.databaseClose();
+    }
+  });
+
+  it('restores the most recent session when the same profile is selected again', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-session-restore-'));
+    tempDirs.push(tempDir);
+    const cli = createCliDependencies(createTestAppConfig({
+      databasePath: path.join(tempDir, 'pueblo.db'),
+      defaultProviderId: 'openai',
+      defaultSessionId: null,
+      pepe: { enabled: false },
+      providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
+    }), {
+      deferAgentSelection: true,
+    });
+
+    try {
+      const firstRuntime = cli.startAgentSession('code-master');
+      const firstSessionId = firstRuntime.activeSessionId;
+      const firstInstanceId = firstRuntime.agentInstanceId;
+
+      const newSessionResult = await cli.dispatcher.dispatch({ input: '/new isolate next task' });
+      expect(newSessionResult.ok).toBe(true);
+      const secondSessionId = cli.getRuntimeStatus().activeSessionId;
+
+      const restoredRuntime = cli.startAgentSession('code-master');
+
+      expect(restoredRuntime.agentInstanceId).toBe(firstInstanceId);
+      expect(restoredRuntime.activeSessionId).toBe(secondSessionId);
+      expect(restoredRuntime.activeSessionId).not.toBe(firstSessionId);
     } finally {
       cli.databaseClose();
     }

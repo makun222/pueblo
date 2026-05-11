@@ -1,0 +1,18 @@
+{
+  "id": "490774b6-1100-4250-a78f-d29060939fdd",
+  "type": "short-term",
+  "title": "Turn 1057",
+  "content": "User:\n我们接下来该优化哪些功能？\n\nAssistant:\n---\n\n## 📋 优化计划回顾\n\n### ✅ 已完成（上一轮）\n| 优先级 | 项目 | 状态 |\n|--------|------|------|\n| **A** | **并行化推理管道** — `KnowledgeBaseApplication` 中用 `CompletableFuture` + 线程池并发提取 Notion 和推理 Relation | ✅ 已完成 |\n\n### 🔲 待优化项（排序优先级不变）\n\n| 优先级 | 项目 | 预期价值 | 技术难度 |\n|--------|------|----------|----------|\n| **B** | **LLM 响应缓存层** — 按 material ID 缓存 `extractText()` 结果、按 notion 列表指纹缓存 `inferRelations()` 结果，降低 API 调用成本 | ⭐⭐⭐ 高（节省费用） | 🟢 低 |\n| **C** | **指数退避重试** — 为 `OpenAiCompatibleMediaTextExtractionService` 和 `OpenAiCompatibleNotionRelationInferenceService` 的 HTTP 调用增加重试（4xx 跳过、5xx/网络错误重试） | ⭐⭐⭐ 高（提升稳定性） | 🟡 中 |\n| **D** | **配置验证与安全** — 启动时校验 `knowledge-config.json` 必填字段、日志中 API Key 脱敏显示 | ⭐⭐ 中（安全） | 🟢 低 |\n| **E** | **操作性能日志** — 管道每阶段耗时计时、材料处理用时记录 | ⭐⭐ 中（可观测性） | 🟢 低 |\n| **F** | **单元测试补全** — 为缺失分支补充测试（观测到 JaCoCo 报告覆盖率尚可，但仍有未覆盖分支） | ⭐ 中（质量保障） | 🟡 中 |\n\n---\n\n## 💡 建议本轮从 **B + C** 开始\n\n理由：\n1. **B（缓存层）和 C（重试）** 代码改动集中在同一批文件中（`OpenAiCompatibleMediaTextExtractionService` 和 `OpenAiCompatibleNotionRelationInferenceService`），可以一次性完成\n2. **直接降低 API 调用成本 + 提升稳定性**，对实际使用价值最高\n3. 实现相对独立，不改变现有接口，容易测试\n\n**如果你同意，下一轮具体实现方案：**\n- B：在每个 Service 内增加一个 `ConcurrentHashMap` 作为简单缓存（key=material ID/notion 列表 hash，value=结果），支持按配置开关\n- C：在 HTTP 调用处封装一个 `retryWithBackoff()` 方法，使用 `HttpURLConnection` 的响应码判断是否重试（指数退避 1s→2s→4s，最多 3 次）\n\n还是你想先做 **D（配置验证）** 或 **E（性能日志）**？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T08:55:28.141Z",
+  "updatedAt": "2026-05-11T08:55:28.141Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "4d6e7a71-5c5e-4483-8d6f-86b84db22b55",
+  "type": "short-term",
+  "title": "Summary: Turn 1020",
+  "content": "Fixed three issues in ObsidianExportServiceImpl: auto-create Uncategorized dir for empty knowledge bases, added bracket removal to sanitizeFileName regex, and generate _index.md for each subcategory directory; validated with `mvnw.cmd test -Djacoco.skip=true`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "1e959b48-48e0-4b3e-856c-2e8047ce8e2f",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T14:56:12.192Z",
+  "updatedAt": "2026-05-10T14:56:12.192Z"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "0aa37a11-bb91-463e-8bfe-818a1a433fed",
+  "type": "short-term",
+  "title": "Turn 993",
+  "content": "User:\n好的，继续\n\nAssistant:\nMaven is not available in this environment's PATH, but the code changes are syntactically verified:\n\n**Changes made to `src/test/java/com/knowledge/KnowledgeBaseTest.java`:**\n\n1. **Line 320-327** – Added missing `null` (6th arg, `notionCategoryPrompt`) to the `InferenceConfig` constructor call in `testChineseKnowledgeExtractionWithCustomPrompt()`:\n   ```java\n   new InferenceConfig(\"image\",\"media\",\"CUSTOM_KNOWLEDGE_PROMPT\",\"relation\",\"hints\", null, 3);\n   ```\n\n2. **Line 527-534** – Added missing `null` (6th arg, `notionCategoryPrompt`) to the `InferenceConfig` constructor call in `testInferNotionRelationsUsesInferenceConfigPrompt()`:\n   ```java\n   new InferenceConfig(\"image\",\"media\",\"knowledge\",\"CUSTOM_RELATION_PROMPT\",\"CUSTOM_HINTS\", null, 3);\n   ```\n\n**Why this fixes it:** The `InferenceConfig` constructor (line 24-30 of `InferenceConfig.java`) has 7 parameters: `imagePrompt`, `mediaPrompt`, `knowledgeExtractionPrompt`, `relationInferencePrompt`, `relationInferenceHints`, `notionCategoryPrompt`, `relationInferenceMaxCount`. The test calls were missing the 6th parameter, causing compilation failure. Using `null` triggers the `textOrDefault` default, preserving existing test behavior.\n\n---\n\n## Completed this round\n\n- Fixed two `InferenceConfig` constructor calls in `KnowledgeBaseTest.java` that were missing the `notionCategoryPrompt` parameter.\n\n## Remaining work\n\nOther pending work from earlier rounds (per memory summary):\n- Created 4 new test files: `HeuristicTextKnowledgeExtractionServiceTest.java`, `JsonFileKnowledgeBaseStoreTest.java`, `NotionExtractionSupportTest.java`, `RawContentMediaTextExtractionServiceTest.java`\n- Fixed 2 test compilation errors\n- Resolved 1 flaky HTTP test\n- Unit tests should be run via `mvn test` when Maven is available to verify all pass\n\n## Recommended next request\n\n\"Run all unit tests and verify the compilation is clean, then continue testing any remaining untested services.\"",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:47:02.575Z",
+  "updatedAt": "2026-05-10T06:47:02.575Z"
+}

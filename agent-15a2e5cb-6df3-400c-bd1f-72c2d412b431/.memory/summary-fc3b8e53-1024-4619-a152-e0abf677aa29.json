@@ -1,0 +1,20 @@
+{
+  "id": "fc3b8e53-1024-4619-a152-e0abf677aa29",
+  "type": "short-term",
+  "title": "Summary: Turn 847",
+  "content": "User inquired about missing tool; assistant attempted tool call \"edit\" but DeepSeek returned unsupported tool call, causing failure.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c31ab527-a1ee-41f3-a52a-94e0f326b7d7",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:45:13.304Z",
+  "updatedAt": "2026-05-05T05:45:13.304Z"
+}

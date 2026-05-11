@@ -5,14 +5,45 @@ import type {
   ContextCount,
   DesktopWindowSession,
   IpcInputEnvelope,
+  MemoryRecord,
+  ProviderUsageStats,
   ProviderProfile,
   RendererOutputBlock,
+  Session,
 } from '../../shared/schema';
 
 export interface DesktopSubmitResponse {
   readonly result: CommandResult<unknown>;
   readonly blocks: RendererOutputBlock[];
   readonly runtimeStatus: DesktopRuntimeStatus;
+}
+
+export interface DesktopToolApprovalRequest {
+  readonly id: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly detail: string;
+  readonly targetLabel: string;
+  readonly operationLabel: string;
+}
+
+export interface DesktopToolApprovalBatch {
+  readonly id: string;
+  readonly taskId: string;
+  readonly createdAt: string;
+  readonly requests: DesktopToolApprovalRequest[];
+}
+
+export interface DesktopToolApprovalState {
+  readonly activeBatch: DesktopToolApprovalBatch | null;
+}
+
+export interface DesktopToolApprovalResponse {
+  readonly batchId: string;
+  readonly decision: 'allow' | 'deny';
+  readonly selectedRequestIds: string[];
 }
 
 export type DesktopMenuAction = 'open-provider-config' | 'open-agent-picker';
@@ -44,6 +75,7 @@ export interface DesktopRuntimeStatus {
   readonly contextCount: ContextCount;
   readonly modelMessageCount: number;
   readonly modelMessageCharCount: number;
+  readonly providerUsageStats?: ProviderUsageStats;
   readonly selectedPromptCount: number;
   readonly selectedMemoryCount: number;
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
@@ -51,12 +83,23 @@ export interface DesktopRuntimeStatus {
   readonly providerStatuses?: DesktopProviderStatuses;
 }
 
+export interface DesktopSessionSelectionResponse {
+  readonly runtimeStatus: DesktopRuntimeStatus;
+  readonly session: Session | null;
+}
+
 export interface DesktopBridge {
   submitInput(envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse>;
   getRuntimeStatus(): Promise<DesktopRuntimeStatus>;
+  getToolApprovalState(): Promise<DesktopToolApprovalState>;
+  respondToolApproval(response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState>;
   listAgentProfiles(): Promise<AgentProfileTemplate[]>;
   startAgentSession(profileId: string): Promise<DesktopRuntimeStatus>;
+  listAgentSessions(agentInstanceId: string): Promise<Session[]>;
+  listSessionMemories(sessionId: string): Promise<MemoryRecord[]>;
+  selectSession(sessionId: string): Promise<DesktopSessionSelectionResponse>;
   onMenuAction(listener: (action: DesktopMenuAction) => void): () => void;
+  onToolApprovalState(listener: (state: DesktopToolApprovalState) => void): () => void;
   getSessionSnapshot(): Promise<DesktopWindowSession | null>;
   subscribeSession(listener: (session: DesktopWindowSession) => void): () => void;
 }

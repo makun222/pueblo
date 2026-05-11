@@ -1,0 +1,20 @@
+{
+  "id": "2d85183d-c554-484f-8a70-b9fc12c66bf6",
+  "type": "short-term",
+  "title": "Summary: Turn 861",
+  "content": "KnowledgeBase (Java内置HTTP Server + H2) 集成 Obsidian vault 有三种路线：通过 obsidian-local-rest-api 插件桥接、直接读写 .md 文件、导出为双向链接格式。具体方案待定。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "750b0208-75d4-4f44-a504-767afb543296",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T09:59:32.200Z",
+  "updatedAt": "2026-05-05T09:59:32.200Z"
+}

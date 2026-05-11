@@ -1,0 +1,18 @@
+{
+  "id": "471d1aa2-3f0a-4722-9da4-b90f2edde4bc",
+  "type": "short-term",
+  "title": "Turn 1052",
+  "content": "User:\n我们继续看看做哪些优化\n\nAssistant:\n现在我对仓库的完整状态有了清晰的了解。以下是当前状态总结和可优化方向的分析：\n\n---\n\n## 📊 当前状态全景\n\n### 测试状态 — 全部通过 ✅\n| 测试类 | 数量 | 结果 |\n|--------|------|------|\n| `KnowledgeBaseTest` | 59 | ✅ 全过 |\n| `KnowledgeMapHttpServerE2ETest` | 3 | ✅ 全过 |\n| `ObsidianExportServiceTest` | 9 | ✅ 全过 |\n| `JsonFileKnowledgeBaseStoreTest` | 12 | ✅ 全过 |\n| `HeuristicTextKnowledgeExtractionServiceTest` | 6 | ✅ 全过 |\n| 其他 | ~若干 | ✅ 全过 |\n| **总计** | **~89** | **全部通过** |\n\n### ✅ 已实现的特性\n1. **四步流程管道**（采集→构建→推理关系→可视化）\n2. **双配置分离**（`inference-config.json` + `llm-config.json`）\n3. **H2 数据库持久化** — 含 load 缓存(TTL)、exists 缓存(LRU)、调试指标、事务\n4. **交互式 Web 可视化** — Cytoscape.js 前端\n5. **材料可用性检测**\n6. **Obsidian Markdown 导出**\n7. **CRUD 完整** — add/update/delete/search/relations/comments/references 全部实现\n8. **SLF4J + Logback** — 日志框架已集成并使用\n\n---\n\n## 🎯 可优化的方向\n\n对照 `OPTIMIZATION_ROADMAP.md`，以下是按收益/工作量排列的待优化项：\n\n### 🔴 高优先级 · 小工作量\n| # | 优化项 | 说明 | 是否建议本期做 |\n|---|--------|------|:---:|\n| **A** | **配置验证与安全** 🔐 | 启动时检查必要配置存在、API Key 脱敏、敏感信息不在日志泄露 | ✅ |\n| **B** | **LLM 调用缓存 + 指数退避重试** | LLM API 调用结果缓存 + 失败时自动重试 | ✅ |\n| **C** | **数据库查询性能监测** | 已有的缓存基础上，增加慢查询日志、性能指标暴露 | ✅ |\n\n### 🟠 中等优先级 · 中等工作量\n| # | 优化项 | 说明 |\n|---|--------|------|\n| **D** | **搜索功能增强** | 已有 `searchNotions()` 接口，可加全文索引或模糊匹配 |\n| **E** | **导出增强** | Obsidian 导出已有，可加 GraphML/其他格式 |\n| **F** | **操作性能日志** | 管道的每步耗时记录（OperationTimer） |\n\n### 🟡 低优先级 · 大工作量\n| # | 优化项 | 说明 |\n|---|--------|------|\n| **G** | **版本控制 + 冲突解决** | 概念变更历史、冲突检测与合并 |\n| **H** | **WebUI 前端增强** | 前端界面交互优化 |\n\n---\n\n**你想先做哪个方向？** 我建议本期先挑 **1~3 个高优先级小工作量的**来落地。例如：\n\n1. **A → 配置验证与安全**（启动时校验 config、API Key 脱敏）\n2. **B → LLM 缓存 + 指数退避重试**（减少 API 调用成本、提升稳定性）\n3. **F → 操作性能日志**（管道每步耗时记录，方便后续调优）\n\n你倾向做哪些？或者你想从某个特定的优化项开始？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T06:49:33.204Z",
+  "updatedAt": "2026-05-11T06:49:33.204Z"
+}

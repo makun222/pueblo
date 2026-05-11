@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolExecutionResult } from './glob-tool';
+import type { RendererFileChange } from '../shared/schema';
 
 export interface EditToolRequest {
   readonly path: string;
@@ -26,6 +27,10 @@ export interface EditApprovalPreview {
 export function createEditTool() {
   return async (request: EditToolRequest): Promise<ToolExecutionResult> => {
     try {
+      if (isCreateFileEdit(request)) {
+        return executeCreateFileEdit(request);
+      }
+
       const preparedEdit = prepareEditRequest(request);
 
       if (preparedEdit.matchCount === 0) {
@@ -61,6 +66,13 @@ export function createEditTool() {
           `oldTextChars: ${request.oldText.length}`,
           `newTextChars: ${request.newText.length}`,
         ],
+        fileChanges: [createRendererFileChange({
+          absolutePath: preparedEdit.absolutePath,
+          relativePath: preparedEdit.relativePath,
+          changeType: 'modified',
+          previousContent: restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
+          currentContent: nextContent,
+        })],
       };
     } catch (error) {
       return {
@@ -75,11 +87,13 @@ export function createEditTool() {
 
 export function buildEditApprovalPreview(request: EditToolRequest): EditApprovalPreview {
   const pathLabel = request.path.trim() || '<missing path>';
-  const scopeLabel = request.startLine !== undefined && request.endLine !== undefined
-    ? `lines ${request.startLine}-${request.endLine}`
-    : 'file';
+  const scopeLabel = describeEditScope(request.startLine, request.endLine);
 
   try {
+    if (isCreateFileEdit(request)) {
+      return buildCreateFileApprovalPreview(request);
+    }
+
     const preparedEdit = prepareEditRequest(request);
     const matchSummary = preparedEdit.matchCount === 1
       ? 'Current file check: 1 exact match in scope'
@@ -133,17 +147,17 @@ interface PreparedEditRequest {
   readonly matchCount: number;
 }
 
+interface ResolvedEditPath {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+}
+
 function prepareEditRequest(request: EditToolRequest): PreparedEditRequest {
   validateEditRequest(request);
 
   const requestedPath = request.path.trim();
   const workspaceRoot = path.resolve(request.cwd);
-  const absolutePath = resolveRequestedPath(workspaceRoot, requestedPath);
-  const relativePath = path.relative(workspaceRoot, absolutePath);
-
-  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw new Error('Path must stay within the workspace root');
-  }
+  const { absolutePath, relativePath } = resolveEditPath(workspaceRoot, requestedPath);
 
   const stat = fs.statSync(absolutePath);
   if (!stat.isFile()) {
@@ -176,12 +190,8 @@ function validateEditRequest(request: EditToolRequest): void {
     throw new Error('Path is required');
   }
 
-  if (!request.oldText) {
-    throw new Error('oldText is required');
-  }
-
-  if ((request.startLine === undefined) !== (request.endLine === undefined)) {
-    throw new Error('startLine and endLine must be provided together');
+  if (request.oldText.length === 0 && (request.startLine !== undefined || request.endLine !== undefined)) {
+    throw new Error('startLine and endLine are not supported when oldText is empty');
   }
 
   if (
@@ -198,6 +208,125 @@ function resolveRequestedPath(workspaceRoot: string, requestedPath: string): str
   return path.isAbsolute(normalizedRequestedPath)
     ? normalizedRequestedPath
     : path.resolve(workspaceRoot, normalizedRequestedPath);
+}
+
+function resolveEditPath(workspaceRoot: string, requestedPath: string): ResolvedEditPath {
+  const absolutePath = resolveRequestedPath(workspaceRoot, requestedPath);
+  const relativePath = path.relative(workspaceRoot, absolutePath);
+
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw new Error('Path must stay within the workspace root');
+  }
+
+  return {
+    absolutePath,
+    relativePath,
+  };
+}
+
+function isCreateFileEdit(request: EditToolRequest): boolean {
+  return request.oldText.length === 0;
+}
+
+function executeCreateFileEdit(request: EditToolRequest): ToolExecutionResult {
+  validateEditRequest(request);
+
+  const workspaceRoot = path.resolve(request.cwd);
+  const { absolutePath, relativePath } = resolveEditPath(workspaceRoot, request.path.trim());
+  const fileExists = fs.existsSync(absolutePath);
+
+  if (fileExists) {
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) {
+      throw new Error('Path does not point to a file');
+    }
+
+    const existingContent = fs.readFileSync(absolutePath, 'utf8');
+    if (existingContent.length > 0) {
+      throw new Error(`Cannot create ${relativePath} with empty oldText because the file already exists and is not empty`);
+    }
+
+    fs.writeFileSync(absolutePath, request.newText, 'utf8');
+
+    return {
+      toolName: 'edit',
+      status: 'succeeded',
+      summary: `Initialized empty file ${relativePath}`,
+      output: [
+        `path: ${relativePath}`,
+        'scope: new file',
+        `oldTextChars: ${request.oldText.length}`,
+        `newTextChars: ${request.newText.length}`,
+      ],
+      fileChanges: [createRendererFileChange({
+        absolutePath,
+        relativePath,
+        changeType: 'modified',
+        previousContent: existingContent,
+        currentContent: request.newText,
+      })],
+    };
+  } else {
+    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  }
+
+  fs.writeFileSync(absolutePath, request.newText, 'utf8');
+
+  return {
+    toolName: 'edit',
+    status: 'succeeded',
+    summary: fileExists
+      ? `Initialized empty file ${relativePath}`
+      : `Created ${relativePath}`,
+    output: [
+      `path: ${relativePath}`,
+      'scope: new file',
+      `oldTextChars: ${request.oldText.length}`,
+      `newTextChars: ${request.newText.length}`,
+    ],
+    fileChanges: [createRendererFileChange({
+      absolutePath,
+      relativePath,
+      changeType: 'created',
+      previousContent: '',
+      currentContent: request.newText,
+    })],
+  };
+}
+
+function buildCreateFileApprovalPreview(request: EditToolRequest): EditApprovalPreview {
+  validateEditRequest(request);
+
+  const workspaceRoot = path.resolve(request.cwd);
+  const { absolutePath, relativePath } = resolveEditPath(workspaceRoot, request.path.trim());
+  let fileCheckSummary = 'Current file check: file will be created';
+
+  if (fs.existsSync(absolutePath)) {
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) {
+      fileCheckSummary = 'Current file check: path exists and is not a file';
+    } else if (fs.readFileSync(absolutePath, 'utf8').length === 0) {
+      fileCheckSummary = 'Current file check: empty file will be initialized';
+    } else {
+      fileCheckSummary = 'Current file check: file already exists and is not empty';
+    }
+  }
+
+  return {
+    title: `Allow edit in ${relativePath}?`,
+    summary: buildEditPreviewSummary(relativePath, 'new file', request.oldText, request.newText),
+    detail: [
+      `Path: ${relativePath}`,
+      'Scope: new file',
+      fileCheckSummary,
+      formatDiffPreview('new file', request.oldText, request.newText, {
+        oldPrefix: '-',
+        newPrefix: '+',
+        maxLinesPerSide: 10,
+        headTail: false,
+      }),
+    ].join('\n\n'),
+  };
 }
 
 function buildEditPreviewSummary(relativePath: string, scopeLabel: string, oldText: string, newText: string): string {
@@ -278,7 +407,7 @@ function truncatePreviewLine(line: string): string {
 }
 
 function resolveEditScope(content: string, startLine?: number, endLine?: number): EditScope {
-  if (startLine === undefined || endLine === undefined) {
+  if (startLine === undefined && endLine === undefined) {
     return {
       startOffset: 0,
       endOffset: content.length,
@@ -287,16 +416,40 @@ function resolveEditScope(content: string, startLine?: number, endLine?: number)
   }
 
   const lines = splitIntoLogicalLines(content);
-  if (startLine < 1 || endLine < 1 || startLine > lines.length || endLine > lines.length) {
-    throw new Error(`Line range ${startLine}-${endLine} is outside the file bounds (1-${lines.length})`);
+  const normalizedStartLine = startLine ?? 1;
+  const normalizedEndLine = endLine ?? lines.length;
+
+  if (
+    normalizedStartLine < 1
+    || normalizedEndLine < 1
+    || normalizedStartLine > lines.length
+    || normalizedEndLine > lines.length
+  ) {
+    throw new Error(`Line range ${normalizedStartLine}-${normalizedEndLine} is outside the file bounds (1-${lines.length})`);
   }
 
   const lineStarts = computeLineStarts(lines);
   return {
-    startOffset: lineStarts[startLine - 1],
-    endOffset: lineStarts[endLine - 1] + lines[endLine - 1].length,
-    label: `lines ${startLine}-${endLine}`,
+    startOffset: lineStarts[normalizedStartLine - 1],
+    endOffset: lineStarts[normalizedEndLine - 1] + lines[normalizedEndLine - 1].length,
+    label: describeEditScope(startLine, endLine),
   };
+}
+
+function describeEditScope(startLine?: number, endLine?: number): string {
+  if (startLine !== undefined && endLine !== undefined) {
+    return `lines ${startLine}-${endLine}`;
+  }
+
+  if (startLine !== undefined) {
+    return `line ${startLine} onward`;
+  }
+
+  if (endLine !== undefined) {
+    return `lines 1-${endLine}`;
+  }
+
+  return 'file';
 }
 
 function splitIntoLogicalLines(content: string): string[] {
@@ -338,6 +491,10 @@ function restoreLineEndings(content: string, lineEnding: '\n' | '\r\n'): string 
 }
 
 function countOccurrences(content: string, search: string): number {
+  if (search.length === 0) {
+    return 0;
+  }
+
   let count = 0;
   let startIndex = 0;
 
@@ -352,4 +509,20 @@ function countOccurrences(content: string, search: string): number {
   }
 
   return count;
+}
+
+function createRendererFileChange(input: {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+  readonly changeType: RendererFileChange['changeType'];
+  readonly previousContent: string;
+  readonly currentContent: string;
+}): RendererFileChange {
+  return {
+    path: input.relativePath,
+    absolutePath: input.absolutePath,
+    changeType: input.changeType,
+    previousContent: input.previousContent,
+    currentContent: input.currentContent,
+  };
 }

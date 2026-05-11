@@ -1,0 +1,20 @@
+{
+  "id": "7ab96b4f-997d-4e31-a82e-5e843c4d9f99",
+  "type": "short-term",
+  "title": "Summary: Turn 1064",
+  "content": "KnowledgeBase优化计划已完成阶段A (并行化推理管道, `CompletableFuture`+线程池于`KnowledgeBaseApplication`)。当前聚焦阶段C：HTTP重试机制，于HTTP调用封装`retryWithBackoff()`，指数退避1s→2s→4s，最多3次。参考`OPTIMIZATION_ROADMAP.md`。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "5f58ab49-1f0a-4fe3-8836-c1f82d5c80fa",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T10:13:43.767Z",
+  "updatedAt": "2026-05-11T10:13:43.767Z"
+}

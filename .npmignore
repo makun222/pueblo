@@ -11,3 +11,4 @@ tests/
 .kilocode/
 .specify/
 vite.desktop.config.ts
+.plans/

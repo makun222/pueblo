@@ -9,12 +9,19 @@ import { Command } from 'commander';
 import { createTaskContext } from '../agent/task-context';
 import { AgentInstanceRepository } from '../agent/agent-instance-repository';
 import { AgentInstanceService } from '../agent/agent-instance-service';
+import { AgentTemplateLoader } from '../agent/agent-template-loader';
 import { ContextResolver } from '../agent/context-resolver';
 import { PepeResultService } from '../agent/pepe-result-service';
 import { PepeSemanticClient } from '../agent/pepe-semantic-client';
-import { PepeSupervisor } from '../agent/pepe-supervisor';
+import { PepeSupervisor, type PepeWorkerFactory } from '../agent/pepe-supervisor';
 import { AgentTaskRepository } from '../agent/task-repository';
-import { AgentTaskRunner, type ToolApprovalHandler, type ToolApprovalRequest } from '../agent/task-runner';
+import {
+  AgentTaskRunner,
+  type ToolApprovalBatchHandler,
+  type ToolApprovalDecision,
+  type ToolApprovalHandler,
+  type ToolApprovalRequest,
+} from '../agent/task-runner';
 import { InputRouter } from '../commands/input-router';
 import { createModelCommand } from '../commands/model-command';
 import { createProviderConfigCommand } from '../commands/provider-config-command';
@@ -24,6 +31,7 @@ import {
   createMemorySearchCommand,
   createMemorySelectCommand,
 } from '../commands/memory-command';
+import { createWorkflowStartCommand } from '../commands/workflow-command';
 import {
   createPromptAddCommand,
   createPromptDeleteCommand,
@@ -81,8 +89,18 @@ import { SessionRepository } from '../sessions/session-repository';
 import { SessionService } from '../sessions/session-service';
 import { ToolInvocationRepository } from '../tools/tool-invocation-repository';
 import { ToolService } from '../tools/tool-service';
+import { PUEBLO_PLAN_WORKFLOW_TYPE } from '../workflow/pueblo-plan/pueblo-plan-workflow';
+import { createInitialPuebloPlanOutline } from '../workflow/pueblo-plan/pueblo-plan-planner';
+import { applyTodoRound, selectNextTodoRound } from '../workflow/pueblo-plan/pueblo-plan-rounds';
+import { createInitialPuebloPlanDocument, renderPuebloPlanMarkdown } from '../workflow/pueblo-plan/pueblo-plan-markdown';
+import { WorkflowExporter } from '../workflow/workflow-exporter';
+import { WorkflowPlanStore } from '../workflow/workflow-plan-store';
+import { WorkflowRegistry } from '../workflow/workflow-registry';
+import { WorkflowRepository } from '../workflow/workflow-repository';
+import { WorkflowRouter } from '../workflow/workflow-router';
+import { WorkflowService } from '../workflow/workflow-service';
 import type { DesktopProviderStatuses, DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
-import type { AgentProfileTemplate } from '../shared/schema';
+import type { AgentProfileTemplate, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const config = loadAppConfig();
@@ -138,8 +156,12 @@ export interface CliDependencies {
   readonly getRuntimeStatus: () => DesktopRuntimeStatus;
   readonly listAgentProfiles: () => AgentProfileTemplate[];
   readonly startAgentSession: (profileId: string) => DesktopRuntimeStatus;
-  readonly setProgressReporter: (reporter: ((message: string) => void) | null) => void;
+  readonly listAgentSessions: (agentInstanceId: string) => Session[];
+  readonly listSessionMemories: (sessionId: string) => MemoryRecord[];
+  readonly selectSession: (sessionId: string) => { runtimeStatus: DesktopRuntimeStatus; session: Session | null };
+  readonly setProgressReporter: (reporter: ((update: { title: string; message: string }) => void) | null) => void;
   readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
+  readonly setToolApprovalBatchHandler: (handler: ToolApprovalBatchHandler | null) => void;
   readonly databaseClose: () => void;
 }
 
@@ -147,6 +169,7 @@ export interface CreateCliDependenciesOptions {
   readonly startNewSession?: boolean;
   readonly deferAgentSelection?: boolean;
   readonly credentialStore?: CredentialStore;
+  readonly pepeWorkerFactory?: PepeWorkerFactory;
 }
 
 export interface InteractiveCliSessionOptions {
@@ -172,7 +195,7 @@ export interface CliStartupSetupResult {
 
 interface CliStartupSetupOptions extends Pick<GitHubCopilotDeviceFlowDependencies, 'credentialStore'> {
   readonly openUrl?: (url: string) => Promise<void>;
-  readonly reportProgress?: (message: string) => void;
+  readonly reportProgress?: (update: { title: string; message: string }) => void;
 }
 
 export async function runInteractiveCliSession(
@@ -263,7 +286,10 @@ export async function maybeRunCliStartupSetup(
   try {
     const deviceCode = await requestGitHubDeviceCode(config);
     await openVerificationUrl(deviceCode.verification_uri, options.openUrl);
-    options.reportProgress?.(`Open ${deviceCode.verification_uri} and enter code: ${deviceCode.user_code}`);
+    options.reportProgress?.({
+      title: 'GitHub Device Login',
+      message: `Open ${deviceCode.verification_uri} and enter code: ${deviceCode.user_code}`,
+    });
     process.stdout.write(`Open ${deviceCode.verification_uri} and enter code: ${deviceCode.user_code}\n`);
     process.stdout.write('Waiting for GitHub authorization...\n');
 
@@ -319,8 +345,9 @@ export function createCliDependencies(
   options: CreateCliDependenciesOptions = {},
 ): CliDependencies {
   let currentConfig = config;
-  let progressReporter: ((message: string) => void) | null = null;
+  let progressReporter: ((update: { title: string; message: string }) => void) | null = null;
   let toolApprovalHandler: ToolApprovalHandler | null = null;
+  let toolApprovalBatchHandler: ToolApprovalBatchHandler | null = null;
   const credentialStore = options.credentialStore ?? createDefaultCredentialStore();
   const database = createSqliteDatabase({ dbPath: config.databasePath });
   const dispatcher = new CommandDispatcher();
@@ -334,15 +361,51 @@ export function createCliDependencies(
   const promptRepository = new PromptRepository({ connection: database.connection });
   const memoryRepository = new MemoryRepository({ connection: database.connection });
   const agentInstanceRepository = new AgentInstanceRepository({ connection: database.connection });
+  const cliProjectRoot = resolveProjectRoot(__dirname);
   const promptService = new PromptService(promptRepository);
   const memoryService = new MemoryService(memoryRepository);
-  const agentInstanceService = new AgentInstanceService(agentInstanceRepository);
+  const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
   const pepeSemanticClient = new PepeSemanticClient(providerRegistry, currentConfig);
   const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
   const toolService = new ToolService({ repository: toolInvocationRepository, cwd: process.cwd() });
+  const workflowRepository = new WorkflowRepository({ connection: database.connection });
+  const workflowRegistry = new WorkflowRegistry([
+    {
+      type: PUEBLO_PLAN_WORKFLOW_TYPE,
+      description: 'Structured multi-round execution workflow for complex tasks.',
+    },
+  ]);
+  const workflowPlanStore = new WorkflowPlanStore(currentConfig);
+  const workflowExporter = new WorkflowExporter();
+  const workflowService = new WorkflowService({
+    repository: workflowRepository,
+    registry: workflowRegistry,
+    planStore: workflowPlanStore,
+    exporter: workflowExporter,
+  });
+  const workflowRouter = new WorkflowRouter(currentConfig, workflowRegistry);
   const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService, {
-    requestToolApproval: async (request) => toolApprovalHandler?.(request) ?? false,
+    requestToolApproval: async (request) => toolApprovalHandler?.(request) ?? 'deny',
+    requestToolApprovalBatch: async (requests) => {
+      if (toolApprovalBatchHandler) {
+        return toolApprovalBatchHandler(requests);
+      }
+
+      return Promise.all(requests.map(async (request) => toolApprovalHandler?.(request) ?? 'deny'));
+    },
+    reportProgress: (message) => {
+      progressReporter?.({
+        title: 'Agent Activity',
+        message,
+      });
+    },
+    reportAssistantDelta: (text) => {
+      progressReporter?.({
+        title: 'Assistant Draft',
+        message: text,
+      });
+    },
   });
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository, memoryService);
@@ -353,6 +416,7 @@ export function createCliDependencies(
     sessionService,
     agentInstanceService,
     resultService: pepeResultService,
+    workerFactory: options.pepeWorkerFactory,
   });
   const contextResolver = new ContextResolver({
     config: currentConfig,
@@ -362,6 +426,7 @@ export function createCliDependencies(
     agentInstanceService,
     providerRegistry,
     pepeResultService,
+    workflowService,
     resolveBackgroundSummaryStatus: (sessionId) => pepeSupervisor.getBackgroundSummaryStatus(sessionId),
   });
   let lastModelMessageCount = 0;
@@ -369,8 +434,9 @@ export function createCliDependencies(
   let activeAgentInstanceId: string | null = null;
   let activeAgentProfileId: string | null = options.deferAgentSelection ? null : (currentConfig.defaultAgentProfileId ?? 'code-master');
 
-  const runTask = async (goal: string, inputContextSummary: string) => {
+  const runTask = async (goal: string, inputContextSummary: string, userInputOverride?: string | null) => {
     const trimmedGoal = goal.trim();
+    const normalizedUserInput = userInputOverride?.trim() || trimmedGoal;
 
     if (!trimmedGoal) {
       return failureResult('TASK_GOAL_REQUIRED', 'Task goal is required', ['Provide a task goal and retry.']);
@@ -380,7 +446,7 @@ export function createCliDependencies(
       activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
-      pendingUserInput: trimmedGoal,
+      pendingUserInput: normalizedUserInput,
       cwd: process.cwd(),
     });
     const providerId = resolvedContext.taskContext.providerId;
@@ -403,13 +469,13 @@ export function createCliDependencies(
       activeSessionId: sessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
-      pendingUserInput: trimmedGoal,
+      pendingUserInput: normalizedUserInput,
       cwd: process.cwd(),
     });
 
-    pepeSupervisor.recordInput(sessionId, trimmedGoal);
+    pepeSupervisor.recordInput(sessionId, normalizedUserInput);
 
-    sessionService.addUserMessage(sessionId, trimmedGoal);
+    sessionService.addUserMessage(sessionId, normalizedUserInput);
 
     try {
       const task = await taskRunner.run({
@@ -433,6 +499,7 @@ export function createCliDependencies(
       const messageTraceTotals = summarizeModelMessageTrace(outputPayload?.modelMessageTrace);
       lastModelMessageCount = messageTraceTotals.messageCount;
       lastModelMessageCharCount = messageTraceTotals.messageCharCount;
+      sessionService.addProviderUsage(sessionId, outputPayload?.providerUsage);
 
       for (const toolResult of outputPayload?.toolResults ?? []) {
         sessionService.addToolMessage(sessionId, toolResult.toolName, `${toolResult.status}: ${toolResult.summary}`, task.id);
@@ -443,23 +510,40 @@ export function createCliDependencies(
         sessionService.addAssistantMessage(sessionId, assistantOutput, task.id);
       }
 
+      const workflowProgress = advanceWorkflowAfterTaskCompletion(sessionId, assistantOutput ?? null);
+
       const turnMemory = memoryService.createConversationTurnMemory({
         sessionId,
         turnNumber: memoryService.listSessionMemories(sessionId).length + 1,
-        userInput: trimmedGoal,
+        userInput: normalizedUserInput,
         assistantOutput: assistantOutput ?? 'No assistant output recorded.',
       });
       sessionService.addSelectedMemory(sessionId, turnMemory.id);
       await pepeSupervisor.flushSession(sessionId);
 
-      return successResult('TASK_COMPLETED', 'Agent task completed', task);
+      return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
+        ...task,
+        workflow: workflowProgress,
+      } : task);
     } catch (error) {
+      const accumulateLatestTaskProviderUsage = () => {
+        const persistedTasks = taskRepository.listBySession(sessionId);
+        const latestTask = persistedTasks[persistedTasks.length - 1] ?? null;
+        const latestPayload = extractTaskOutputSummaryPayload(latestTask?.outputSummary);
+        sessionService.addProviderUsage(sessionId, latestPayload?.providerUsage);
+      };
+
       if (error instanceof ProviderError) {
+        accumulateLatestTaskProviderUsage();
+        const activeWorkflow = sessionId ? workflowService.getActiveWorkflowForSession(sessionId) : null;
+        if (activeWorkflow) {
+          workflowService.markWorkflowFailed(activeWorkflow.id, error.message);
+        }
         sessionService.addAssistantMessage(sessionId, `Task failed: ${error.message}`);
         const turnMemory = memoryService.createConversationTurnMemory({
           sessionId,
           turnNumber: memoryService.listSessionMemories(sessionId).length + 1,
-          userInput: trimmedGoal,
+          userInput: normalizedUserInput,
           assistantOutput: `Task failed: ${error.message}`,
         });
         sessionService.addSelectedMemory(sessionId, turnMemory.id);
@@ -471,12 +555,410 @@ export function createCliDependencies(
         ]);
       }
 
+      const activeWorkflow = sessionId ? workflowService.getActiveWorkflowForSession(sessionId) : null;
+      if (activeWorkflow) {
+        workflowService.markWorkflowFailed(activeWorkflow.id, error instanceof Error ? error.message : String(error));
+      }
+
+      accumulateLatestTaskProviderUsage();
+
       throw error;
     }
   };
+
+  const startWorkflow = async (
+    goal: string,
+    workflowType: WorkflowType = PUEBLO_PLAN_WORKFLOW_TYPE,
+    routeReason: string = 'explicit',
+  ) => {
+    const trimmedGoal = goal.trim();
+
+    if (!trimmedGoal) {
+      return failureResult('WORKFLOW_GOAL_REQUIRED', 'Workflow goal is required', [
+        'Use /workflow <goal> or provide a workflow-oriented task description.',
+      ]);
+    }
+
+    let sessionId = selectionState.sessionId;
+    if (!sessionId) {
+      const session = sessionService.createSession(createSessionTitle(trimmedGoal), selectionState.modelId, ensureAgentInstance());
+      sessionId = session.id;
+      syncSelectionFromSession(sessionId);
+    }
+
+    const workflow = workflowService.startWorkflow({
+      type: workflowType,
+      goal: trimmedGoal,
+      sessionId,
+      agentInstanceId: ensureAgentInstance(),
+      targetDirectory: process.cwd(),
+      initialStatus: 'planning',
+    });
+    const planOutline = createInitialPuebloPlanOutline({ goal: trimmedGoal });
+    const planDocument = createInitialPuebloPlanDocument({
+      workflow,
+      routeReason,
+      sessionId,
+      outline: planOutline,
+    });
+    const nextRound = selectNextTodoRound(planDocument);
+    const hydratedPlanDocument = nextRound ? applyTodoRound(planDocument, nextRound) : planDocument;
+    const planMarkdown = renderPuebloPlanMarkdown(hydratedPlanDocument);
+    workflowPlanStore.writePlan(workflow.runtimePlanPath, planMarkdown);
+
+    const planMemory = memoryService.createWorkflowPlanMemory({
+      workflow,
+      sessionId,
+    });
+    const todoTasks = nextRound
+      ? hydratedPlanDocument.tasks.filter((task) => nextRound.taskIds.includes(task.id))
+      : [];
+    const todoMemory = nextRound
+      ? memoryService.createWorkflowTodoMemory({
+        workflow,
+        sessionId,
+        round: nextRound,
+        tasks: todoTasks,
+      })
+      : null;
+    sessionService.addSelectedMemory(sessionId, planMemory.id);
+    if (todoMemory) {
+      sessionService.addSelectedMemory(sessionId, todoMemory.id);
+    }
+    workflowService.saveWorkflow({
+      ...workflow,
+      status: nextRound ? 'round-active' : 'planning',
+      activePlanMemoryId: planMemory.id,
+      activeTodoMemoryId: todoMemory?.id ?? null,
+      activeRoundNumber: nextRound?.roundNumber ?? null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const workflowStartData = {
+      workflowId: workflow.id,
+      workflowType: workflow.type,
+      sessionId,
+      runtimePlanPath: workflow.runtimePlanPath,
+      deliverablePlanPath: workflow.deliverablePlanPath,
+      planMemoryId: planMemory.id,
+      todoMemoryId: todoMemory?.id ?? null,
+      activeRoundNumber: nextRound?.roundNumber ?? null,
+      routeReason,
+    };
+
+    if (routeReason !== 'explicit') {
+      const continuationResult = await continueActiveWorkflow(trimmedGoal, `Workflow handoff (${routeReason})`);
+      return mergeWorkflowResult(continuationResult, workflowStartData);
+    }
+
+    return successResult('WORKFLOW_STARTED', 'Workflow started', workflowStartData);
+  };
+
+  const getActiveWorkflowSessionId = () => selectionState.sessionId ?? currentConfig.defaultSessionId;
+
+  const listSelectedWorkflowMemories = (sessionId: string): MemoryRecord[] => {
+    const session = sessionService.getSession(sessionId);
+    if (!session) {
+      return [];
+    }
+
+    return memoryService.resolveMemorySelection(session.selectedMemoryIds)
+      .filter((memory) => memory.tags.includes('workflow'));
+  };
+
+  const extractWorkflowIdFromMemory = (memory: MemoryRecord): string | null => {
+    const workflowIdLine = memory.content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('workflowId:'));
+
+    if (!workflowIdLine) {
+      return null;
+    }
+
+    const workflowId = workflowIdLine.slice('workflowId:'.length).trim();
+    return workflowId.length > 0 ? workflowId : null;
+  };
+
+  const isActiveWorkflowStatus = (status: WorkflowInstance['status']) => {
+    return ['assessing', 'planning', 'round-active', 'round-review', 'blocked'].includes(status);
+  };
+
+  const clearSelectedWorkflowMemories = (sessionId: string, memories: MemoryRecord[]) => {
+    for (const memory of memories) {
+      sessionService.removeSelectedMemory(sessionId, memory.id);
+    }
+  };
+
+  const resolveActiveWorkflowState = (sessionId: string) => {
+    const activeWorkflow = workflowService.getActiveWorkflowForSession(sessionId);
+    if (activeWorkflow) {
+      return {
+        workflow: activeWorkflow,
+        recovered: false,
+        staleWorkflowMemoryIds: [] as string[],
+      };
+    }
+
+    const selectedWorkflowMemories = listSelectedWorkflowMemories(sessionId);
+    if (selectedWorkflowMemories.length === 0) {
+      return {
+        workflow: null,
+        recovered: false,
+        staleWorkflowMemoryIds: [] as string[],
+      };
+    }
+
+    const candidateWorkflowIds = [...new Set(selectedWorkflowMemories
+      .map((memory) => extractWorkflowIdFromMemory(memory))
+      .filter((workflowId): workflowId is string => Boolean(workflowId)))];
+
+    for (const workflowId of candidateWorkflowIds) {
+      const recoveredWorkflow = workflowService.recoverWorkflowFromRuntimePlan(workflowId)?.workflow
+        ?? workflowService.getWorkflow(workflowId);
+
+      if (!recoveredWorkflow || recoveredWorkflow.sessionId !== sessionId) {
+        continue;
+      }
+
+      if (isActiveWorkflowStatus(recoveredWorkflow.status)) {
+        return {
+          workflow: recoveredWorkflow,
+          recovered: true,
+          staleWorkflowMemoryIds: [] as string[],
+        };
+      }
+    }
+
+    clearSelectedWorkflowMemories(sessionId, selectedWorkflowMemories);
+
+    return {
+      workflow: null,
+      recovered: false,
+      staleWorkflowMemoryIds: selectedWorkflowMemories.map((memory) => memory.id),
+    };
+  };
+
+  const buildNoActiveWorkflowResult = (staleWorkflowMemoryIds: string[] = []) => {
+    if (staleWorkflowMemoryIds.length > 0) {
+      return failureResult(
+        'WORKFLOW_CONTEXT_STALE',
+        'No active workflow is available. Stale workflow memories were cleared from the current session.',
+        [
+          'Start a new /workflow <goal> to continue work.',
+          'Inspect the latest runtime or deliverable plan if you expected an active workflow.',
+        ],
+      );
+    }
+
+    return failureResult('NO_ACTIVE_WORKFLOW', 'No active workflow is available for the current session.', [
+      'Use /workflow <goal> to start a workflow first.',
+    ]);
+  };
+
+  const getActiveWorkflow = () => {
+    const sessionId = getActiveWorkflowSessionId();
+    return sessionId ? resolveActiveWorkflowState(sessionId).workflow : null;
+  };
+
+  const buildActiveWorkflowContinuationGoal = (workflow: WorkflowInstance, userInput?: string | null) => {
+    const request = userInput?.trim();
+    return [
+      'Continue the active workflow instead of creating or switching to another plan.',
+      `Active workflow goal: ${workflow.goal}`,
+      workflow.activeRoundNumber !== null ? `Active round: ${workflow.activeRoundNumber}` : null,
+      'User request:',
+      request && request.length > 0 ? request : 'Continue the current todo round and report progress.',
+    ].filter((line): line is string => Boolean(line)).join('\n');
+  };
+
+  const continueActiveWorkflow = async (userInput?: string | null, trigger = 'Active workflow continuation') => {
+    const sessionId = getActiveWorkflowSessionId();
+    if (!sessionId) {
+      return buildNoActiveWorkflowResult();
+    }
+
+    const workflowState = resolveActiveWorkflowState(sessionId);
+    if (!workflowState.workflow) {
+      return buildNoActiveWorkflowResult(workflowState.staleWorkflowMemoryIds);
+    }
+
+    const workflow = workflowState.workflow;
+
+    const workflowGoal = buildActiveWorkflowContinuationGoal(workflow, userInput);
+
+    return runTask(workflowGoal, trigger, userInput ?? 'Continue the active workflow');
+  };
+
+  const getActiveWorkflowStatus = () => {
+    const sessionId = getActiveWorkflowSessionId();
+    if (!sessionId) {
+      return buildNoActiveWorkflowResult();
+    }
+
+    const workflowState = resolveActiveWorkflowState(sessionId);
+    if (!workflowState.workflow) {
+      return buildNoActiveWorkflowResult(workflowState.staleWorkflowMemoryIds);
+    }
+
+    const workflow = workflowState.workflow;
+    const workflowContext = workflowService.getWorkflowContext(sessionId);
+    return successResult('WORKFLOW_STATUS', 'Active workflow loaded', {
+      workflowId: workflow.id,
+      workflowType: workflow.type,
+      status: workflow.status,
+      recovered: workflowState.recovered,
+      goal: workflow.goal,
+      activeRoundNumber: workflow.activeRoundNumber,
+      runtimePlanPath: workflow.runtimePlanPath,
+      deliverablePlanPath: workflow.deliverablePlanPath,
+      planMemoryId: workflow.activePlanMemoryId,
+      todoMemoryId: workflow.activeTodoMemoryId,
+      planSummary: workflowContext?.planSummary ?? null,
+      todoSummary: workflowContext?.todoSummary ?? null,
+    });
+  };
+
+  const cancelActiveWorkflow = (reason?: string | null) => {
+    const sessionId = getActiveWorkflowSessionId();
+    if (!sessionId) {
+      return buildNoActiveWorkflowResult();
+    }
+
+    const workflowState = resolveActiveWorkflowState(sessionId);
+    if (!workflowState.workflow) {
+      return buildNoActiveWorkflowResult(workflowState.staleWorkflowMemoryIds);
+    }
+
+    const workflow = workflowState.workflow;
+    const transition = workflowService.cancelWorkflow(workflow.id, reason?.trim() || 'Cancelled by user.');
+    if (!transition) {
+      return failureResult('WORKFLOW_CANCEL_FAILED', 'The active workflow could not be cancelled.', [
+        'Retry /workflow-cancel or inspect the runtime plan state.',
+      ]);
+    }
+
+    if (workflow.activePlanMemoryId) {
+      sessionService.removeSelectedMemory(sessionId, workflow.activePlanMemoryId);
+    }
+    if (workflow.activeTodoMemoryId) {
+      sessionService.removeSelectedMemory(sessionId, workflow.activeTodoMemoryId);
+    }
+
+    return successResult('WORKFLOW_CANCELLED', 'Workflow cancelled', {
+      workflowId: transition.workflow.id,
+      workflowType: transition.workflow.type,
+      status: transition.workflow.status,
+      goal: transition.workflow.goal,
+      runtimePlanPath: transition.workflow.runtimePlanPath,
+      deliverablePlanPath: transition.workflow.deliverablePlanPath,
+    });
+  };
+
+  const mergeWorkflowResult = (
+    result: import('../shared/result').CommandResult<unknown>,
+    workflowStartData: {
+      workflowId: string;
+      workflowType: string;
+      sessionId: string;
+      runtimePlanPath: string;
+      deliverablePlanPath: string | null;
+      planMemoryId: string;
+      todoMemoryId: string | null;
+      activeRoundNumber: number | null;
+      routeReason: string;
+    },
+  ) => {
+    const data = result.data && typeof result.data === 'object'
+      ? result.data as Record<string, unknown>
+      : {};
+    const nestedWorkflow = data.workflow && typeof data.workflow === 'object'
+      ? data.workflow as Record<string, unknown>
+      : null;
+
+    return {
+      ...result,
+      data: {
+        ...data,
+        sessionId: typeof data.sessionId === 'string' ? data.sessionId : workflowStartData.sessionId,
+        workflow: {
+          ...workflowStartData,
+          ...(nestedWorkflow ?? {}),
+        },
+      },
+    };
+  };
+
+  const advanceWorkflowAfterTaskCompletion = (sessionId: string, roundSummary: string | null) => {
+    const transition = workflowService.completeActiveRound({
+      sessionId,
+      roundSummary,
+    });
+    if (!transition) {
+      return null;
+    }
+
+    if (transition.previousPlanMemoryId) {
+      sessionService.removeSelectedMemory(sessionId, transition.previousPlanMemoryId);
+    }
+    if (transition.previousTodoMemoryId) {
+      sessionService.removeSelectedMemory(sessionId, transition.previousTodoMemoryId);
+    }
+
+    const refreshedPlanMemory = memoryService.createWorkflowPlanMemory({
+      workflow: transition.workflow,
+      sessionId,
+    });
+    sessionService.addSelectedMemory(sessionId, refreshedPlanMemory.id);
+
+    let nextTodoMemoryId: string | null = null;
+    if (transition.nextRound) {
+      const nextRoundTasks = transition.plan.tasks.filter((task) => transition.nextRound?.taskIds.includes(task.id));
+      const todoMemory = memoryService.createWorkflowTodoMemory({
+        workflow: transition.workflow,
+        sessionId,
+        round: transition.nextRound,
+        tasks: nextRoundTasks,
+      });
+      sessionService.addSelectedMemory(sessionId, todoMemory.id);
+      nextTodoMemoryId = todoMemory.id;
+    }
+
+    const updatedWorkflow = workflowService.saveWorkflow({
+      ...transition.workflow,
+      activePlanMemoryId: refreshedPlanMemory.id,
+      activeTodoMemoryId: nextTodoMemoryId,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return {
+      workflowId: updatedWorkflow.id,
+      workflowType: updatedWorkflow.type,
+      status: updatedWorkflow.status,
+      completedRoundNumber: transition.completedRound.roundNumber,
+      activeRoundNumber: updatedWorkflow.activeRoundNumber,
+      planMemoryId: updatedWorkflow.activePlanMemoryId,
+      todoMemoryId: updatedWorkflow.activeTodoMemoryId,
+      runtimePlanPath: updatedWorkflow.runtimePlanPath,
+      exportResult: transition.exportResult,
+    };
+  };
+
   const inputRouter = new InputRouter({
     dispatcher,
     runTaskFromText: (text) => runTask(text, 'Plain-text task execution'),
+    routeTextInput: async (text) => {
+      if (getActiveWorkflow()) {
+        return continueActiveWorkflow(text, 'Plain-text active workflow continuation');
+      }
+
+      const decision = workflowRouter.decide({ input: text });
+      if (decision.kind === 'handoff') {
+        return startWorkflow(decision.normalizedInput, decision.workflowType, decision.reason);
+      }
+
+      return null;
+    },
   });
 
   const syncSelectionFromSession = (sessionId: string | null): void => {
@@ -563,6 +1045,13 @@ export function createCliDependencies(
     sessionService,
     getCurrentSessionId: () => selectionState.sessionId,
   }));
+  dispatcher.register('/workflow', createWorkflowStartCommand({
+    startWorkflow,
+    defaultWorkflowType: PUEBLO_PLAN_WORKFLOW_TYPE,
+  }));
+  dispatcher.register('/workflow-status', () => getActiveWorkflowStatus());
+  dispatcher.register('/workflow-continue', (args) => continueActiveWorkflow(args.join(' ').trim() || null, 'Manual workflow continuation'));
+  dispatcher.register('/workflow-cancel', (args) => cancelActiveWorkflow(args.join(' ').trim() || null));
   const providerConfigCommand = createProviderConfigCommand({
     getCurrentConfig: () => currentConfig,
     setCurrentConfig: (nextConfig) => {
@@ -633,6 +1122,9 @@ export function createCliDependencies(
         explicitModelId: selectionState.modelId,
         cwd: process.cwd(),
       }).runtimeStatus;
+      const currentSession = selectionState.sessionId
+        ? sessionService.getSession(selectionState.sessionId)
+        : sessionService.getCurrentSession();
 
       return {
         ...runtimeStatus,
@@ -641,6 +1133,7 @@ export function createCliDependencies(
         agentInstanceId: runtimeStatus.agentInstanceId ?? activeAgentInstanceId,
         modelMessageCount: lastModelMessageCount,
         modelMessageCharCount: lastModelMessageCharCount,
+        providerUsageStats: currentSession?.providerUsageStats,
         availableProviders: providerRegistry.listProfiles(),
         providerStatuses: buildDesktopProviderStatuses(currentConfig, credentialStore),
       };
@@ -651,18 +1144,41 @@ export function createCliDependencies(
     startAgentSession(profileId: string) {
       activeAgentProfileId = profileId;
       const agentInstance = agentInstanceService.markActive(
-        agentInstanceService.createAgentInstance(profileId, process.cwd()).id,
+        agentInstanceService.getOrCreateDefaultAgentInstance(profileId, process.cwd()).id,
       );
       activeAgentInstanceId = agentInstance.id;
-      const session = sessionService.createSession(`${agentInstance.profileName} session`, selectionState.modelId, agentInstance.id);
+      const mostRecentSession = sessionService.getMostRecentSessionForAgentInstance(agentInstance.id);
+      const session = mostRecentSession
+        ? sessionService.selectSession(mostRecentSession.id)
+        : sessionService.createSession(`${agentInstance.profileName} session`, selectionState.modelId, agentInstance.id);
       syncSelectionFromSession(session.id);
       return this.getRuntimeStatus();
     },
-    setProgressReporter(reporter: ((message: string) => void) | null): void {
+    listAgentSessions(agentInstanceId: string) {
+      return sessionService.listSessions()
+        .filter((session) => session.agentInstanceId === agentInstanceId && session.status !== 'deleted')
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+    },
+    listSessionMemories(sessionId: string) {
+      return memoryService.listSessionMemories(sessionId)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+    },
+    selectSession(sessionId: string) {
+      const session = sessionService.selectSession(sessionId);
+      syncSelectionFromSession(session.id);
+      return {
+        runtimeStatus: this.getRuntimeStatus(),
+        session,
+      };
+    },
+    setProgressReporter(reporter: ((update: { title: string; message: string }) => void) | null): void {
       progressReporter = reporter;
     },
     setToolApprovalHandler(handler: ToolApprovalHandler | null): void {
       toolApprovalHandler = handler;
+    },
+    setToolApprovalBatchHandler(handler: ToolApprovalBatchHandler | null): void {
+      toolApprovalBatchHandler = handler;
     },
     databaseClose(): void {
       pepeSupervisor.stopAll();
@@ -677,7 +1193,7 @@ export function createCliDependencies(
 
     const profileId = activeAgentProfileId ?? currentConfig.defaultAgentProfileId ?? 'code-master';
     const agentInstance = agentInstanceService.markActive(
-      agentInstanceService.createAgentInstance(profileId, process.cwd()).id,
+      agentInstanceService.getOrCreateDefaultAgentInstance(profileId, process.cwd()).id,
     );
     activeAgentProfileId = agentInstance.profileId;
     activeAgentInstanceId = agentInstance.id;
@@ -732,11 +1248,19 @@ async function promptForToolApproval(
   request: ToolApprovalRequest,
   readLine: (prompt: string) => Promise<string>,
   write: (text: string) => void,
-): Promise<boolean> {
+): Promise<ToolApprovalDecision> {
   write(renderToolApprovalPrompt(request));
 
   const response = (await readLine('approval> ')).trim().toLowerCase();
-  return response === 'y' || response === 'yes';
+  if (response === 'a' || response === 'all' || response === 'allow-all') {
+    return 'allow-all';
+  }
+
+  if (response === 'y' || response === 'yes' || response === 'o' || response === 'once' || response === 'allow-once') {
+    return 'allow-once';
+  }
+
+  return 'deny';
 }
 
 export function renderToolApprovalPrompt(request: ToolApprovalRequest): string {
@@ -750,7 +1274,7 @@ export function renderToolApprovalPrompt(request: ToolApprovalRequest): string {
     sections.push(request.summary);
   }
 
-  sections.push(request.detail, 'Approve? (y/N)');
+  sections.push(request.detail, 'Approve? (o=Allow once / a=Allow ALL / n=Deny)');
 
   return sections.join('\n\n');
 }

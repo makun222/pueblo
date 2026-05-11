@@ -1,0 +1,20 @@
+{
+  "id": "5a9e87a6-b483-46b0-a912-6d11b6edd48e",
+  "type": "short-term",
+  "title": "Summary: Turn 973",
+  "content": "已完成8/8生产文件的SLF4J日志改造（消除System.out/err与printStackTrace）及全局JSON异常处理器（400/500）就绪。建议后续方向：编写单元测试、添加Notion搜索、软删除Notion或配置文件校验。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "78e33a81-6aa0-4bbe-afab-96224efd6e3b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T08:48:48.710Z",
+  "updatedAt": "2026-05-06T08:48:48.710Z"
+}

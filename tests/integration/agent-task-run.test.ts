@@ -10,6 +10,7 @@ import type { ProviderAdapter, ProviderRunRequest, ProviderRunResult, ProviderSt
 import { createProviderProfile } from '../../src/providers/provider-profile';
 import { InMemoryProviderAdapter } from '../../src/providers/provider-adapter';
 import { ProviderRegistry } from '../../src/providers/provider-registry';
+import { extractTaskOutputSummaryPayload } from '../../src/shared/result';
 import { ToolService } from '../../src/tools/tool-service';
 import type { ExecuteToolRequest } from '../../src/tools/tool-service';
 import { nodeSqliteAvailable } from '../helpers/sqlite-runtime';
@@ -196,6 +197,55 @@ class InspectingRepeatedReadProviderAdapter implements ProviderAdapter {
         secondHasFullOutput: Array.isArray(secondToolPayload.output),
         secondCompressed: secondToolPayload.compression ?? null,
       }),
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class UsageTrackingProviderAdapter implements ProviderAdapter {
+  private hasRequestedTool = false;
+
+  async runStep(): Promise<ProviderStepResult> {
+    if (!this.hasRequestedTool) {
+      this.hasRequestedTool = true;
+      return {
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        args: { path: 'notes.txt' },
+        rationale: 'Read file before answering',
+        usage: {
+          promptTokens: 10,
+          completionTokens: 0,
+          totalTokens: 10,
+          promptCacheHitTokens: 4,
+          promptCacheMissTokens: 6,
+          promptTokensDetails: {
+            cachedTokens: 4,
+          },
+        },
+      };
+    }
+
+    return {
+      type: 'final',
+      outputSummary: 'Usage-aware result',
+      usage: {
+        promptTokens: 5,
+        completionTokens: 7,
+        totalTokens: 12,
+        promptCacheHitTokens: 2,
+        promptCacheMissTokens: 3,
+        promptTokensDetails: {
+          cachedTokens: 2,
+        },
+        completionTokensDetails: {
+          reasoningTokens: 7,
+        },
+      },
     };
   }
 
@@ -622,6 +672,78 @@ describeIfNodeSqlite('agent task persistence integration', () => {
     expect(inspection.firstHasFullOutput).toBe(false);
     expect(inspection.secondHasFullOutput).toBe(true);
     expect(inspection.secondCompressed).toBeNull();
+
+    database.close();
+  });
+
+  it('aggregates provider usage across tool and final steps into the persisted task payload', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-usage-tracking-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new UsageTrackingProviderAdapter());
+
+    const repository = new AgentTaskRepository({ connection: database.connection });
+    const runner = new AgentTaskRunner(registry, repository, {
+      describeTools: () => [
+        {
+          name: 'read',
+          description: 'Read file contents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+            },
+            required: ['path'],
+            additionalProperties: false,
+          },
+        },
+      ],
+      async execute(input: ExecuteToolRequest) {
+        return {
+          invocation: { id: `tool-invocation-${input.toolName}` },
+          output: {
+            toolName: input.toolName,
+            status: 'succeeded',
+            summary: `Executed ${input.toolName}`,
+            output: ['1: alpha'],
+          },
+        };
+      },
+    } as unknown as ToolService);
+
+    const result = await runner.run({
+      goal: 'Inspect repository state with usage tracking',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    const payload = extractTaskOutputSummaryPayload(result.outputSummary);
+
+    expect(payload?.providerUsage).toEqual({
+      promptTokens: 15,
+      completionTokens: 7,
+      totalTokens: 22,
+      promptCacheHitTokens: 6,
+      promptCacheMissTokens: 9,
+      promptTokensDetails: {
+        cachedTokens: 6,
+      },
+      completionTokensDetails: {
+        reasoningTokens: 7,
+      },
+    });
 
     database.close();
   });

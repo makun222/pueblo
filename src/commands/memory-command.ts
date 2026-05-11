@@ -9,7 +9,19 @@ export interface MemoryCommandDependencies {
 }
 
 export function createMemoryListCommand(dependencies: MemoryCommandDependencies) {
-  return (): CommandResult => successResult('MEMORY_LIST', 'Memories loaded', { memories: dependencies.memoryService.listMemories() });
+  return (): CommandResult => {
+    const sessionId = dependencies.getCurrentSessionId();
+
+    if (!sessionId) {
+      return failureResult('SESSION_REQUIRED', 'Create or select a session before listing memories', [
+        'Use /new to create a session, then retry /memory-list.',
+      ]);
+    }
+
+    return successResult('MEMORY_LIST', 'Memories loaded', {
+      memories: dependencies.memoryService.listSessionMemories(sessionId),
+    });
+  };
 }
 
 export function createMemoryAddCommand(dependencies: MemoryCommandDependencies) {

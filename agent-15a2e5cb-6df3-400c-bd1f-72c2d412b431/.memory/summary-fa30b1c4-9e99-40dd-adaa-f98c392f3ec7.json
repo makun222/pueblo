@@ -1,0 +1,20 @@
+{
+  "id": "fa30b1c4-9e99-40dd-adaa-f98c392f3ec7",
+  "type": "short-term",
+  "title": "Summary: Turn 973",
+  "content": "SLF4J logging refactoring completed for 8 production files; global JSON error handler (BaseJsonHandler) is ready. User requests to continue, moving to next development phase.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "78e33a81-6aa0-4bbe-afab-96224efd6e3b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T08:48:46.834Z",
+  "updatedAt": "2026-05-06T08:48:46.834Z"
+}

@@ -13,6 +13,7 @@ interface SessionRow {
   message_history_json: string;
   selected_prompt_ids_json: string;
   selected_memory_ids_json: string;
+  provider_usage_stats_json: string | null;
   origin_session_id: string | null;
   trigger_reason: Session['triggerReason'];
   created_at: string;
@@ -128,6 +129,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
             message_history_json = @message_history_json,
             selected_prompt_ids_json = @selected_prompt_ids_json,
             selected_memory_ids_json = @selected_memory_ids_json,
+          provider_usage_stats_json = @provider_usage_stats_json,
           origin_session_id = @origin_session_id,
           trigger_reason = @trigger_reason,
             created_at = @created_at,
@@ -145,11 +147,11 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
         `
         INSERT INTO sessions (
           id, title, status, session_kind, agent_instance_id, current_model_id, message_history_json,
-          selected_prompt_ids_json, selected_memory_ids_json, origin_session_id, trigger_reason,
+          selected_prompt_ids_json, selected_memory_ids_json, provider_usage_stats_json, origin_session_id, trigger_reason,
           created_at, updated_at, started_at, completed_at, failed_at, archived_at
         ) VALUES (
           @id, @title, @status, @session_kind, @agent_instance_id, @current_model_id, @message_history_json,
-          @selected_prompt_ids_json, @selected_memory_ids_json, @origin_session_id, @trigger_reason,
+          @selected_prompt_ids_json, @selected_memory_ids_json, @provider_usage_stats_json, @origin_session_id, @trigger_reason,
           @created_at, @updated_at, @started_at, @completed_at, @failed_at, @archived_at
         )
         `,
@@ -185,6 +187,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       messageHistory: deserializeMessageHistory(row.id, row.message_history_json, row.updated_at),
       selectedPromptIds: fromJson<string[]>(row.selected_prompt_ids_json),
       selectedMemoryIds: fromJson<string[]>(row.selected_memory_ids_json),
+      providerUsageStats: fromJson<Record<string, unknown>>(row.provider_usage_stats_json ?? '{}'),
       originSessionId: row.origin_session_id,
       triggerReason: row.trigger_reason,
       createdAt: row.created_at,
@@ -207,6 +210,7 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       message_history_json: toJson(session.messageHistory),
       selected_prompt_ids_json: toJson(session.selectedPromptIds),
       selected_memory_ids_json: toJson(session.selectedMemoryIds),
+      provider_usage_stats_json: toJson(session.providerUsageStats),
       origin_session_id: session.originSessionId,
       trigger_reason: session.triggerReason,
       created_at: session.createdAt,

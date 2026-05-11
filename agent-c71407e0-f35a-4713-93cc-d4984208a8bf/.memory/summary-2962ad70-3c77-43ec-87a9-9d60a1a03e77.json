@@ -1,0 +1,20 @@
+{
+  "id": "2962ad70-3c77-43ec-87a9-9d60a1a03e77",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "AI programming assistant specializing in Pueblo project: deep code comprehension (2000+ TS files, layered architecture), precise small-scale code edits, project configuration/build/release/testing knowledge, pattern matching via grep/glob, and style consistency. Avoids game advice, large refactoring, and undocumented projects.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "11e9ca7d-7b4b-4ea0-af64-f9a208ecc259",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "19645399-d30d-49df-9a1d-a6381c3b2ad5",
+  "createdAt": "2026-05-10T15:11:50.932Z",
+  "updatedAt": "2026-05-10T15:11:50.932Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "ceb869fc-35ee-4d04-ab24-5db787255896",
+  "type": "short-term",
+  "title": "Summary: Turn 984",
+  "content": "测试基础设施已搭建完成，包括 JaCoCo 0.8.11 插件、测试基类 `BaseKnowledgeTest`、测试配置、日志配置以及基础设施自检测试。下一步建议重构现有测试或编写新测试（用户指示从步骤 3 开始）。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "373a90d0-d6b5-4dfc-84b6-b369503a5a49",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:29:56.519Z",
+  "updatedAt": "2026-05-10T06:29:56.519Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "368c5b63-6a8a-41dd-a495-181a996ff73a",
+  "type": "short-term",
+  "title": "Summary: Turn 1061",
+  "content": "本轮聚焦于项目C（HTTP调用重试机制），需实现 `retryWithBackoff()` 方法、应用至HTTP调用并编写单元测试；继续推进此步骤。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "850de6de-be10-41ac-839c-a1ca5b6f7d81",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T10:12:20.027Z",
+  "updatedAt": "2026-05-11T10:12:20.027Z"
+}

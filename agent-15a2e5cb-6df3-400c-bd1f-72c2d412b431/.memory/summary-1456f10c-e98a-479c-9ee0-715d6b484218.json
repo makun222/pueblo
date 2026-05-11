@@ -1,0 +1,20 @@
+{
+  "id": "1456f10c-e98a-479c-9ee0-715d6b484218",
+  "type": "short-term",
+  "title": "Summary: Turn 814",
+  "content": "图片处理流水线从上传到知识图谱可视化共6步，核心依赖LLM视觉模型（如gpt-4o）通过Base64编码调用多模态API提取图片文本，默认配置下因缺少视觉模型导致提取失败。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "695d9967-44c7-46e7-a455-8e3ac3525c22",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T01:36:31.705Z",
+  "updatedAt": "2026-05-05T01:36:31.705Z"
+}

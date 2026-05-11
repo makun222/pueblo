@@ -75,6 +75,7 @@ describe('pepe supervisor', () => {
               profileId: 'code-master',
               profileName: 'Code Master',
               status: 'active',
+              isDefaultForProfile: true,
               workspaceRoot: tempDir,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
@@ -106,6 +107,43 @@ describe('pepe supervisor', () => {
     expect(summaryFile).toBeTruthy();
 
     supervisor.stopAll();
+  });
+
+  it('does not summarize active workflow plan or todo memories', async () => {
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const planMemory = memoryService.createMemory('Workflow plan', 'Plan content', 'session', {
+      tags: ['workflow', 'plan', 'conversation-turn'],
+    });
+    const todoMemory = memoryService.createMemory('Workflow todo', 'Todo content', 'session', {
+      tags: ['workflow', 'todo', 'conversation-turn'],
+    });
+    const regularMemory = memoryService.createConversationTurnMemory({
+      sessionId: 'session-1',
+      turnNumber: 1,
+      userInput: 'Inspect sqlite persistence',
+      assistantOutput: 'SQLite remains the source of truth.',
+    });
+
+    const result = await processPepeSessionSnapshot(
+      {
+        sessionId: 'session-1',
+        pendingInput: 'Inspect sqlite persistence',
+        selectedMemoryIds: [planMemory.id, todoMemory.id, regularMemory.id],
+        memories: [planMemory, todoMemory, regularMemory],
+      },
+      {
+        isConfigured: () => true,
+        summarizeMemory: async ({ memory }) => memory.id === regularMemory.id
+          ? 'sqlite summary remains relevant'
+          : `summary:${memory.id}`,
+      },
+      createStaticEmbeddingClient(),
+      createTestAppConfig().pepe,
+    );
+
+    expect(result.summaries).toHaveLength(1);
+    expect(result.summaries[0]?.parentMemoryId).toBe(regularMemory.id);
+    expect(result.resultCandidates.map((candidate) => candidate.memoryId ?? candidate.parentMemoryId)).toEqual([regularMemory.id]);
   });
 });
 

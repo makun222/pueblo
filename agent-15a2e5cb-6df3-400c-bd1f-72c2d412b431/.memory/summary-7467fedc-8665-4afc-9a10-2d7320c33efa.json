@@ -1,0 +1,20 @@
+{
+  "id": "7467fedc-8665-4afc-9a10-2d7320c33efa",
+  "type": "short-term",
+  "title": "Summary: Turn 993",
+  "content": "Fixed two `InferenceConfig` constructor calls in `KnowledgeBaseTest.java` that were missing the `notionCategoryPrompt` parameter (6th arg), adding `null` to resolve compilation errors. Previous work includes creating 4 test files and fixing other compilation/flaky test issues.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0aa37a11-bb91-463e-8bfe-818a1a433fed",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:47:09.153Z",
+  "updatedAt": "2026-05-10T06:47:09.153Z"
+}

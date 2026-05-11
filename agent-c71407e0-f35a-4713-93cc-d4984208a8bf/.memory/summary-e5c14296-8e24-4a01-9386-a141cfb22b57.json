@@ -1,0 +1,20 @@
+{
+  "id": "e5c14296-8e24-4a01-9386-a141cfb22b57",
+  "type": "short-term",
+  "title": "Summary: Turn 1",
+  "content": "User asked for \"暗区突围新手教程\" (Arena Breakout beginner tutorial), but current workspace is Pueblo (TypeScript + Node.js CLI agent). Assistant clarified mismatch and offered guidance on Pueblo usage instead.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3cf3e647-0fd3-4540-951a-691329396a29",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "19645399-d30d-49df-9a1d-a6381c3b2ad5",
+  "createdAt": "2026-05-10T03:11:03.409Z",
+  "updatedAt": "2026-05-10T03:11:03.409Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "c26ae6dc-a7fb-4927-babb-a08b1970eaec",
+  "type": "short-term",
+  "title": "Summary: Turn 869",
+  "content": "Phase 1 of LLM-inferred category system with `_RAW` directory per subject mostly done: created `NotionCategoryInferenceService` (interface, noop, OpenAI). Pending: `ObsidianVaultExportService` and integration into `KnowledgeBaseApplication`. Next step: pick A (export core logic), B (app integration), or C (compile verification).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "96c7c92d-8c15-4250-896e-22a387bd8a33",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T10:36:38.493Z",
+  "updatedAt": "2026-05-05T10:36:38.493Z"
+}

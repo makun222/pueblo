@@ -84,6 +84,7 @@ function createBlock(overrides: Partial<RendererOutputBlock> = {}): RendererOutp
     content: overrides.content ?? 'block content',
     collapsed: overrides.collapsed ?? false,
     messageTrace: overrides.messageTrace ?? [],
+    fileChanges: overrides.fileChanges ?? [],
     sourceRefs: overrides.sourceRefs ?? [],
     createdAt: overrides.createdAt ?? new Date().toISOString(),
   };
@@ -161,6 +162,8 @@ beforeEach(() => {
         },
         providerStatuses: defaultProviderStatuses,
       }),
+      getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
+      respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
       listAgentProfiles: vi.fn().mockResolvedValue([
         {
           id: 'code-master',
@@ -218,12 +221,49 @@ beforeEach(() => {
         },
         providerStatuses: defaultProviderStatuses,
       }),
+      listAgentSessions: vi.fn().mockResolvedValue([]),
+      listSessionMemories: vi.fn().mockResolvedValue([]),
+      selectSession: vi.fn().mockResolvedValue({
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders: defaultAvailableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+          providerStatuses: defaultProviderStatuses,
+        },
+        session: null,
+      }),
       onMenuAction: vi.fn((callback: (action: 'open-provider-config' | 'open-agent-picker') => void) => {
         menuActionListener = callback;
         return () => {
           menuActionListener = null;
         };
       }),
+      onToolApprovalState: vi.fn(() => () => {}),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),
@@ -347,7 +387,7 @@ describe('Desktop Window Input/Output', () => {
       }));
     });
 
-    const details = screen.getByText('Messages Sent To Model').closest('details');
+    const details = screen.getByText('Process Info').closest('details');
     expect(details).toBeTruthy();
     expect(details?.hasAttribute('open')).toBe(false);
     expect(screen.getByText('Step 1')).toBeTruthy();
@@ -379,7 +419,7 @@ describe('Desktop Window Input/Output', () => {
     await waitFor(() => {
       expect(window.electronAPI.startAgentSession).toHaveBeenCalledWith('architect');
       expect(screen.queryByText('/help')).toBeNull();
-      expect(screen.getByText('Architect')).toBeTruthy();
+      expect(screen.getByDisplayValue('Architect')).toBeTruthy();
     });
   });
 

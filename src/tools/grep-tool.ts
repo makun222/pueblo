@@ -43,8 +43,17 @@ export function createGrepTool() {
           }
 
           const content = fs.readFileSync(fullPath, 'utf8');
-          if (regex.test(content)) {
-            results.push(path.relative(request.cwd, fullPath));
+          const relativePath = path.relative(request.cwd, fullPath);
+          const lines = content.split(/\r?\n/);
+
+          for (let index = 0; index < lines.length; index += 1) {
+            const line = lines[index] ?? '';
+            regex.lastIndex = 0;
+            if (!regex.test(line)) {
+              continue;
+            }
+
+            results.push(`${relativePath}:${index + 1}: ${line}`);
           }
         }
       };
@@ -54,7 +63,7 @@ export function createGrepTool() {
       return {
         toolName: 'grep',
         status: results.length > 0 ? 'succeeded' : 'empty',
-        summary: results.length > 0 ? `Matched ${results.length} file(s)` : 'No content matched',
+        summary: results.length > 0 ? `Matched ${results.length} line(s)` : 'No content matched',
         output: results,
       };
     } catch (error) {

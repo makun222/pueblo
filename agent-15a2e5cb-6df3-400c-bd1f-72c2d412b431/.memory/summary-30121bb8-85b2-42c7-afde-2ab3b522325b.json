@@ -1,0 +1,20 @@
+{
+  "id": "30121bb8-85b2-42c7-afde-2ab3b522325b",
+  "type": "short-term",
+  "title": "Summary: Turn 919",
+  "content": "Updated work log (Turn 919): completed P1 Obsidian Vault export (design, interface, impl, tests), P2 CLI with picocli + Spring delegation, and RawContentMediaTextExtractionService. 9 files (2 modified, 7 new) uncommitted.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "988a1edb-d5c2-4dcd-b794-0f33244571a6",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:12:54.622Z",
+  "updatedAt": "2026-05-05T15:12:54.622Z"
+}

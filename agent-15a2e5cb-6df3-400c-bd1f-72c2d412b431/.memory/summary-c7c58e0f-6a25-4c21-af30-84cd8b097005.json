@@ -1,0 +1,20 @@
+{
+  "id": "c7c58e0f-6a25-4c21-af30-84cd8b097005",
+  "type": "short-term",
+  "title": "Summary: Turn 1052",
+  "content": "用户继续讨论优化方向。当前测试全部通过（89个）。建议优先处理三项高优先级小工作量优化：配置验证与安全（启动校验 & API Key脱敏）、LLM调用缓存+指数退避重试、操作性能日志。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "471d1aa2-3f0a-4722-9da4-b90f2edde4bc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T06:49:40.138Z",
+  "updatedAt": "2026-05-11T06:49:40.138Z"
+}

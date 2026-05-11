@@ -1,0 +1,20 @@
+{
+  "id": "7600028b-3fb4-4215-9342-fbdc9188c006",
+  "type": "short-term",
+  "title": "Summary: Turn 856",
+  "content": "Knowledge Base optimization roadmap: 8 directions prioritized (DB perf, CRUD, search/export, LLM cache, logging, config validation, version control, UI); 5 features complete; 1-week short-term plan targets query cache, CRUD, search/export, logging with success metrics.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f6f23974-68cb-4e3f-abfa-0110daa34ce5",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T09:57:27.597Z",
+  "updatedAt": "2026-05-05T09:57:27.597Z"
+}

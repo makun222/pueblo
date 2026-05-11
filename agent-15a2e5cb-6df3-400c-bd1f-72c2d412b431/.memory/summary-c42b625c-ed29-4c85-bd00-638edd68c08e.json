@@ -1,0 +1,20 @@
+{
+  "id": "c42b625c-ed29-4c85-bd00-638edd68c08e",
+  "type": "short-term",
+  "title": "Summary: Turn 837",
+  "content": "为KnowledgeBase集成Obsidian接口，分两阶段：先为Notion实体新增`tags`字段支持分类（无tag放入“未分类”），再实现`ObsidianExportService`按tag分层导出.md文件，目录结构为`tag[0]/tag[1]/.../notion.md`，关系信息存入frontmatter的`relations`字段。可选实现反向导入以支持双向同步。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "de129baa-bb1a-4ae5-be0e-9042a2527459",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:34:25.416Z",
+  "updatedAt": "2026-05-05T05:34:25.416Z"
+}

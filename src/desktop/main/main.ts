@@ -61,6 +61,17 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
     },
     modelMessageCount: 0,
     modelMessageCharCount: 0,
+    providerUsageStats: {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      promptCacheHitTokens: 0,
+      promptCacheMissTokens: 0,
+      cachedPromptTokens: 0,
+      reasoningTokens: 0,
+      promptTokensSent: 0,
+      cacheHitRatio: null,
+    },
     selectedPromptCount: 0,
     selectedMemoryCount: 0,
     availableProviders: [],
@@ -97,6 +108,12 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
 
   ipcMain.removeHandler('get-runtime-status');
   ipcMain.handle('get-runtime-status', async () => emptyRuntimeStatus);
+
+  ipcMain.removeHandler('get-tool-approval-state');
+  ipcMain.handle('get-tool-approval-state', async () => ({ activeBatch: null }));
+
+  ipcMain.removeHandler('respond-tool-approval');
+  ipcMain.handle('respond-tool-approval', async () => ({ activeBatch: null }));
 
   ipcMain.removeHandler('list-agent-profiles');
   ipcMain.handle('list-agent-profiles', async () => {

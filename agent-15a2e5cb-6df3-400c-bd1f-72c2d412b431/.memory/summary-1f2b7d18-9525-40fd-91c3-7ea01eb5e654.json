@@ -1,0 +1,20 @@
+{
+  "id": "1f2b7d18-9525-40fd-91c3-7ea01eb5e654",
+  "type": "short-term",
+  "title": "Summary: Turn 825",
+  "content": "Integrate KnowledgeBase with Obsidian by creating an `ObsidianExportService` that converts `Notion` entities into Markdown files with hierarchical folder structure (or plain Markdown with `[[links]]`). Add a REST endpoint in `KnowledgeMapHttpServer` to trigger export to a specified Obsidian vault path.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "5b736567-9e13-4a41-8bb6-ffdb217f1d34",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T04:53:59.783Z",
+  "updatedAt": "2026-05-05T04:53:59.783Z"
+}

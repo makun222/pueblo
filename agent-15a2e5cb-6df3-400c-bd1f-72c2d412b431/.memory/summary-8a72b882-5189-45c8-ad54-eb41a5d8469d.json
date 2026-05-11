@@ -1,0 +1,20 @@
+{
+  "id": "8a72b882-5189-45c8-ad54-eb41a5d8469d",
+  "type": "short-term",
+  "title": "Summary: Turn 896",
+  "content": "用户确认当前项目无Obsidian集成，该需求未列入工作日志待办；待办优先项包括缓存、删除、搜索、导出、LLM缓存、日志、配置检查等。若需加入，可提供集成方向如导出为Obsidian Markdown、双向同步或图谱互通。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4cf7f38c-5e90-4d10-abde-b9fc040a0385",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:24:49.307Z",
+  "updatedAt": "2026-05-05T14:24:49.307Z"
+}

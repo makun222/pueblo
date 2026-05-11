@@ -1,0 +1,20 @@
+{
+  "id": "9de134d1-0a1c-4671-98db-8d18c31325dc",
+  "type": "short-term",
+  "title": "Summary: Turn 1034",
+  "content": "修复 ObsidianExportServiceImpl：空知识库强制创建 `Uncategorized/` 及 `_index.md`；`sanitizeFileName` 移除括号 `()`；子分类每层自动生成 `_index.md`，父层已存在则不覆盖。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2cb107b0-046f-49ce-87dc-b8e99aecca76",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T15:46:40.149Z",
+  "updatedAt": "2026-05-10T15:46:40.149Z"
+}

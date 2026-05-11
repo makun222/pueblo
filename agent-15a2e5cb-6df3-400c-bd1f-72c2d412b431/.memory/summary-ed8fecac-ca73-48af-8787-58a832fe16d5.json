@@ -1,0 +1,20 @@
+{
+  "id": "ed8fecac-ca73-48af-8787-58a832fe16d5",
+  "type": "short-term",
+  "title": "Summary: Turn 911",
+  "content": "P1 (ObsidianExportService) 已完成；P2 (CLI 集成) 待实现：需添加 picocli 依赖、创建 `ObsidianExportCommand` 并修改入口。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "dfa0e82d-5c13-4280-9519-711316a911cd",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:07:38.207Z",
+  "updatedAt": "2026-05-05T15:07:38.207Z"
+}

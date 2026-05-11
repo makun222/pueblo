@@ -1,0 +1,20 @@
+{
+  "id": "1178cdb7-4565-4819-9aca-17e729e7f9b3",
+  "type": "short-term",
+  "title": "Summary: Turn 896",
+  "content": "**Obsidian integration confirmed absent from current work log and codebase; backlog includes six other priorities (cache, delete, search, logging, etc.). Obsidian export, sync, or graph fusion are not yet planned.**",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4cf7f38c-5e90-4d10-abde-b9fc040a0385",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:24:47.714Z",
+  "updatedAt": "2026-05-05T14:24:47.714Z"
+}

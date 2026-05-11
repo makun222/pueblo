@@ -1,0 +1,20 @@
+{
+  "id": "774909de-8bbb-4b56-ad25-ab8df2c4840d",
+  "type": "short-term",
+  "title": "Summary: Turn 1010",
+  "content": "User mentioned having a plan and asked to search for it; assistant failed due to network error on DeepSeek API.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "d805cc36-5d39-4f68-b7c1-d335d31f4994",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T14:47:27.564Z",
+  "updatedAt": "2026-05-10T14:47:27.564Z"
+}

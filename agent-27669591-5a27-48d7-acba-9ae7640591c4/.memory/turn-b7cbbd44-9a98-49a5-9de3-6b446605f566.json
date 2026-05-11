@@ -1,0 +1,18 @@
+{
+  "id": "b7cbbd44-9a98-49a5-9de3-6b446605f566",
+  "type": "short-term",
+  "title": "Turn 1",
+  "content": "User:\n你好\n\nAssistant:\n你好！你有什么哲学问题或想法，我可以帮助你探讨吗？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "e26db175-9b70-4c7b-8ed0-00c1e478f639",
+  "createdAt": "2026-04-29T09:08:32.570Z",
+  "updatedAt": "2026-04-29T09:08:32.570Z"
+}

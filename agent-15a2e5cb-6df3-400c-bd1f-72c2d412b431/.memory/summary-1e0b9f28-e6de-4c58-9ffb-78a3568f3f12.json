@@ -1,0 +1,20 @@
+{
+  "id": "1e0b9f28-e6de-4c58-9ffb-78a3568f3f12",
+  "type": "short-term",
+  "title": "Summary: Turn 1038",
+  "content": "User declined a prior request or offer (\"先不用了\"), assistant acknowledged readiness to assist when needed.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "aaa9183d-2636-466a-b351-56e2875dd964",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T15:53:33.408Z",
+  "updatedAt": "2026-05-10T15:53:33.408Z"
+}

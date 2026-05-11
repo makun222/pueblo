@@ -2,9 +2,10 @@ import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/desktop/renderer/App';
-import type { ProviderProfile, RendererMessageTraceStep, RendererOutputBlock } from '../../src/shared/schema';
+import type { ProviderProfile, RendererMessageTraceStep, RendererOutputBlock, Session } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
+let scrollIntoViewSpy: ReturnType<typeof vi.fn>;
 
 const availableProviders: ProviderProfile[] = [
   {
@@ -38,8 +39,25 @@ const sampleMessageTrace: RendererMessageTraceStep[] = [
   },
 ];
 
+const providerUsageStats = {
+  promptTokens: 1532,
+  completionTokens: 24567,
+  totalTokens: 1200345,
+  promptCacheHitTokens: 15,
+  promptCacheMissTokens: 20,
+  cachedPromptTokens: 15,
+  reasoningTokens: 18,
+  promptTokensSent: 35,
+  cacheHitRatio: 0.4286,
+};
+
 beforeEach(() => {
   outputListener = null;
+  scrollIntoViewSpy = vi.fn();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scrollIntoViewSpy,
+  });
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
@@ -66,6 +84,7 @@ beforeEach(() => {
           },
           modelMessageCount: 0,
           modelMessageCharCount: 0,
+          providerUsageStats,
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
           availableProviders,
@@ -97,6 +116,7 @@ beforeEach(() => {
         },
         modelMessageCount: 0,
         modelMessageCharCount: 0,
+        providerUsageStats,
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
         availableProviders,
@@ -107,6 +127,8 @@ beforeEach(() => {
           lastSummaryMemoryId: null,
         },
       }),
+      getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
+      respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
       listAgentProfiles: vi.fn().mockResolvedValue([
         {
           id: 'code-master',
@@ -151,7 +173,43 @@ beforeEach(() => {
           lastSummaryMemoryId: null,
         },
       }),
+      listAgentSessions: vi.fn().mockResolvedValue([]),
+      listSessionMemories: vi.fn().mockResolvedValue([]),
+      selectSession: vi.fn().mockResolvedValue({
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        },
+        session: null,
+      }),
       onMenuAction: vi.fn(() => () => {}),
+      onToolApprovalState: vi.fn(() => () => {}),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),
@@ -162,10 +220,11 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe('Desktop Output Summary Rendering', () => {
-  it('should show outputSummary and tool results while keeping model output collapsed', async () => {
+  it('should show outputSummary while keeping model output collapsed and non-chat tool blocks hidden', async () => {
     render(createElement(App));
 
     await waitFor(() => {
@@ -180,6 +239,7 @@ describe('Desktop Output Summary Rendering', () => {
         content: 'Short visible answer',
         collapsed: false,
         messageTrace: sampleMessageTrace,
+        fileChanges: [],
         sourceRefs: [],
         createdAt: new Date().toISOString(),
       });
@@ -190,6 +250,7 @@ describe('Desktop Output Summary Rendering', () => {
         content: 'Verbose model trace',
         collapsed: true,
         messageTrace: sampleMessageTrace,
+        fileChanges: [],
         sourceRefs: [],
         createdAt: new Date().toISOString(),
       });
@@ -200,18 +261,318 @@ describe('Desktop Output Summary Rendering', () => {
         content: 'grep: succeeded - found files',
         collapsed: false,
         messageTrace: sampleMessageTrace,
+        fileChanges: [],
         sourceRefs: [],
         createdAt: new Date().toISOString(),
       });
     });
 
     expect(screen.getByText('Short visible answer')).toBeTruthy();
-    expect(screen.getByText('grep: succeeded - found files')).toBeTruthy();
-    expect(screen.getAllByText('Messages Sent To Model')).toHaveLength(3);
-    expect(screen.getAllByText('Step 1')).toHaveLength(3);
-    const details = screen.getByText('Model Output').closest('details');
-    expect(details).toBeTruthy();
-    expect(details?.hasAttribute('open')).toBe(false);
+    expect(screen.queryByText('grep: succeeded - found files')).toBeNull();
+    expect(screen.getAllByText('Process Info')).toHaveLength(1);
+    expect(screen.getAllByText('Step 1')).toHaveLength(1);
+    expect(screen.queryByText('Model Output')).toBeNull();
+  });
+
+  it('auto-scrolls to the latest transcript update', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search transcript')).toBeTruthy();
+    });
+
+    scrollIntoViewSpy.mockClear();
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'latest',
+        type: 'task-result',
+        title: 'Latest Output',
+        content: 'Newest transcript entry',
+        collapsed: false,
+        messageTrace: [],
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    await waitFor(() => {
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    });
+  });
+
+  it('collapses transcript history before the latest ten interactions', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search transcript')).toBeTruthy();
+    });
+
+    act(() => {
+      for (let index = 1; index <= 12; index += 1) {
+        outputListener?.({}, {
+          id: `entry-${index}`,
+          type: 'task-result',
+          title: `Output ${index}`,
+          content: `Transcript block ${index}`,
+          collapsed: false,
+          messageTrace: [],
+          fileChanges: [],
+          sourceRefs: [],
+          createdAt: new Date(Date.now() + index * 1000).toISOString(),
+        });
+      }
+    });
+
+    expect(screen.getByText('Earlier interactions')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
+    expect(screen.queryByText('Transcript block 1')).toBeNull();
+    expect(screen.getByText('Transcript block 12')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Earlier interactions'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Transcript block 1')).toBeTruthy();
+      expect(screen.getByText('Transcript block 2')).toBeTruthy();
+    });
+  });
+
+  it('filters transcript records after pressing Enter in the transcript search bar', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search transcript')).toBeTruthy();
+    });
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'search-alpha',
+        type: 'task-result',
+        title: 'Alpha',
+        content: 'Alpha deployment log',
+        collapsed: false,
+        messageTrace: [],
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+      outputListener?.({}, {
+        id: 'search-beta',
+        type: 'task-result',
+        title: 'Beta',
+        content: 'Beta migration summary',
+        collapsed: false,
+        messageTrace: [],
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date(Date.now() + 1000).toISOString(),
+      });
+    });
+
+    const searchInput = screen.getByLabelText('Search transcript');
+    fireEvent.change(searchInput, { target: { value: 'beta' } });
+    fireEvent.submit(searchInput.closest('form') as HTMLFormElement);
+
+    expect(screen.queryByText('Alpha deployment log')).toBeNull();
+    expect(screen.getByText('Beta migration summary')).toBeTruthy();
+    expect(screen.queryByText(/matching interaction/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Find' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeTruthy();
+  });
+
+  it('renders prompt, completion, total token counts and cache hit ratio in the right-side status area', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByText('Prompt Tokens')).toBeTruthy();
+    });
+
+    expect(screen.getByText('1.5K tokens')).toBeTruthy();
+    expect(screen.getByText('24.6K tokens')).toBeTruthy();
+    expect(screen.getByText('1.2M tokens')).toBeTruthy();
+    expect(screen.getByText('42.9%')).toBeTruthy();
+  });
+
+  it('falls back to active session usage stats when runtime status usage is empty', async () => {
+    const sessionWithUsage: Session = {
+      id: 'session-1',
+      title: 'Usage session',
+      status: 'active',
+      sessionKind: 'user',
+      agentInstanceId: 'agent-1',
+      currentModelId: 'copilot-chat',
+      messageHistory: [],
+      selectedPromptIds: [],
+      selectedMemoryIds: [],
+      providerUsageStats,
+      originSessionId: null,
+      triggerReason: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      failedAt: null,
+      archivedAt: null,
+    };
+
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true,
+      value: {
+        submitInput: vi.fn().mockResolvedValue({
+          result: undefined,
+          blocks: [],
+          runtimeStatus: {
+            providerId: 'github-copilot',
+            providerName: 'GitHub Copilot',
+            agentProfileId: 'code-master',
+            agentProfileName: 'Code Master',
+            agentInstanceId: 'agent-1',
+            modelId: 'copilot-chat',
+            modelName: 'GPT-5.4',
+            activeSessionId: 'session-1',
+            contextCount: {
+              estimatedTokens: 12,
+              contextWindowLimit: 32000,
+              utilizationRatio: 0.0004,
+              messageCount: 0,
+              selectedPromptCount: 0,
+              selectedMemoryCount: 0,
+              derivedMemoryCount: 0,
+            },
+            modelMessageCount: 0,
+            modelMessageCharCount: 0,
+            providerUsageStats: undefined,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            availableProviders,
+            backgroundSummaryStatus: {
+              state: 'idle',
+              activeSummarySessionId: null,
+              lastSummaryAt: null,
+              lastSummaryMemoryId: null,
+            },
+          },
+        }),
+        getRuntimeStatus: vi.fn().mockResolvedValue({
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          providerUsageStats: undefined,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        }),
+        getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
+        respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
+        listAgentProfiles: vi.fn().mockResolvedValue([]),
+        startAgentSession: vi.fn().mockResolvedValue({
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          providerUsageStats: undefined,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        }),
+        listAgentSessions: vi.fn().mockResolvedValue([sessionWithUsage]),
+        listSessionMemories: vi.fn().mockResolvedValue([]),
+        selectSession: vi.fn().mockResolvedValue({
+          runtimeStatus: {
+            providerId: 'github-copilot',
+            providerName: 'GitHub Copilot',
+            agentProfileId: 'code-master',
+            agentProfileName: 'Code Master',
+            agentInstanceId: 'agent-1',
+            modelId: 'copilot-chat',
+            modelName: 'GPT-5.4',
+            activeSessionId: 'session-1',
+            contextCount: {
+              estimatedTokens: 12,
+              contextWindowLimit: 32000,
+              utilizationRatio: 0.0004,
+              messageCount: 0,
+              selectedPromptCount: 0,
+              selectedMemoryCount: 0,
+              derivedMemoryCount: 0,
+            },
+            modelMessageCount: 0,
+            modelMessageCharCount: 0,
+            providerUsageStats: undefined,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            availableProviders,
+            backgroundSummaryStatus: {
+              state: 'idle',
+              activeSummarySessionId: null,
+              lastSummaryAt: null,
+              lastSummaryMemoryId: null,
+            },
+          },
+          session: sessionWithUsage,
+        }),
+        onMenuAction: vi.fn(() => () => {}),
+        onToolApprovalState: vi.fn(() => () => {}),
+        onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
+          outputListener = callback;
+        }),
+        removeAllListeners: vi.fn(),
+      },
+    });
+
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByText('1.5K tokens')).toBeTruthy();
+    });
+
+    expect(screen.getByText('24.6K tokens')).toBeTruthy();
+    expect(screen.getByText('1.2M tokens')).toBeTruthy();
+    expect(screen.getByText('42.9%')).toBeTruthy();
   });
 
   it('shows the agent picker before a session is started', async () => {
@@ -249,6 +610,8 @@ describe('Desktop Output Summary Rendering', () => {
             lastSummaryMemoryId: null,
           },
         }),
+        getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
+        respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
         listAgentProfiles: vi.fn().mockResolvedValue([
           {
             id: 'architect',
@@ -293,7 +656,43 @@ describe('Desktop Output Summary Rendering', () => {
             lastSummaryMemoryId: null,
           },
         }),
+        listAgentSessions: vi.fn().mockResolvedValue([]),
+        listSessionMemories: vi.fn().mockResolvedValue([]),
+        selectSession: vi.fn().mockResolvedValue({
+          runtimeStatus: {
+            providerId: null,
+            providerName: null,
+            agentProfileId: 'architect',
+            agentProfileName: 'Architect',
+            agentInstanceId: 'agent-2',
+            modelId: null,
+            modelName: null,
+            activeSessionId: 'session-2',
+            contextCount: {
+              estimatedTokens: 0,
+              contextWindowLimit: null,
+              utilizationRatio: null,
+              messageCount: 0,
+              selectedPromptCount: 0,
+              selectedMemoryCount: 0,
+              derivedMemoryCount: 0,
+            },
+            modelMessageCount: 0,
+            modelMessageCharCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            availableProviders: [],
+            backgroundSummaryStatus: {
+              state: 'idle',
+              activeSummarySessionId: null,
+              lastSummaryAt: null,
+              lastSummaryMemoryId: null,
+            },
+          },
+          session: null,
+        }),
         onMenuAction: vi.fn(() => () => {}),
+        onToolApprovalState: vi.fn(() => () => {}),
         onOutput: vi.fn(),
         removeAllListeners: vi.fn(),
       },
@@ -302,12 +701,12 @@ describe('Desktop Output Summary Rendering', () => {
     render(createElement(App));
 
     expect(await screen.findByLabelText('agent-profile-picker')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Architect' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Architect' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Start with this agent' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Architect')).toBeTruthy();
+      expect(screen.getByText('Configure model access')).toBeTruthy();
     });
   });
 });

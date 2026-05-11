@@ -1,0 +1,20 @@
+{
+  "id": "172eb703-1b40-4a58-944c-1b871a4e916b",
+  "type": "short-term",
+  "title": "Summary: Turn 997",
+  "content": "Failed DeepSeek API request at turn 997 after user prompted \"好的，继续进行\".",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "d184989d-f759-4a11-adf0-6b5f0aabac39",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T07:09:06.293Z",
+  "updatedAt": "2026-05-10T07:09:06.293Z"
+}

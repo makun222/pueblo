@@ -1,0 +1,20 @@
+{
+  "id": "50592e1b-b7b0-486c-9137-fb4a83a9b01c",
+  "type": "short-term",
+  "title": "Summary: Turn 5",
+  "content": "User greeted in Chinese; assistant introduced itself as Pueblo (TypeScript/Node.js CLI code agent) and offered help with project setup, CLI usage, code structure, or desktop workflow.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "bfa4d46a-a043-45b5-bb1c-005728ffac05",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "19645399-d30d-49df-9a1d-a6381c3b2ad5",
+  "createdAt": "2026-05-10T15:11:19.840Z",
+  "updatedAt": "2026-05-10T15:11:19.840Z"
+}

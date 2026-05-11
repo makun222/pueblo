@@ -1,0 +1,20 @@
+{
+  "id": "080be35c-394e-4447-81f8-fac22da1120c",
+  "type": "short-term",
+  "title": "Summary: Turn 907",
+  "content": "ObsidianExportService interface and ObsidianExportServiceImpl implement exporting a knowledge base to an Obsidian vault with Markdown and YAML front matter. Tests cover empty, uncategorized, and categorized notions, plus relations. Next steps: identify improvements or proceed with CLI integration for ObsidianExportCommand.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0580a236-cb44-4e8b-b51c-38402e49dcaa",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:06:09.317Z",
+  "updatedAt": "2026-05-05T15:06:09.317Z"
+}

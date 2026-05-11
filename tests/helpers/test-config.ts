@@ -1,10 +1,11 @@
 import path from 'node:path';
 import type { AppConfig } from '../../src/shared/config';
 
-type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'pepe' | 'githubCopilot'>> & {
+type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'pepe' | 'workflow' | 'githubCopilot'>> & {
   desktopWindow?: Partial<AppConfig['desktopWindow']>;
   deepseek?: Partial<AppConfig['deepseek']>;
   pepe?: Partial<AppConfig['pepe']>;
+  workflow?: Partial<AppConfig['workflow']>;
   githubCopilot?: Partial<AppConfig['githubCopilot']>;
 };
 
@@ -47,6 +48,14 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       resultTopK: overrides.pepe?.resultTopK ?? 8,
       similarityThreshold: overrides.pepe?.similarityThreshold ?? 0.2,
       workingDirectoryPattern: overrides.pepe?.workingDirectoryPattern ?? 'agent-{agentInstanceId}',
+    },
+    workflow: {
+      enabled: overrides.workflow?.enabled ?? true,
+      defaultWorkflowType: overrides.workflow?.defaultWorkflowType ?? 'pueblo-plan',
+      runtimeDirectory: overrides.workflow?.runtimeDirectory ?? path.join(process.cwd(), '.plans'),
+      deliverableFilePattern: overrides.workflow?.deliverableFilePattern ?? '{slug}.plan.md',
+      maxDirectTaskSteps: overrides.workflow?.maxDirectTaskSteps ?? 30,
+      routeKeywords: overrides.workflow?.routeKeywords ?? ['plan.md', '.plan.md', 'workflow'],
     },
     githubCopilot: {
       apiUrl: overrides.githubCopilot?.apiUrl ?? 'https://api.githubcopilot.com/chat/completions',

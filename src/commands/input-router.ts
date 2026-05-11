@@ -5,6 +5,7 @@ import type { RuntimeCoordinator } from '../app/runtime';
 export interface InputRouterDependencies {
   readonly dispatcher: CommandDispatcher;
   readonly runTaskFromText: (text: string) => Promise<CommandResult<unknown>>;
+  readonly routeTextInput?: (text: string) => Promise<CommandResult<unknown> | null>;
 }
 
 export class InputRouter {
@@ -19,6 +20,11 @@ export class InputRouter {
 
     if (trimmed.startsWith('/')) {
       return this.dependencies.dispatcher.dispatch({ input: trimmed });
+    }
+
+    const routedResult = await this.dependencies.routeTextInput?.(trimmed);
+    if (routedResult) {
+      return routedResult;
     }
 
     return this.dependencies.runTaskFromText(trimmed);

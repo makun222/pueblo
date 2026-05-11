@@ -1,0 +1,20 @@
+{
+  "id": "e76e6e4c-cf04-49cc-9019-98b05ebed114",
+  "type": "short-term",
+  "title": "Summary: Turn 833",
+  "content": "User requested a design to integrate KnowledgeBase with Obsidian; the project contains an existing Obsidian integration module and KnowledgeMap for knowledge extraction.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3f32c097-153b-4c69-9700-8b7eaac64735",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:32:36.901Z",
+  "updatedAt": "2026-05-05T05:32:36.901Z"
+}

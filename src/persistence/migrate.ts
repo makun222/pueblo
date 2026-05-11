@@ -60,6 +60,7 @@ const foundationalMigrations = [
         message_history_json TEXT NOT NULL,
         selected_prompt_ids_json TEXT NOT NULL,
         selected_memory_ids_json TEXT NOT NULL,
+        provider_usage_stats_json TEXT NOT NULL DEFAULT '{}',
         origin_session_id TEXT,
         trigger_reason TEXT,
         created_at TEXT NOT NULL,
@@ -222,6 +223,77 @@ const foundationalMigrations = [
       'CREATE INDEX IF NOT EXISTS idx_sessions_agent_instance_id ON sessions(agent_instance_id)',
       'CREATE INDEX IF NOT EXISTS idx_sessions_kind_updated_at ON sessions(session_kind, updated_at DESC)',
       'CREATE INDEX IF NOT EXISTS idx_memory_parent_updated_at ON memory_records(parent_id, updated_at DESC)',
+    ],
+  },
+  {
+    id: '006_agent_instance_defaults',
+    statements: [
+      `
+      ALTER TABLE agent_instances ADD COLUMN is_default_for_profile INTEGER NOT NULL DEFAULT 0
+      `,
+      `
+      UPDATE agent_instances
+         SET is_default_for_profile = 0
+      `,
+      `
+      UPDATE agent_instances
+         SET is_default_for_profile = 1
+       WHERE id IN (
+         SELECT current.id
+           FROM agent_instances AS current
+          WHERE current.status != 'terminated'
+            AND NOT EXISTS (
+              SELECT 1
+                FROM agent_instances AS newer
+               WHERE newer.profile_id = current.profile_id
+                 AND newer.status != 'terminated'
+                 AND (
+                   newer.updated_at > current.updated_at
+                   OR (newer.updated_at = current.updated_at AND newer.created_at > current.created_at)
+                   OR (newer.updated_at = current.updated_at AND newer.created_at = current.created_at AND newer.id > current.id)
+                 )
+            )
+       )
+      `,
+      'CREATE INDEX IF NOT EXISTS idx_agent_instances_profile_default ON agent_instances(profile_id, is_default_for_profile)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_instances_unique_default ON agent_instances(profile_id) WHERE is_default_for_profile = 1',
+    ],
+  },
+  {
+    id: '007_workflow_instances',
+    statements: [
+      `
+      CREATE TABLE IF NOT EXISTS workflow_instances (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        session_id TEXT,
+        agent_instance_id TEXT,
+        goal TEXT NOT NULL,
+        target_directory TEXT,
+        runtime_plan_path TEXT NOT NULL,
+        deliverable_plan_path TEXT,
+        active_plan_memory_id TEXT,
+        active_todo_memory_id TEXT,
+        active_round_number INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT,
+        failed_at TEXT,
+        cancelled_at TEXT
+      )
+      `,
+      'CREATE INDEX IF NOT EXISTS idx_workflow_instances_session_status ON workflow_instances(session_id, status)',
+      'CREATE INDEX IF NOT EXISTS idx_workflow_instances_type_status ON workflow_instances(type, status)',
+      'CREATE INDEX IF NOT EXISTS idx_workflow_instances_agent_updated_at ON workflow_instances(agent_instance_id, updated_at DESC)',
+    ],
+  },
+  {
+    id: '008_session_provider_usage_stats',
+    statements: [
+      `
+      ALTER TABLE sessions ADD COLUMN provider_usage_stats_json TEXT NOT NULL DEFAULT '{}'
+      `,
     ],
   },
 ];

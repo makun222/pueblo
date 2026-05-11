@@ -1,0 +1,20 @@
+{
+  "id": "5a7778d0-a2df-46b7-87f4-2776df7c8338",
+  "type": "short-term",
+  "title": "Summary: Turn 923",
+  "content": "用户确认9个未提交文件（2修改+7新增）明日处理。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "6a363adc-c74f-43e1-9634-c139d81d4613",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:14:13.934Z",
+  "updatedAt": "2026-05-05T15:14:13.934Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "5311fe64-9839-42fb-9f34-758efa8c724c",
+  "type": "short-term",
+  "title": "Summary: Turn 818",
+  "content": "用户请求KnowledgeBase与Obsidian接口集成方案，但DeepSeek API调用失败。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "5a0efd40-68f9-41ad-9024-3c81c544761a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T03:42:18.526Z",
+  "updatedAt": "2026-05-05T03:42:18.526Z"
+}

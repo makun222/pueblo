@@ -1,0 +1,20 @@
+{
+  "id": "5550421a-938c-4d04-b247-aa30dacdf3a6",
+  "type": "short-term",
+  "title": "Summary: Turn 818",
+  "content": "User requested a plan to integrate KnowledgeBase with Obsidian interface, but assistant's response failed due to network error.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "5a0efd40-68f9-41ad-9024-3c81c544761a",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T03:42:19.786Z",
+  "updatedAt": "2026-05-05T03:42:19.786Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "efb6ed81-bccc-4581-9a01-b766419b1f59",
+  "type": "short-term",
+  "title": "Summary: Turn 892",
+  "content": "在Pueblo仓库根目录创建了PUEBLO_WORK_LOG.md，包含总体方案、优化路线图（引用OPTIMIZATION_ROADMAP.md）及每日进度；当日完成分类系统、引用系统、服务层、DB schema、Web层、可视化、测试和配置，并提交了两次commit（5d8377a, 594c156）。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "12f3e2ad-5460-4589-8a5d-811e051ed689",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:18:18.134Z",
+  "updatedAt": "2026-05-05T14:18:18.134Z"
+}

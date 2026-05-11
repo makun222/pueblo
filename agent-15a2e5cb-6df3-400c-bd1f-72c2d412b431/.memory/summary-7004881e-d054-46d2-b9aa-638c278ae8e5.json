@@ -1,0 +1,20 @@
+{
+  "id": "7004881e-d054-46d2-b9aa-638c278ae8e5",
+  "type": "short-term",
+  "title": "Summary: Turn 829",
+  "content": "DeepSeek API call failed when user asked to approve a plan (KnowledgeBase + Obsidian integration). No decision was made.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7766d440-43e5-4ec7-b5a0-5ea88dede6dc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:05:13.205Z",
+  "updatedAt": "2026-05-05T05:05:13.205Z"
+}

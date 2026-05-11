@@ -1,0 +1,20 @@
+{
+  "id": "cea43f12-88f0-42ff-9fce-9fc0b160287e",
+  "type": "short-term",
+  "title": "Summary: Turn 984",
+  "content": "用户要求从3开始，但当前记忆仅列出下一步建议1（重构现有测试）和2（编写新测试），未定义选项3，需澄清或继续执行已有选项。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "373a90d0-d6b5-4dfc-84b6-b369503a5a49",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:29:59.084Z",
+  "updatedAt": "2026-05-10T06:29:59.084Z"
+}

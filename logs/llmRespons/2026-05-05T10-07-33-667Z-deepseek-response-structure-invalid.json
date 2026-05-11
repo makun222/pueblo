@@ -1,0 +1,56 @@
+{
+  "timestamp": "2026-05-05T10:07:33.667Z",
+  "providerId": "deepseek",
+  "category": "response-structure-invalid",
+  "message": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"oldText\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+  "requestUrl": "https://api.deepseek.com/chat/completions",
+  "modelId": "deepseek-v4-flash",
+  "payload": {
+    "id": "97d9e890-b2eb-42dd-8bd2-03832b0ed656",
+    "object": "chat.completion",
+    "created": 1777975650,
+    "model": "deepseek-v4-flash",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Creating the new package and files:",
+          "reasoning_content": "Good, the package doesn't exist yet. Let me create the files.",
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": "call_00_iwUtERLiduwuHgNM57vo2310",
+              "type": "function",
+              "function": {
+                "name": "edit",
+                "arguments": "{\"path\": \"src/main/java/com/knowledge/obsidian/ObsidianVaultExporter.java\", \"oldText\": \"\", \"newText\": \"package com.knowledge.obsidian;\\n\\nimport java.nio.file.Path;\\n\\n/**\\n * Exports the knowledge base into an Obsidian vault directory structure\\n * with hierarchical organization and [[wikilink]] cross-references.\\n */\\npublic interface ObsidianVaultExporter {\\n\\n    /**\\n     * Exports the entire knowledge base to an Obsidian vault at the given path.\\n     * Creates all necessary sub-directories and markdown files.\\n     *\\n     * @param vaultPath the root directory of the Obsidian vault\\n     * @return the number of markdown files written\\n     * @throws java.io.IOException if file writing fails\\n     */\\n    int exportToVault(Path vaultPath) throws java.io.IOException;\\n}\\n\"}"
+              }
+            }
+          ]
+        },
+        "logprobs": null,
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 18122,
+      "completion_tokens": 260,
+      "total_tokens": 18382,
+      "prompt_tokens_details": {
+        "cached_tokens": 14720
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 15
+      },
+      "prompt_cache_hit_tokens": 14720,
+      "prompt_cache_miss_tokens": 3402
+    },
+    "system_fingerprint": "fp_058df29938_prod0820_fp8_kvcache_20260402"
+  },
+  "details": {
+    "name": "ZodError",
+    "message": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"oldText\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]",
+    "stack": "ZodError: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"oldText\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  }\n]\n    at parseProviderToolArgs (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\provider-adapter.js:211:55)\n    at parseDeepSeekToolCall (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:263:68)\n    at D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:268:57\n    at Array.map (<anonymous>)\n    at parseDeepSeekToolCalls (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:268:39)\n    at extractDeepSeekStepResult (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:192:16)\n    at DeepSeekAdapter.runStep (D:\\workspace\\trends\\pueblo\\dist\\src\\providers\\deepseek-adapter.js:58:20)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async AgentTaskRunner.runAgentLoop (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\task-runner.js:120:28)\n    at async AgentTaskRunner.run (D:\\workspace\\trends\\pueblo\\dist\\src\\agent\\task-runner.js:68:24)"
+  }
+}

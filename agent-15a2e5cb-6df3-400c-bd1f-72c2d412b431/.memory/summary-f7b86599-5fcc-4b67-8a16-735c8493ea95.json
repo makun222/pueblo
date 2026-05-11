@@ -1,0 +1,20 @@
+{
+  "id": "f7b86599-5fcc-4b67-8a16-735c8493ea95",
+  "type": "short-term",
+  "title": "Summary: Turn 919",
+  "content": "工作日志`PUEBLO_WORK_LOG.md`已更新2025-04-02条目，完成P1 Obsidian Vault导出方案、P2 CLI框架及延续的文本提取服务。未提交的9个文件等待下一步Git操作。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "988a1edb-d5c2-4dcd-b794-0f33244571a6",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:12:52.363Z",
+  "updatedAt": "2026-05-05T15:12:52.363Z"
+}

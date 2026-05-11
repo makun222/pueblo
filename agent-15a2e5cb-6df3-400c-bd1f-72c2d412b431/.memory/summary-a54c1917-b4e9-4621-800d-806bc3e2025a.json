@@ -1,0 +1,20 @@
+{
+  "id": "a54c1917-b4e9-4621-800d-806bc3e2025a",
+  "type": "short-term",
+  "title": "Summary: Turn 852",
+  "content": "由于工具限制无法读取完整H2 schema与Notion定义，用户需在三个选项中选择：A)仅实现Obsidian导出按钮+后端API；B)添加tags字段+升级schema；C)仅前端按钮导出。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "168c3a93-30ad-4017-a30a-c26db0d1449e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T07:07:22.947Z",
+  "updatedAt": "2026-05-05T07:07:22.947Z"
+}

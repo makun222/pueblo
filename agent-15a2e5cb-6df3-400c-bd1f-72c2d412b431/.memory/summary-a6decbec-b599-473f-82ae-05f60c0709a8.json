@@ -1,0 +1,20 @@
+{
+  "id": "a6decbec-b599-473f-82ae-05f60c0709a8",
+  "type": "short-term",
+  "title": "Summary: Turn 1026",
+  "content": "Obsidian export design (v1.0) partially implemented with 3 pending fixes (empty knowledge base → Uncategorized directory, sanitizeFileName bracket removal, per-subdirectory _index.md). Optimization roadmap (8 areas) mostly unimplemented. User asked to review plans; assistant offered to apply fixes.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b7af4fdf-ab9e-4ea4-889d-8b7baa902de0",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T14:57:27.084Z",
+  "updatedAt": "2026-05-10T14:57:27.084Z"
+}

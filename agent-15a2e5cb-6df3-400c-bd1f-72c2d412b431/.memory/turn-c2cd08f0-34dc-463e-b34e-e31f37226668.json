@@ -1,0 +1,18 @@
+{
+  "id": "c2cd08f0-34dc-463e-b34e-e31f37226668",
+  "type": "short-term",
+  "title": "Turn 1048",
+  "content": "User:\n回顾一下计划\n\nAssistant:\n以下是当前 **KnowledgeBase** 仓库的完整计划回顾。\n\n---\n\n## 📋 总体方案\n\n### 项目目标\n构建一个基于 LLM 的知识图谱工具：从原始材料（文本/图片/视频）提取**概念（Notion）**和**语义关系**，生成可视化知识图谱 + Obsidian 兼容的 Markdown 导出。\n\n### 核心管道（4 步）\n| 步骤 | 说明 |\n|------|------|\n| **1. 采集** | 从文件/OCR/转录提取文本 |\n| **2. 构建** | LLM 从文本中提取结构化概念 |\n| **3. 推理关系** | LLM 推断概念间的语义关系（IS_A, DEPENDS_ON, PART_OF 等） |\n| **4. 可视化** | 生成 HTML/Cytoscape.js 知识图谱 + Obsidian Markdown 导出 |\n\n---\n\n## 🎯 优化路线图（8 大方向）\n\n| # | 方向 | 优先级 | 工作量 | 状态 |\n|---|------|--------|--------|------|\n| 1 | **数据库查询性能优化**（LRU 缓存） | 🔴 高 | 🟢 简单 | ⏳ 待做 |\n| 2 | **CRUD 完整性**（Update/Delete/软删除） | 🔴 高 | 🟢 简单 | ⏳ 待做 |\n| 3 | **搜索 + 导出**（全文搜索、多格式导出） | 🟠 中 | 🟡 中等 | ⏳ 待做 |\n| 4 | **LLM 缓存 + 重试**（指数退避） | 🟠 中 | 🟡 中等 | ⏳ 待做 |\n| 5 | **日志 + 错误处理**（SLF4J、全局异常） | 🔴 高 | 🟢 简单 | ⏳ 待做 |\n| 6 | **配置验证 + 安全**（预热检查、API Key 脱敏） | 🔴 高 | 🟢 简单 | ⏳ 待做 |\n| 7 | **版本控制 + 冲突解决**（变更历史、回滚） | 🟠 中 | 🔴 复杂 | ⏳ 待做 |\n| 8 | **Web UI / 前端增强** | 🟡 低 | 🔴 复杂 | ⏳ 待做 |\n\n---\n\n## ✅ 已完成的工作\n\n### 第 1 天（2025-04-01）\n- `Notion.category` 字段 — 概念分类\n- `NotionReference` / `NotionReferenceType` — 引用系统\n- `LlmServiceConfig` + `LlmProvider` — LLM 服务配置抽象\n- 多个服务接口与实现：\n  - `NotionCategoryInferenceService`（分类推断）\n  - `MediaPreprocessingService`（ffmpeg 转码）\n  - `MediaTextExtractionService`（多媒体文本提取，含降级链）\n  - `TextKnowledgeExtractionService`（LLM/启发式提取）\n- `JsonFileKnowledgeBaseStore` — JSON 文件持久化后备\n- H2 数据库 Schema 变更（`category` 列）\n- Web 控制器 + `H2WebStateStore`\n- 可视化增强（`category` 字段输出）\n\n### 第 2 天（2025-04-02）\n- ✅ **Obsidian Vault 导出方案** — 设计文档 + 完整实现（目录结构、YAML front matter、`[[wikilink]]` 双向链接、增量非破坏性）\n- ✅ **CLI 命令行框架** — picocli 主入口（`CliMain` + `ObsidianExportCommand`）\n- ✅ **服务层完善** — `RawContentMediaTextExtractionService`\n- ✅ **9 个测试全部通过**\n\n---\n\n## ⏳ 待办事项（待选优先）\n\n1. **P3: CLI 测试覆盖 + P4: 构建脚本**（Native Image / 瘦 JAR）\n2. **查询缓存（LRU）** — 优化 `existsInMain` 重复检查性能\n3. **`deleteNotion` / 软删除** — 完善 CRUD\n4. **搜索功能 + 多种导出格式**（JSON/CSV/Markdown/OWL/GraphML）\n5. **LLM 调用缓存 + 指数退避重试**\n6. **SLF4J 日志 + 全局异常处理层次**\n7. **配置预热检查 + API Key 脱敏**\n\n---\n\n以上就是目前 KnowledgeBase 仓库的整体计划概览。你想继续推进哪个方向的任务？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T06:31:52.156Z",
+  "updatedAt": "2026-05-11T06:31:52.156Z"
+}

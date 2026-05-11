@@ -17,13 +17,30 @@ export class AgentInstanceService {
   }
 
   createAgentInstance(profileId: string, workspaceRoot: string): AgentInstance {
-    const profile = this.getProfileTemplate(profileId);
+    const profile = this.requireProfileTemplate(profileId);
+    return this.repository.create(profile, workspaceRoot, false);
+  }
 
-    if (!profile) {
-      throw new Error(`Agent profile template not found: ${profileId}`);
+  getDefaultAgentInstance(profileId: string): AgentInstance | null {
+    return this.repository.getDefaultByProfile(profileId);
+  }
+
+  getOrCreateDefaultAgentInstance(profileId: string, workspaceRoot: string): AgentInstance {
+    const existing = this.getDefaultAgentInstance(profileId);
+    if (existing) {
+      return existing;
     }
 
-    return this.repository.create(profile, workspaceRoot);
+    const legacyCandidate = this.repository.list()
+      .filter((instance) => instance.profileId === profileId && instance.status !== 'terminated')
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null;
+
+    if (legacyCandidate) {
+      return this.setDefaultAgentInstance(profileId, legacyCandidate.id);
+    }
+
+    const profile = this.requireProfileTemplate(profileId);
+    return this.repository.create(profile, workspaceRoot, true);
   }
 
   getAgentInstance(agentInstanceId: string | null | undefined): AgentInstance | null {
@@ -47,5 +64,45 @@ export class AgentInstanceService {
     };
 
     return this.repository.save(updated);
+  }
+
+  private setDefaultAgentInstance(profileId: string, agentInstanceId: string): AgentInstance {
+    let promoted: AgentInstance | null = null;
+
+    for (const instance of this.repository.list().filter((item) => item.profileId === profileId)) {
+      const shouldBeDefault = instance.id === agentInstanceId;
+      if (instance.isDefaultForProfile === shouldBeDefault) {
+        if (shouldBeDefault) {
+          promoted = instance;
+        }
+        continue;
+      }
+
+      const updated = this.repository.save({
+        ...instance,
+        isDefaultForProfile: shouldBeDefault,
+        updatedAt: new Date().toISOString(),
+      });
+
+      if (shouldBeDefault) {
+        promoted = updated;
+      }
+    }
+
+    if (!promoted) {
+      throw new Error(`Unable to promote default agent instance for profile: ${profileId}`);
+    }
+
+    return promoted;
+  }
+
+  private requireProfileTemplate(profileId: string): AgentProfileTemplate {
+    const profile = this.getProfileTemplate(profileId);
+
+    if (!profile) {
+      throw new Error(`Agent profile template not found: ${profileId}`);
+    }
+
+    return profile;
   }
 }

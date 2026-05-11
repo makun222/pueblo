@@ -1,0 +1,20 @@
+{
+  "id": "0a57e3b8-a52c-4bc0-902f-c8a563fdcdd1",
+  "type": "short-term",
+  "title": "Summary: Turn 892",
+  "content": "Commit 5d8377a（feat: Notion category system + 服务层 + 迁移）和 594c156（docs: update commit hash），创建了 PUEBLO_WORK_LOG.md，包含总体方案、优化路线图（引用OPTIMIZATION_ROADMAP.md）及每日进度，后续在每次 Pueblo session 结束时追加新日期条目。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "12f3e2ad-5460-4589-8a5d-811e051ed689",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:18:14.270Z",
+  "updatedAt": "2026-05-05T14:18:14.270Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "e081de09-8bc2-43db-b1e8-9555dbb1bd0b",
+  "type": "short-term",
+  "title": "Summary: Turn 989",
+  "content": "Created 4 test files (NotionExtractionSupportTest, RawContentMediaTextExtractionServiceTest, HeuristicTextKnowledgeExtractionServiceTest, JsonFileKnowledgeBaseStoreTest) for untested services (46 source, 8 existing tests). Fixed `ObsidianExportCommand.java` compile error. Remaining: fix compile errors in `JsonFileKnowledgeBaseStoreTest.java` (Snapshot import, RelationType.RELATED_TO) and two `InferenceConfig` constructor calls in `KnowledgeBaseTest.java`.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa5c6ade-5b9e-4760-b5fd-63b6f3b2bfc2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:42:04.488Z",
+  "updatedAt": "2026-05-10T06:42:04.488Z"
+}

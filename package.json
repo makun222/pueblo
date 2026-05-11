@@ -14,6 +14,7 @@
     "dev": "node dist/cli/index.js",
     "dev:renderer": "vite --config vite.desktop.config.ts",
     "dev:desktop": "npm run build:main && electron .",
+    "rebuild:node-native": "npm rebuild better-sqlite3",
     "rebuild:electron-native": "electron-rebuild -f -w better-sqlite3",
     "package:win": "powershell -ExecutionPolicy Bypass -File ./scripts/release-windows.ps1 -SkipBuild",
     "release:win": "powershell -ExecutionPolicy Bypass -File ./scripts/release-windows.ps1",

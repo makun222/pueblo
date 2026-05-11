@@ -1,0 +1,20 @@
+{
+  "id": "08fa2de5-5609-4965-8016-3e03060c3c7a",
+  "type": "short-term",
+  "title": "Summary: Turn 1034",
+  "content": "修复了Obsidian导出服务中的三个问题：空知识库始终创建Uncategorized目录和_index.md；sanitizeFileName移除括号()；子分类路径每层生成_index.md且不重复覆盖父层已有文件。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2cb107b0-046f-49ce-87dc-b8e99aecca76",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T15:46:36.441Z",
+  "updatedAt": "2026-05-10T15:46:36.441Z"
+}

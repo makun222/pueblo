@@ -1,0 +1,20 @@
+{
+  "id": "fbca1885-25a3-40cc-adee-b65186a7d817",
+  "type": "short-term",
+  "title": "Summary: Turn 903",
+  "content": "P1 of ObsidianExportService completed. Created interface, implementation (384 lines), and test (287 lines). Outputs Obsidian vault with _notions, _relations, per-category _index.md, YAML front matter, bidirectional wiki-links, dedup by from→to:type, file sanitization, Java 1.8 compatible. 9 test cases cover empty, uncategorized, categorized, subcategory, relations, references, comments, sanitize, null path.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "10447f11-19ae-45a5-be8f-92f724cf83a0",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:42:29.366Z",
+  "updatedAt": "2026-05-05T14:42:29.366Z"
+}

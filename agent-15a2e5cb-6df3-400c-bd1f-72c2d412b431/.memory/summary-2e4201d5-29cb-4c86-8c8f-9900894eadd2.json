@@ -1,0 +1,20 @@
+{
+  "id": "2e4201d5-29cb-4c86-8c8f-9900894eadd2",
+  "type": "short-term",
+  "title": "Summary: Turn 989",
+  "content": "Created 4 unit test files (NotionExtractionSupportTest, RawContentMediaTextExtractionServiceTest, HeuristicTextKnowledgeExtractionServiceTest, JsonFileKnowledgeBaseStoreTest) covering 45 tests for the knowledge services, and fixed a pre-existing IOException in ObsidianExportCommand; remaining compile errors in JsonFileKnowledgeBaseStoreTest (Snapshot import, RelationType enum) and two InferenceConfig constructor mismatches in KnowledgeBaseTest need resolution before running tests.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "fa5c6ade-5b9e-4760-b5fd-63b6f3b2bfc2",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:42:07.720Z",
+  "updatedAt": "2026-05-10T06:42:07.720Z"
+}

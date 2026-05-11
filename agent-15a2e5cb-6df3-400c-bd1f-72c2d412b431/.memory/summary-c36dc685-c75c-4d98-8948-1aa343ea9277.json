@@ -1,0 +1,20 @@
+{
+  "id": "c36dc685-c75c-4d98-8948-1aa343ea9277",
+  "type": "short-term",
+  "title": "Summary: Turn 892",
+  "content": "Created PUEBLO_WORK_LOG.md and committed project additions (category system, extraction services, schema, web-ui, scripts) as 5d8377a; docs update as 594c156.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "12f3e2ad-5460-4589-8a5d-811e051ed689",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:18:12.576Z",
+  "updatedAt": "2026-05-05T14:18:12.576Z"
+}

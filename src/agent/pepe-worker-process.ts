@@ -84,6 +84,10 @@ function shouldSummarizeMemory(memory: MemoryRecord, existingSummaryParents: Set
     return false;
   }
 
+  if (memory.tags.includes('plan') || memory.tags.includes('todo') || memory.tags.includes('workflow')) {
+    return false;
+  }
+
   if (!memory.tags.includes('conversation-turn')) {
     return false;
   }

@@ -1,0 +1,20 @@
+{
+  "id": "6a500a34-de98-41d7-ae84-44bd592db3a2",
+  "type": "short-term",
+  "title": "Summary: Turn 1010",
+  "content": "用户提到有plan需要查找，但助手因DeepSeek网络请求失败未能响应。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "d805cc36-5d39-4f68-b7c1-d335d31f4994",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T14:47:29.082Z",
+  "updatedAt": "2026-05-10T14:47:29.082Z"
+}

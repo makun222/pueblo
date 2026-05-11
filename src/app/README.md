@@ -8,12 +8,20 @@
 - `src/prompts/`: Prompt models, repositories, and services.
 - `src/tools/`: Tool adapters and orchestration services.
 - `src/agent/`: Task context and task execution orchestration.
+- `src/workflow/`: Workflow routing, workflow state persistence, runtime plan storage, and workflow-specific context injection.
 - `src/persistence/`: SQLite bootstrap, migrations, health checks, and shared repository helpers.
 - `src/shared/`: Cross-module schemas, config loading, and result formatting.
 
 Module boundaries must remain high-cohesion and low-coupling. Provider logic stays out of session,
 memory, and prompt modules. Persistence concerns live in `src/persistence/` and repository
 implementations, not in CLI handlers.
+
+## Workflow Orchestration
+
+- Workflow logic lives under `src/workflow/` and coordinates complex multi-round tasks without duplicating provider or session behavior.
+- Runtime workflow artifacts belong in `.plans/`; they are execution state, not final repository deliverables.
+- Final `.plan.md` deliverables are exported separately after workflow completion so the app project is not polluted with in-progress state.
+- Active workflow plan/todo context is injected through workflow-aware context assembly, not by treating workflow state as ordinary Pepe-ranked memory.
 
 ## Desktop Shell Integration
 

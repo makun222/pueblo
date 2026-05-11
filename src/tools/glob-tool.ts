@@ -1,5 +1,7 @@
 import { glob } from 'node:fs/promises';
 
+import type { RendererFileChange } from '../shared/schema';
+
 export interface GlobToolRequest {
   readonly pattern: string;
   readonly cwd: string;
@@ -10,6 +12,7 @@ export interface ToolExecutionResult {
   readonly status: 'succeeded' | 'failed' | 'empty';
   readonly summary: string;
   readonly output: string[];
+  readonly fileChanges?: RendererFileChange[];
 }
 
 export function createGlobTool() {

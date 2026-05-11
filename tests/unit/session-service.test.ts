@@ -58,4 +58,21 @@ describe('session service', () => {
 
     expect(updated.selectedMemoryIds).toEqual([sourceMemory.id]);
   });
+
+  it('returns the most recent non-deleted session for an agent instance', () => {
+    const repository = new InMemorySessionRepository();
+    const service = new SessionService(repository);
+
+    const first = service.createSession('Session A', null, 'agent-1');
+    const second = service.createSession('Session B', null, 'agent-1');
+    const third = service.createSession('Session C', null, 'agent-2');
+
+    service.archiveSession(first.id);
+    service.deleteSession(second.id);
+    service.addUserMessage(third.id, 'keep agent-2 fresh');
+
+    expect(service.getMostRecentSessionForAgentInstance('agent-1')?.id).toBe(first.id);
+    expect(service.getMostRecentSessionForAgentInstance('agent-2')?.id).toBe(third.id);
+    expect(service.getMostRecentSessionForAgentInstance('missing-agent')).toBeNull();
+  });
 });

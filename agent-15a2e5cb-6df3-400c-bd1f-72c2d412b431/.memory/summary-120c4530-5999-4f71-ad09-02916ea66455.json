@@ -1,0 +1,20 @@
+{
+  "id": "120c4530-5999-4f71-ad09-02916ea66455",
+  "type": "short-term",
+  "title": "Summary: Turn 1048",
+  "content": "KnowledgeBase 项目构建 LLM 知识图谱工具，核心管道为采集→构建→推理关系→可视化，已完成第1天（概念分类、引用系统、LLM 服务抽象等）和第2天（Obsidian 导出、CLI 框架、测试通过），待优化包括查询缓存、CRUD 完善、搜索导出、LLM 缓存重试、日志、配置安全等。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c2cd08f0-34dc-463e-b34e-e31f37226668",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T06:31:59.742Z",
+  "updatedAt": "2026-05-11T06:31:59.742Z"
+}

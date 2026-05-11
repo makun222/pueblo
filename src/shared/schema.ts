@@ -69,6 +69,18 @@ export const backgroundSummaryStatusSchema = z.object({
   lastSummaryMemoryId: z.string().min(1).nullable(),
 });
 
+export const providerUsageStatsSchema = z.object({
+  promptTokens: z.number().int().nonnegative().default(0),
+  completionTokens: z.number().int().nonnegative().default(0),
+  totalTokens: z.number().int().nonnegative().default(0),
+  promptCacheHitTokens: z.number().int().nonnegative().default(0),
+  promptCacheMissTokens: z.number().int().nonnegative().default(0),
+  cachedPromptTokens: z.number().int().nonnegative().default(0),
+  reasoningTokens: z.number().int().nonnegative().default(0),
+  promptTokensSent: z.number().int().nonnegative().default(0),
+  cacheHitRatio: z.number().min(0).max(1).nullable().default(null),
+});
+
 export const pepeResultItemSchema = z.object({
   memoryId: z.string().min(1),
   summary: z.string().min(1),
@@ -135,6 +147,7 @@ export const agentInstanceSchema = z.object({
   profileId: z.string().min(1),
   profileName: z.string().min(1),
   status: agentInstanceStatusSchema,
+  isDefaultForProfile: z.boolean().default(false),
   workspaceRoot: z.string().min(1),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -151,6 +164,17 @@ export const sessionSchema = z.object({
   messageHistory: z.array(sessionMessageSchema),
   selectedPromptIds: z.array(z.string()),
   selectedMemoryIds: z.array(z.string()),
+  providerUsageStats: providerUsageStatsSchema.default({
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    promptCacheHitTokens: 0,
+    promptCacheMissTokens: 0,
+    cachedPromptTokens: 0,
+    reasoningTokens: 0,
+    promptTokensSent: 0,
+    cacheHitRatio: null,
+  }),
   originSessionId: z.string().min(1).nullable(),
   triggerReason: sessionTriggerReasonSchema.nullable(),
   createdAt: z.string().datetime(),
@@ -227,6 +251,59 @@ export const agentTaskSchema = z.object({
   }
 });
 
+export const workflowTypeSchema = z.enum(['pueblo-plan']);
+export const workflowStatusSchema = z.enum([
+  'idle',
+  'assessing',
+  'planning',
+  'round-active',
+  'round-review',
+  'blocked',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
+export const runtimePlanMetadataSchema = z.object({
+  runtimePlanPath: z.string().min(1),
+  deliverablePlanPath: z.string().min(1).nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export const workflowContextSchema = z.object({
+  workflowId: z.string().min(1),
+  workflowType: workflowTypeSchema,
+  status: workflowStatusSchema,
+  planSummary: z.string().min(1).nullable(),
+  todoSummary: z.string().min(1).nullable(),
+  planMemoryId: z.string().min(1).nullable(),
+  todoMemoryId: z.string().min(1).nullable(),
+  runtimePlanPath: z.string().min(1),
+  deliverablePlanPath: z.string().min(1).nullable(),
+  activeRoundNumber: z.number().int().nonnegative().nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export const workflowInstanceSchema = z.object({
+  id: z.string().min(1),
+  type: workflowTypeSchema,
+  status: workflowStatusSchema,
+  sessionId: z.string().min(1).nullable(),
+  agentInstanceId: z.string().min(1).nullable(),
+  goal: z.string().min(1),
+  targetDirectory: z.string().min(1).nullable(),
+  runtimePlanPath: z.string().min(1),
+  deliverablePlanPath: z.string().min(1).nullable(),
+  activePlanMemoryId: z.string().min(1).nullable(),
+  activeTodoMemoryId: z.string().min(1).nullable(),
+  activeRoundNumber: z.number().int().nonnegative().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  failedAt: z.string().datetime().nullable(),
+  cancelledAt: z.string().datetime().nullable(),
+});
+
 export const commandTargetTypeSchema = z.enum(['session', 'model', 'prompt', 'memory', 'system']);
 export const commandResultStatusSchema = z.enum(['succeeded', 'failed', 'no-op']);
 
@@ -273,6 +350,16 @@ export const rendererMessageTraceStepSchema = z.object({
   messages: z.array(rendererMessageTraceMessageSchema),
 });
 
+export const rendererFileChangeTypeSchema = z.enum(['created', 'modified', 'deleted']);
+
+export const rendererFileChangeSchema = z.object({
+  path: z.string().min(1),
+  absolutePath: z.string().min(1),
+  changeType: rendererFileChangeTypeSchema,
+  previousContent: z.string(),
+  currentContent: z.string(),
+});
+
 export const rendererOutputBlockSchema = z.object({
   id: z.string().min(1),
   type: rendererOutputBlockTypeSchema,
@@ -280,6 +367,7 @@ export const rendererOutputBlockSchema = z.object({
   content: z.string().min(1),
   collapsed: z.boolean().default(false),
   messageTrace: z.array(rendererMessageTraceStepSchema).default([]),
+  fileChanges: z.array(rendererFileChangeSchema).default([]),
   sourceRefs: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
 });
@@ -316,6 +404,7 @@ export type SessionMessage = z.infer<typeof sessionMessageSchema>;
 export type ContextCount = z.infer<typeof contextCountSchema>;
 export type BackgroundSummaryState = z.infer<typeof backgroundSummaryStateSchema>;
 export type BackgroundSummaryStatus = z.infer<typeof backgroundSummaryStatusSchema>;
+export type ProviderUsageStats = z.infer<typeof providerUsageStatsSchema>;
 export type PepeResultItem = z.infer<typeof pepeResultItemSchema>;
 export type PepeResultSet = z.infer<typeof pepeResultSetSchema>;
 export type PuebloProfile = z.infer<typeof puebloProfileSchema>;
@@ -332,6 +421,11 @@ export type PromptStatus = z.infer<typeof promptStatusSchema>;
 export type PromptAsset = z.infer<typeof promptAssetSchema>;
 export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentTask = z.infer<typeof agentTaskSchema>;
+export type WorkflowType = z.infer<typeof workflowTypeSchema>;
+export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
+export type RuntimePlanMetadata = z.infer<typeof runtimePlanMetadataSchema>;
+export type WorkflowContext = z.infer<typeof workflowContextSchema>;
+export type WorkflowInstance = z.infer<typeof workflowInstanceSchema>;
 export type CommandTargetType = z.infer<typeof commandTargetTypeSchema>;
 export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
 export type CommandAction = z.infer<typeof commandActionSchema>;
@@ -342,6 +436,8 @@ export type DesktopWindowStatus = z.infer<typeof desktopWindowStatusSchema>;
 export type RendererOutputBlockType = z.infer<typeof rendererOutputBlockTypeSchema>;
 export type RendererMessageTraceMessage = z.infer<typeof rendererMessageTraceMessageSchema>;
 export type RendererMessageTraceStep = z.infer<typeof rendererMessageTraceStepSchema>;
+export type RendererFileChangeType = z.infer<typeof rendererFileChangeTypeSchema>;
+export type RendererFileChange = z.infer<typeof rendererFileChangeSchema>;
 export type RendererOutputBlock = z.infer<typeof rendererOutputBlockSchema>;
 export type DesktopWindowSession = z.infer<typeof desktopWindowSessionSchema>;
 export type IpcInputEnvelope = z.infer<typeof ipcInputEnvelopeSchema>;

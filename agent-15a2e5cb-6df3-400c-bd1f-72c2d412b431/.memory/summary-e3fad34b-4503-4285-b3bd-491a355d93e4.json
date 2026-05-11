@@ -1,0 +1,20 @@
+{
+  "id": "e3fad34b-4503-4285-b3bd-491a355d93e4",
+  "type": "short-term",
+  "title": "Summary: Turn 847",
+  "content": "User asked if tool was not found; assistant failed with unsupported tool call error (edit).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c31ab527-a1ee-41f3-a52a-94e0f326b7d7",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:45:09.326Z",
+  "updatedAt": "2026-05-05T05:45:09.326Z"
+}

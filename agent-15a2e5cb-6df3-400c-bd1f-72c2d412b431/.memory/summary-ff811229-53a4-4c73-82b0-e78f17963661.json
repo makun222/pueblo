@@ -1,0 +1,20 @@
+{
+  "id": "ff811229-53a4-4c73-82b0-e78f17963661",
+  "type": "short-term",
+  "title": "Summary: Turn 843",
+  "content": "User attempted to start coding implementation, but DeepSeek tool call failed with \"unsupported tool call: edit\".",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7151b5df-1377-408b-bebd-51f10d45ff7e",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:38:20.453Z",
+  "updatedAt": "2026-05-05T05:38:20.453Z"
+}

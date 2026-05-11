@@ -1,0 +1,20 @@
+{
+  "id": "fffa7ebd-2f4f-4a0f-900d-1c059e8a7d4f",
+  "type": "short-term",
+  "title": "Summary: Turn 822",
+  "content": "Assistant analyzed ~40 Java files; current KnowledgeBase lacks Obsidian integration. Three options proposed: export to Obsidian vault (Markdown with wiki-links), import from vault, or sync via Obsidian's Local REST API. User must choose one direction.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "dd830210-7270-46a3-9f0c-77fcbc90865d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T03:45:01.628Z",
+  "updatedAt": "2026-05-05T03:45:01.628Z"
+}

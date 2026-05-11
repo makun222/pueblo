@@ -1,0 +1,20 @@
+{
+  "id": "f0d4083d-cd70-43c8-928b-99da307d605e",
+  "type": "short-term",
+  "title": "Summary: Turn 984",
+  "content": "Test infrastructure completed: JaCoCo 0.8.11, test-config.properties, BaseKnowledgeTest (shared HTTP/assert helpers), test categories (UnitTest, IntegrationTest), and self-validation test. Next possible steps: refactor existing tests to use BaseKnowledgeTest (option 1) or write new unit tests for core modules (option 2).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "373a90d0-d6b5-4dfc-84b6-b369503a5a49",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T06:29:57.336Z",
+  "updatedAt": "2026-05-10T06:29:57.336Z"
+}

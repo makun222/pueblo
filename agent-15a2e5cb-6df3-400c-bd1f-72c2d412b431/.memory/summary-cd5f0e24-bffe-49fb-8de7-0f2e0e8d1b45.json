@@ -1,0 +1,20 @@
+{
+  "id": "cd5f0e24-bffe-49fb-8de7-0f2e0e8d1b45",
+  "type": "short-term",
+  "title": "Summary: Turn 977",
+  "content": "方向1：先完成测试，再继续推进。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "5c8f1a9f-dd16-4ee7-8be4-6e3a44eacb3d",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T08:56:34.654Z",
+  "updatedAt": "2026-05-06T08:56:34.654Z"
+}

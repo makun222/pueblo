@@ -1,0 +1,20 @@
+{
+  "id": "59ead324-7174-4e05-94b9-2a308d407967",
+  "type": "short-term",
+  "title": "Summary: Turn 1044",
+  "content": "KnowledgeBase repo: fixed 3 Obsidian export issues, all 9 tests passing. Ready for next request.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4c7e66bb-9f59-4756-9e04-cbe737cab0dc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T01:35:46.825Z",
+  "updatedAt": "2026-05-11T01:35:46.825Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "d89b3ec0-f705-46c4-bd78-a0529c95b483",
+  "type": "short-term",
+  "title": "Summary: Turn 1005",
+  "content": "After compilation success and JaCoCo upgrade to 0.8.13 (still incompatible with JDK 25, tests skip JaCoCo), fixed one test but three ObsidianExportServiceTest failures remain: (1) create `Uncategorized` directory on empty KB in `ObsidianExportServiceImpl`, (2) append `()` to `sanitizeFileName` regex `[\\\\/:*?\"<>|()]`, (3) generate `_index.md` for each parent directory segment in subcategory paths.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "c0970f75-3ac1-4141-8590-02ea5a5b1a34",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T08:11:18.233Z",
+  "updatedAt": "2026-05-10T08:11:18.233Z"
+}

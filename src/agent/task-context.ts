@@ -8,6 +8,7 @@ import type {
   PuebloProfile,
   Session,
   SessionMessage,
+  WorkflowContext,
 } from '../shared/schema';
 
 export interface TaskContext {
@@ -23,6 +24,7 @@ export interface TaskContext {
   readonly prompts: PromptAsset[];
   readonly resultSet: PepeResultSet | null;
   readonly resultItems: PepeResultItem[];
+  readonly workflowContext?: WorkflowContext | null;
   readonly sessionMessages: SessionMessage[];
   readonly recentMessages: string[];
   readonly puebloProfile: PuebloProfile;
@@ -37,6 +39,7 @@ export interface TaskContextInput {
   readonly prompts?: PromptAsset[];
   readonly resultSet?: PepeResultSet | null;
   readonly resultItems?: PepeResultItem[];
+  readonly workflowContext?: WorkflowContext | null;
   readonly selectedModelId?: string | null;
   readonly providerId?: string | null;
   readonly providerName?: string | null;
@@ -71,6 +74,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     prompts,
     resultSet,
     resultItems,
+    workflowContext: input.workflowContext ?? null,
     sessionMessages,
     recentMessages: input.recentMessages ?? sessionMessages.map(formatSessionMessageForContext),
     puebloProfile: input.puebloProfile,

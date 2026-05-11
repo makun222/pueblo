@@ -1,0 +1,20 @@
+{
+  "id": "0607fbea-48ce-4e93-aac3-46706d18b445",
+  "type": "short-term",
+  "title": "Summary: Turn 1030",
+  "content": "User requested fix and run tests; assistant failed due to DeepSeek API network request error.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "883ec63a-9295-4dc7-88bd-6ca7372bef32",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T15:10:07.944Z",
+  "updatedAt": "2026-05-10T15:10:07.944Z"
+}

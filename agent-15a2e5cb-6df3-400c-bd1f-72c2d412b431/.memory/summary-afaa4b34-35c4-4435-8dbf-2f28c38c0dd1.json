@@ -1,0 +1,20 @@
+{
+  "id": "afaa4b34-35c4-4435-8dbf-2f28c38c0dd1",
+  "type": "short-term",
+  "title": "Summary: Turn 969",
+  "content": "User requested to continue new feature development but target too broad; assistant proposed three concrete options: finish SLF4J logging refactor (70% done), LRU query cache optimization, or CLI test coverage. Awaiting user choice.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2fff98e9-9a2a-4938-9bde-4546924de7dc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T04:44:29.742Z",
+  "updatedAt": "2026-05-06T04:44:29.742Z"
+}

@@ -17,6 +17,16 @@ import { ProviderRegistry } from '../../src/providers/provider-registry';
 import { InMemorySessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
 import { createTestAppConfig } from '../helpers/test-config';
+import { WorkflowPlanStore } from '../../src/workflow/workflow-plan-store';
+import { WorkflowExporter } from '../../src/workflow/workflow-exporter';
+import { WorkflowRegistry } from '../../src/workflow/workflow-registry';
+import { InMemoryWorkflowRepository } from '../../src/workflow/workflow-repository';
+import { WorkflowService } from '../../src/workflow/workflow-service';
+import { PUEBLO_PLAN_WORKFLOW_TYPE } from '../../src/workflow/pueblo-plan/pueblo-plan-workflow';
+import { createWorkflowInstanceModel } from '../../src/workflow/workflow-model';
+import { createInitialPuebloPlanOutline } from '../../src/workflow/pueblo-plan/pueblo-plan-planner';
+import { applyTodoRound, selectNextTodoRound } from '../../src/workflow/pueblo-plan/pueblo-plan-rounds';
+import { createInitialPuebloPlanDocument, renderPuebloPlanMarkdown } from '../../src/workflow/pueblo-plan/pueblo-plan-markdown';
 
 const tempDirs: string[] = [];
 
@@ -191,5 +201,210 @@ describe('context resolver', () => {
     });
 
     expect(resolved.taskContext.targetDirectory).toBe(externalRepoDir);
+  });
+
+  it('projects active workflow plan and todo context into the resolved task context', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-workflow-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      workflow: {
+        runtimeDirectory: path.join(tempDir, '.plans'),
+      },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const workflowService = new WorkflowService({
+      repository: new InMemoryWorkflowRepository(),
+      registry: new WorkflowRegistry([{ type: PUEBLO_PLAN_WORKFLOW_TYPE, description: 'Structured workflow' }]),
+      planStore: new WorkflowPlanStore(config),
+      exporter: new WorkflowExporter(),
+    });
+
+    const session = sessionService.createSession('Workflow context session', 'gpt-4.1-mini');
+    const workflow = createWorkflowInstanceModel({
+      type: 'pueblo-plan',
+      goal: 'Implement workflow context injection',
+      status: 'round-active',
+      sessionId: session.id,
+      runtimePlanPath: path.join(tempDir, '.plans', 'workflow-1', 'context.plan.md'),
+      deliverablePlanPath: null,
+    });
+    const outline = createInitialPuebloPlanOutline({ goal: workflow.goal });
+    const plan = createInitialPuebloPlanDocument({
+      workflow,
+      routeReason: 'explicit',
+      sessionId: session.id,
+      outline,
+    });
+    const round = selectNextTodoRound(plan);
+    const activePlan = round ? applyTodoRound(plan, round) : plan;
+    workflowService.saveWorkflow({
+      ...workflow,
+      activeRoundNumber: activePlan.activeRoundNumber,
+      updatedAt: new Date().toISOString(),
+    });
+    new WorkflowPlanStore(config).writePlan(workflow.runtimePlanPath, renderPuebloPlanMarkdown(activePlan));
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, config.pepe),
+      workflowService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Continue the workflow execution.',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.workflowContext).not.toBeNull();
+    expect(resolved.taskContext.workflowContext?.planSummary).toContain('Goal: Implement workflow context injection');
+    expect(resolved.taskContext.workflowContext?.todoSummary).toContain('Round 1 tasks:');
+  });
+
+  it('filters pinned workflow memories out of general Pepe result items', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-workflow-filter-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      workflow: {
+        runtimeDirectory: path.join(tempDir, '.plans'),
+      },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const workflowService = new WorkflowService({
+      repository: new InMemoryWorkflowRepository(),
+      registry: new WorkflowRegistry([{ type: PUEBLO_PLAN_WORKFLOW_TYPE, description: 'Structured workflow' }]),
+      planStore: new WorkflowPlanStore(config),
+      exporter: new WorkflowExporter(),
+    });
+
+    const session = sessionService.createSession('Workflow dedupe session', 'gpt-4.1-mini');
+    const planMemory = memoryService.createMemory('Workflow plan', 'Pinned plan memory', 'session', {
+      tags: ['workflow', 'plan'],
+      sourceSessionId: session.id,
+    });
+    const todoMemory = memoryService.createMemory('Workflow todo', 'Pinned todo memory', 'session', {
+      tags: ['workflow', 'todo'],
+      sourceSessionId: session.id,
+    });
+    const otherMemory = memoryService.createMemory('Other memory', 'Independent repository fact', 'session', {
+      tags: ['repo-fact'],
+      sourceSessionId: session.id,
+    });
+    sessionService.addSelectedMemory(session.id, planMemory.id);
+    sessionService.addSelectedMemory(session.id, todoMemory.id);
+    sessionService.addSelectedMemory(session.id, otherMemory.id);
+    const workflow = createWorkflowInstanceModel({
+      type: 'pueblo-plan',
+      goal: 'Keep workflow context unique in prompt',
+      status: 'round-active',
+      sessionId: session.id,
+      runtimePlanPath: path.join(tempDir, '.plans', 'workflow-2', 'dedupe.plan.md'),
+      deliverablePlanPath: null,
+      activePlanMemoryId: planMemory.id,
+      activeTodoMemoryId: todoMemory.id,
+      activeRoundNumber: 1,
+    });
+    const outline = createInitialPuebloPlanOutline({ goal: workflow.goal });
+    const plan = createInitialPuebloPlanDocument({
+      workflow,
+      routeReason: 'explicit',
+      sessionId: session.id,
+      outline,
+    });
+    const round = selectNextTodoRound(plan);
+    const activePlan = round ? applyTodoRound(plan, round) : plan;
+    workflowService.saveWorkflow(workflow);
+    new WorkflowPlanStore(config).writePlan(workflow.runtimePlanPath, renderPuebloPlanMarkdown(activePlan));
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [planMemory.id, todoMemory.id, otherMemory.id],
+      pendingUserInput: 'Continue workflow execution',
+      resultItems: [
+        {
+          memoryId: planMemory.id,
+          summary: 'Pinned plan memory should not be duplicated.',
+          similarity: 0.99,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: todoMemory.id,
+          summary: 'Pinned todo memory should not be duplicated.',
+          similarity: 0.98,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: otherMemory.id,
+          summary: 'Independent repository fact remains available.',
+          similarity: 0.95,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+      workflowService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Continue workflow execution',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.workflowContext?.planMemoryId).toBe(planMemory.id);
+    expect(resolved.taskContext.workflowContext?.todoMemoryId).toBe(todoMemory.id);
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([otherMemory.id]);
   });
 });

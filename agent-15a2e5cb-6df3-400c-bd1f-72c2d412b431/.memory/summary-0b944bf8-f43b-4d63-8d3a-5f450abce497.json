@@ -1,0 +1,20 @@
+{
+  "id": "0b944bf8-f43b-4d63-8d3a-5f450abce497",
+  "type": "short-term",
+  "title": "Summary: Turn 1030",
+  "content": "User requested to fix and run tests; assistant failed to reach DeepSeek API (fetch failure at https://api.deepseek.com/chat/completions).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "883ec63a-9295-4dc7-88bd-6ca7372bef32",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T15:10:11.397Z",
+  "updatedAt": "2026-05-10T15:10:11.397Z"
+}

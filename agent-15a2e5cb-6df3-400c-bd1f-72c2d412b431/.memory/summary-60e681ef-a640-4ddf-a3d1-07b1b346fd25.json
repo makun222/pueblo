@@ -1,0 +1,20 @@
+{
+  "id": "60e681ef-a640-4ddf-a3d1-07b1b346fd25",
+  "type": "short-term",
+  "title": "Summary: Turn 888",
+  "content": "Project has completed Notion classification, reference system, LLM multi-provider, media pipeline, web server, and E2E tests (all untracked). Priority tasks: commit current work, then implement query cache/performance monitoring and CRUD completeness.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "334e4f7f-0583-4bdb-b48c-59a607f7a4cf",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:08:00.407Z",
+  "updatedAt": "2026-05-05T14:08:00.407Z"
+}

@@ -1,0 +1,18 @@
+{
+  "id": "6d648143-4fa7-4641-9c0d-b817b2bf17a1",
+  "type": "short-term",
+  "title": "Turn 926",
+  "content": "User:\nhi\n\nAssistant:\n你好！👋\n\n有什么需要帮忙的吗？Pueblo 项目的工作区还放着 **9 个未提交文件**，等你决定下一步动作：\n\n1. **提交今天的变更** — `git add` + `git commit`\n2. **继续新功能开发**\n3. **审查已有代码**\n4. **其他任务**\n\n随时告诉我就好。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T03:52:24.166Z",
+  "updatedAt": "2026-05-06T03:52:24.166Z"
+}

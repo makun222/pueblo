@@ -1,0 +1,20 @@
+{
+  "id": "27276f17-46fe-48d0-9c68-1c7ae4fa21fb",
+  "type": "short-term",
+  "title": "Summary: Turn 807",
+  "content": "The image extraction code consists of `MediaTextExtractionService` interface, with `FallbackMediaTextExtractionService` providing primary/fallback logic and `OpenAiCompatibleMediaTextExtractionService` handling image, document, and audio/video transcription via an OpenAI-compatible API; `MediaProcessingService` orchestrates material registration and notion extraction.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0fc03018-dbe5-4084-b885-12972adecd73",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T01:29:33.347Z",
+  "updatedAt": "2026-05-05T01:29:33.347Z"
+}

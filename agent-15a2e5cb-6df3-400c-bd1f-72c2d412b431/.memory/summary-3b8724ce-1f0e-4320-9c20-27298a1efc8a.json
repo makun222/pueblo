@@ -1,0 +1,20 @@
+{
+  "id": "3b8724ce-1f0e-4320-9c20-27298a1efc8a",
+  "type": "short-term",
+  "title": "Summary: Turn 926",
+  "content": "用户问候，助手提醒Pueblo项目有9个未提交文件，待用户决定下一步（提交/开发/审查/其他）。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "6d648143-4fa7-4641-9c0d-b817b2bf17a1",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T04:01:13.767Z",
+  "updatedAt": "2026-05-06T04:01:13.767Z"
+}

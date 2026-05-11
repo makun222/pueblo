@@ -1,0 +1,20 @@
+{
+  "id": "7539c441-ae80-48c0-aa72-cabb07cc71ec",
+  "type": "short-term",
+  "title": "Summary: Turn 837",
+  "content": "Designed Obsidian integration for KnowledgeBase: add `tags` field to `Notion` entity for classification; implement `ObsidianExportService` to generate vault with tag-based directory structure, frontmatter metadata, and wikilinks for relations; optionally support reverse sync from Obsidian.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "de129baa-bb1a-4ae5-be0e-9042a2527459",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:34:26.345Z",
+  "updatedAt": "2026-05-05T05:34:26.345Z"
+}

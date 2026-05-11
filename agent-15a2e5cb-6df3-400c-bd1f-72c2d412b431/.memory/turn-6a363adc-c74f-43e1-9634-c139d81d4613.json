@@ -1,0 +1,18 @@
+{
+  "id": "6a363adc-c74f-43e1-9634-c139d81d4613",
+  "type": "short-term",
+  "title": "Turn 923",
+  "content": "User:\n明天再处理\n\nAssistant:\n## ✅ 已确认\n\n工作区 **9 个未提交文件**（2 修改 + 7 新增）将保持原样，明天再处理。\n\n| 状态 | 数量 | 说明 |\n|------|------|------|\n| 📝 修改 | 2 | `OBSIDIAN_EXPORT_DESIGN.md`, `PUEBLO_WORK_LOG.md` |\n| 🆕 新增 | 7 | 接口、实现、测试类 |\n| 💾 未提交 | 9 | 等待明日 `git add + git commit` |\n\n随时可以继续。明天见！",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:14:12.604Z",
+  "updatedAt": "2026-05-05T15:14:12.604Z"
+}

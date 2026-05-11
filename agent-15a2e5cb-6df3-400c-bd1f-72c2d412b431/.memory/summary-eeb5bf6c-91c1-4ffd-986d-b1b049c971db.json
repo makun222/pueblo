@@ -1,0 +1,20 @@
+{
+  "id": "eeb5bf6c-91c1-4ffd-986d-b1b049c971db",
+  "type": "short-term",
+  "title": "Summary: Turn 1026",
+  "content": "用户回顾计划；助手总结现有计划文档和实现状态，指出 Obsidian 导出服务尚有 3 个待修复问题（空 Uncategorized 目录、sanitizeFileName 移除括号、子目录每层 _index.md），并提出立即实现。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "b7af4fdf-ab9e-4ea4-889d-8b7baa902de0",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T14:57:31.834Z",
+  "updatedAt": "2026-05-10T14:57:31.834Z"
+}

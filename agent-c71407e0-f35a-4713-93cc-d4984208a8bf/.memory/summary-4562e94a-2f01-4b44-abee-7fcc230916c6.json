@@ -1,0 +1,20 @@
+{
+  "id": "4562e94a-2f01-4b44-abee-7fcc230916c6",
+  "type": "short-term",
+  "title": "Summary: Turn 9",
+  "content": "The assistant's specialties include code reading and understanding of the 2000+ TypeScript files in the Pueblo project (CLI, commands, workflow, tools, providers, sessions, memory, persistence), precise code editing/repair, project knowledge Q&A (config, build, testing, native module ABI), pattern matching with grep/glob, and maintaining consistent project style, but it avoids game-related queries, large-scale refactoring, or undocumented projects.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "11e9ca7d-7b4b-4ea0-af64-f9a208ecc259",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "19645399-d30d-49df-9a1d-a6381c3b2ad5",
+  "createdAt": "2026-05-10T15:11:52.898Z",
+  "updatedAt": "2026-05-10T15:11:52.898Z"
+}

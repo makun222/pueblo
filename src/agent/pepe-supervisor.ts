@@ -207,7 +207,6 @@ export class PepeSupervisor {
       return;
     }
 
-    void this.flushSession(sessionId);
     clearInterval(monitor.intervalId);
     this.monitors.delete(sessionId);
   }

@@ -1,0 +1,20 @@
+{
+  "id": "a1bd3760-2e6d-4d4b-90eb-dd568b57601a",
+  "type": "short-term",
+  "title": "Summary: Turn 877",
+  "content": "完成了 category 相关 6 个文件变更，但缺少环境验证；提供编译验证、单元测试、额外功能三个方向待用户决策。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0c2ed4c1-72f2-42af-a681-c3cb3fdd19e9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T12:08:24.776Z",
+  "updatedAt": "2026-05-05T12:08:24.776Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "f5f56ffe-87d4-469d-9059-e12369489e52",
+  "type": "short-term",
+  "title": "Summary: Turn 881",
+  "content": "This environment cannot run `mvn compile` because it lacks Maven in PATH and the Maven Wrapper (`mvnw.cmd`) fails due to spawn EINVAL (no batch support). Only direct binary executables like `java.exe` are supported.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "caa9d142-caad-4158-9926-67a08467c66c",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T12:15:33.077Z",
+  "updatedAt": "2026-05-05T12:15:33.077Z"
+}

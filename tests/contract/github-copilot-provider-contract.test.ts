@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubCopilotAdapter } from '../../src/providers/github-copilot-adapter';
-import { getToolExecutionPolicy } from '../../src/providers/provider-adapter';
+import { getToolExecutionPolicy, providerEditToolInputSchema } from '../../src/providers/provider-adapter';
 import { resolveGitHubCopilotAuth } from '../../src/providers/github-copilot-auth';
 import { createGitHubCopilotProfile } from '../../src/providers/github-copilot-profile';
 import type { ProviderAdapter } from '../../src/providers/provider-adapter';
@@ -52,6 +52,45 @@ describe('GitHub Copilot Provider Contract', () => {
 
     expect(result.outputSummary).toBe('Copilot output');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('should stream GitHub Copilot final text deltas through the step callback', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response([
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+        '',
+        'data: {"choices":[{"delta":{"content":" from Copilot"}}]}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+        },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    const streamedText: string[] = [];
+    const result = await adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [{ role: 'user', content: 'Say hello.' }],
+      availableTools: [],
+      onTextDelta: (text) => {
+        streamedText.push(text);
+      },
+    });
+
+    expect(result).toEqual({
+      type: 'final',
+      outputSummary: 'Hello from Copilot',
+    });
+    expect(streamedText).toEqual(['Hello', ' from Copilot']);
   });
 
   it('should validate GitHub Copilot credentials', () => {
@@ -240,6 +279,67 @@ describe('GitHub Copilot Provider Contract', () => {
       toolCallId: 'call-1',
       toolName: 'glob',
       args: { pattern: 'src/**/*.ts' },
+    });
+  });
+
+  it('should accept legacy write tool calls and map them to edit', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'I can write the file now.',
+              tool_calls: [
+                {
+                  id: 'call-write-1',
+                  type: 'function',
+                  function: {
+                    name: 'write',
+                    arguments: JSON.stringify({
+                      path: 'src/example.ts',
+                      content: 'export const value = 1;\n',
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [{ role: 'user', content: 'Create src/example.ts.' }],
+      availableTools: [
+        {
+          name: 'edit',
+          description: 'Edit a file',
+          executionPolicy: getToolExecutionPolicy('edit'),
+          inputSchema: providerEditToolInputSchema,
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      type: 'tool-call',
+      toolCallId: 'call-write-1',
+      toolName: 'edit',
+      args: {
+        path: 'src/example.ts',
+        oldText: '',
+        newText: 'export const value = 1;\n',
+      },
     });
   });
 });

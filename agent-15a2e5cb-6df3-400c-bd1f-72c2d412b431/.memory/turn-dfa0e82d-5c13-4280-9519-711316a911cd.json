@@ -1,0 +1,18 @@
+{
+  "id": "dfa0e82d-5c13-4280-9519-711316a911cd",
+  "type": "short-term",
+  "title": "Turn 911",
+  "content": "User:\n我们再回顾一下哪些已经完成，哪些要继续\n\nAssistant:\n## ✅ 完成状态回顾\n\n### P1 — ObsidianExportService（已完成 ✅）\n\n| 文件 | 状态 |\n|------|------|\n| `ObsidianExportService.java` | 接口定义：`void exportToObsidian(String vaultPath)` |\n| `ObsidianExportServiceImpl.java` | 384 行完整实现，包含 YAML front matter、`_notions/`、`_relations/`、分类目录、`_index.md`、wiki-link |\n| `ObsidianExportServiceTest.java` | 9 个测试用例全部就绪 |\n\n### P2 — CLI 集成（待完成 ❌）\n\n- **不存在** `cli/` 包\n- **不存在** `ObsidianExportCommand` 或任何 `*Command` 类\n- **不存在** picocli 或任何 CLI 框架依赖（`pom.xml` 只包含 Jackson、H2、JUnit）\n- `KnowledgeBaseApplication.java` 是唯一的入口，其 `main(String[] args)` **完全不使用 `args` 参数**，硬编码运行完整 pipeline（步骤 1-7），**不包含** Obsidian 导出步骤\n\n### P2 需要做的事\n\n1. **在 `pom.xml` 中**添加 picocli 依赖（兼容 Java 1.8）\n2. **创建** `cli/ObsidianExportCommand.java` — picocli 命令，接收 `--vault-path` 参数，调用 `ObsidianExportService.exportToObsidian()`\n3. **修改** `KnowledgeBaseApplication.java` 或创建新的 `Main` 入口，将 CLI 子命令挂载上去（推荐：用 `@Command(name=\"knowledge-base\", subcommands=ObsidianExportCommand.class)` 包装）\n\n---\n\n要继续 **P2 实现**吗？或者先对 P1 做调整？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:07:32.528Z",
+  "updatedAt": "2026-05-05T15:07:32.528Z"
+}

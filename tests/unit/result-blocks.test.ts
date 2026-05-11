@@ -122,4 +122,59 @@ describe('Result Block Rendering', () => {
       },
     ]);
   });
+
+  it('should render workflow and export metadata for completed workflow task results', () => {
+    const result = successResult('TASK_COMPLETED', 'Agent task completed', {
+      outputSummary: JSON.stringify({
+        outputSummary: 'Workflow round finished',
+        workflow: {
+          workflowId: 'workflow-1',
+          workflowType: 'pueblo-plan',
+          status: 'completed',
+          activeRoundNumber: null,
+          planMemoryId: 'memory-plan-1',
+          todoMemoryId: null,
+        },
+      }),
+      workflow: {
+        workflowId: 'workflow-1',
+        workflowType: 'pueblo-plan',
+        status: 'completed',
+        completedRoundNumber: 1,
+        activeRoundNumber: null,
+        runtimePlanPath: 'D:/workspace/.plans/workflow-1/final.plan.md',
+        deliverablePlanPath: 'D:/workspace/app/final.plan.md',
+        exportResult: {
+          status: 'exported',
+          deliverablePlanPath: 'D:/workspace/app/final.plan.md',
+          exportedAt: '2026-05-10T12:00:00.000Z',
+        },
+      },
+    });
+
+    const blocks = createResultBlocks(result);
+
+    expect(blocks.map((block) => block.title)).toEqual(['Output Summary', 'Workflow', 'Workflow Export']);
+    expect(blocks[1]?.content).toContain('Workflow ID: workflow-1');
+    expect(blocks[1]?.content).toContain('Completed Round: 1');
+    expect(blocks[2]?.content).toContain('Export Status: exported');
+  });
+
+  it('should render workflow details for workflow start results without task payloads', () => {
+    const result = successResult('WORKFLOW_STARTED', 'Workflow started', {
+      workflowId: 'workflow-2',
+      workflowType: 'pueblo-plan',
+      runtimePlanPath: 'D:/workspace/.plans/workflow-2/feature.plan.md',
+      deliverablePlanPath: 'D:/workspace/app/feature.plan.md',
+      activeRoundNumber: 1,
+      routeReason: 'explicit',
+    });
+
+    const blocks = createResultBlocks(result);
+
+    expect(blocks.map((block) => block.title)).toEqual(['WORKFLOW_STARTED', 'WORKFLOW_STARTED-data', 'Workflow']);
+    expect(blocks[2]?.content).toContain('Workflow ID: workflow-2');
+    expect(blocks[2]?.content).toContain('Route Reason: explicit');
+    expect(blocks[2]?.content).toContain('Runtime Plan Path: D:/workspace/.plans/workflow-2/feature.plan.md');
+  });
 });

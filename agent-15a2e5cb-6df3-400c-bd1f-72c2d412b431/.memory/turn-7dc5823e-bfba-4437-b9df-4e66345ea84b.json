@@ -1,0 +1,18 @@
+{
+  "id": "7dc5823e-bfba-4437-b9df-4e66345ea84b",
+  "type": "short-term",
+  "title": "Turn 899",
+  "content": "User:\n我希望knowledgebase成为知识提取、处理的中心，将收集到的知识输出到obsidian的vault里，当然需要提前设计好层次化的目录结构。先来设计一下方案将 KnowledgeBase 中的 Notion/关系数据导出为 Obsidian Markdown 格式（`[[wikilink]]` 语法）\n\nAssistant:\n方案设计文档已创建：📄 `OBSIDIAN_EXPORT_DESIGN.md`\n\n---\n\n## 核心设计摘要\n\n### 目录结构\n```\nvault-root/\n├── Uncategorized/    ← category 为空的概念\n│   ├── _index.md\n│   └── <name>.md\n├── <CategoryA>/      ← 按 category 分组\n│   ├── _index.md\n│   ├── <SubCat>/\n│   │   └── <name>.md\n│   └── <name>.md\n└── _notions/          ← 全局索引\n    ├── ALL.md         ← 字母序列表\n    └── BY_RELATION.md ← 按关系类型的链接表\n```\n\n### Notion → Markdown 映射要点\n- **YAML Front Matter**：id, category, source_materials, references\n- **Wikilink 表格**：出边关系（当前→目标）+ 入边关系（来源→当前），完整双向覆盖\n- **每类关系有特定标签**：`is a [[Target]]`, `depends on [[Target]]`, `part of [[Target]]` 等\n- 文件名由 name sanitize 生成（小写、空格→连字符），冲突时附加短 ID\n\n### Java 接口\n```java\npublic interface ObsidianExportService {\n    int exportToVault(Path vaultRoot);           // 全量导出\n    int exportNotions(Path vaultRoot, List<String> notionIds); // 增量\n}\n```\n依赖 `KnowledgeBaseService` 作为唯一数据源，**零新外部依赖**。\n\n### 实现规模预估\n| 阶段 | 内容 | 行数 |\n|------|------|------|\n| P1 | 接口 + 文件名处理 + Markdown 渲染 + 主导出逻辑 | ~290 |\n| P2 | 分类索引 + 全局索引 | ~130 |\n| P3 | HTTP API 端点 + 配置项 | ~60 |\n| P4 | 增量导出 + 单元测试 | ~150 |\n| **合计** | | **~650 行** |\n\n如果这个设计符合你的预期，下一步我可以从 **P1 实现**开始：创建 `ObsidianExportService` 接口和 `ObsidianExportServiceImpl` 核心类。要继续吗？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:31:29.169Z",
+  "updatedAt": "2026-05-05T14:31:29.169Z"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "9392b727-7684-46c1-928a-950743577cb0",
+  "type": "short-term",
+  "title": "Summary: Turn 969",
+  "content": "User requested \"继续新功能开发\" - currently 70% SLF4J logging + global exception handler refactor done (5/7 files). Three options: A) finish logging refactor with remaining 3 tasks, B) switch to LRU query cache optimization, C) switch to CLI tests. Awaiting user choice.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "2fff98e9-9a2a-4938-9bde-4546924de7dc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T04:44:29.106Z",
+  "updatedAt": "2026-05-06T04:44:29.106Z"
+}

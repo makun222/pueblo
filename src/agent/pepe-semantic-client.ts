@@ -61,9 +61,12 @@ export class PepeSemanticClient {
     const result = await adapter.runTask({
       modelId: target.modelId,
       inputContextSummary: [
-        'You are Pepe, a memory distillation service.',
+/*         'You are Pepe, a memory distillation service.',
         'Summarize the memory into a concise technical note for future retrieval.',
-        'Prefer one or two sentences. Keep important entities and decisions.',
+        'Prefer one or two sentences. Keep important entities and decisions.', */
+        '你是Pepe，一个记忆提炼服务。',
+        '将记忆总结为简明的技术笔记以便将来检索。',
+        '最好使用一到两句话。保留重要的实体和决策，路径及文件名。',
       ].join('\n'),
       goal: summaryPrompt,
     });

@@ -1,0 +1,20 @@
+{
+  "id": "b093ddec-994d-4c01-bd63-253b8a45d907",
+  "type": "short-term",
+  "title": "Summary: Turn 825",
+  "content": "Plan to integrate KnowledgeBase with Obsidian: Create an `ObsidianExportService` that extracts notions, references, and relations from KnowledgeBase and writes them as hierarchical Markdown files in Obsidian vault; add a REST endpoint in `KnowledgeMapHttpServer` to trigger the export.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "5b736567-9e13-4a41-8bb6-ffdb217f1d34",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T04:54:02.763Z",
+  "updatedAt": "2026-05-05T04:54:02.763Z"
+}

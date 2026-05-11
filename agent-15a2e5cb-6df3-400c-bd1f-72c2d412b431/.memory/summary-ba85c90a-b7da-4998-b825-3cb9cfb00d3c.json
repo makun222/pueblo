@@ -1,0 +1,20 @@
+{
+  "id": "ba85c90a-b7da-4998-b825-3cb9cfb00d3c",
+  "type": "short-term",
+  "title": "Summary: Turn 1000",
+  "content": "Turn 1000: Fixed 3 compilation errors and applied root cause fix in `NotionExtractionSupport.java` (paragraph separator logic) resolving 5 test failures. Remaining: update test expectations in `NotionExtractionSupportTest` and `HeuristicTextKnowledgeExtractionServiceTest`, then fix `ObsidianExportServiceImpl` (sanitizeFileName regex, Uncategorized dir creation, root _index.md).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "6a12ef93-76f2-464b-9bde-2f61de097ab9",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T07:38:58.192Z",
+  "updatedAt": "2026-05-10T07:38:58.192Z"
+}

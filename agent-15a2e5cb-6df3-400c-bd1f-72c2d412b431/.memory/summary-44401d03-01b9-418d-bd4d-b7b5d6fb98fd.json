@@ -1,0 +1,20 @@
+{
+  "id": "44401d03-01b9-418d-bd4d-b7b5d6fb98fd",
+  "type": "short-term",
+  "title": "Summary: Turn 926",
+  "content": "User greeted assistant; assistant noted Pueblo project workspace has 9 uncommitted files and offered options: commit, continue development, review code, or other tasks.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "6d648143-4fa7-4641-9c0d-b817b2bf17a1",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T04:01:16.500Z",
+  "updatedAt": "2026-05-06T04:01:16.500Z"
+}

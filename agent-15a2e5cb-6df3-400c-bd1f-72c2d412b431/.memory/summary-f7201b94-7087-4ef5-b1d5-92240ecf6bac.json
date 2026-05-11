@@ -1,0 +1,20 @@
+{
+  "id": "f7201b94-7087-4ef5-b1d5-92240ecf6bac",
+  "type": "short-term",
+  "title": "Summary: Turn 1057",
+  "content": "Prioritize LLM response caching (keyed by material ID / notion list hash) and exponential backoff retry (5xx/network errors) in `OpenAiCompatibleMediaTextExtractionService` and `OpenAiCompatibleNotionRelationInferenceService`; start with these to reduce API costs and improve stability.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "490774b6-1100-4250-a78f-d29060939fdd",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T08:55:33.716Z",
+  "updatedAt": "2026-05-11T08:55:33.716Z"
+}

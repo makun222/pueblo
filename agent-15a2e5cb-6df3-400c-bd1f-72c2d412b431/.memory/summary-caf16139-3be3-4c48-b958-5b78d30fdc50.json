@@ -1,0 +1,20 @@
+{
+  "id": "caf16139-3be3-4c48-b958-5b78d30fdc50",
+  "type": "short-term",
+  "title": "Summary: Turn 865",
+  "content": "设计知识库Obsidian导出方案：为Notion模型添加category/tags字段实现分层目录，每个Notion导出为单.md文件（含YAML frontmatter），自动生成\\_index.md地图，关系转为\\[\\[wikilink\\]\\]。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "ccfffcd8-45c5-4e8b-9472-43d7ae504994",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T10:22:55.423Z",
+  "updatedAt": "2026-05-05T10:22:55.423Z"
+}

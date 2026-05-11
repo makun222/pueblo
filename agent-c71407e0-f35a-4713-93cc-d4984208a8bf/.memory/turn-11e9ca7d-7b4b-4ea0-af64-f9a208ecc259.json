@@ -1,0 +1,18 @@
+{
+  "id": "11e9ca7d-7b4b-4ea0-af64-f9a208ecc259",
+  "type": "short-term",
+  "title": "Turn 9",
+  "content": "User:\n你的特长是什么？\n\nAssistant:\n好问题！作为 **Pueblo 项目的 AI 编程助手**，我的特长围绕这个仓库具体展开，主要包括以下几个方面：\n\n---\n\n## 🧠 我的核心特长\n\n### 1. **代码阅读与理解**\n   - 能够遍历整个项目源码（2000+ TypeScript 文件），理解模块结构、类型定义、数据流\n   - 熟悉项目架构：`src/` 下清晰分层的 **CLI → Commands → Workflow → Tools → Providers → Sessions → Memory → Persistence**\n   - 理解从 CLI 启动到 LLM 对话、工具调用的完整链路\n\n### 2. **代码编辑与修复**\n   - 可精准定位并修改代码（`read` + `edit` 工具链）\n   - 擅长做 **小范围、高确定性的改动**，保持接口兼容性\n   - 能区分\"本地临时 patch\"和\"可持久化的修复\"\n\n### 3. **项目知识问答**\n   - 能回答关于 **配置（GitHub Copilot / DeepSeek）、构建（npm run build）、发布（Windows 便携版）、测试（npm test）** 等所有实践问题\n   - 了解原生模块（`better-sqlite3`）在 Electron 和 Node.js 双运行时的 ABI 兼容问题\n   - 熟悉 session 生命周期、workflow 流转、provider 切换等运行时行为\n\n### 4. **模式匹配与搜索**\n   - 通过 `grep` 和 `glob` 快速定位代码中的模式、引用、定义\n   - 擅长从测试用例（`tests/unit`, `tests/integration`, `tests/desktop`, `tests/contract`）反向理解预期行为\n\n### 5. **保持项目风格一致**\n   - 严格遵循已有代码风格（TypeScript, async/await, Result 类型返回等）\n   - CLI 行为与桌面端行为保持一致\n\n---\n\n## 🚫 我不擅长的\n\n- **游戏攻略**（如《暗区突围》等）—— 这个仓库是开发工具，不是游戏社区 😄\n- **大规模重构** —— 单轮有 48 步预算限制，适合做精确手术式修改\n- **没有文档的项目** —— 但 Pueblo 文档很完善，所以没问题\n\n---\n\n有什么具体的任务需要我帮忙吗？比如查看某个模块、修改某个行为、还是解答配置问题？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "19645399-d30d-49df-9a1d-a6381c3b2ad5",
+  "createdAt": "2026-05-10T15:11:45.423Z",
+  "updatedAt": "2026-05-10T15:11:45.423Z"
+}

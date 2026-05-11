@@ -1,0 +1,18 @@
+{
+  "id": "78e33a81-6aa0-4bbe-afab-96224efd6e3b",
+  "type": "short-term",
+  "title": "Turn 973",
+  "content": "User:\n继续未完成的工作吧\n\nAssistant:\n找到了——`BaseJsonHandler` 在 lines 778-793 已经有了全局异常处理器（400/500 JSON 错误响应）。\n\n---\n\n## ✅ 本轮完成\n\n**SLF4J 日志改造已全部完成（8/8 生产文件），剩余 0 处 `System.out/err/printStackTrace`：**\n\n| 文件 | 修改内容 |\n|---|---|\n| `ObsidianExportCommand.java` | lines 51,53: `System.out.println` → `log.info(...)`（已有 logger） |\n| `FallbackMediaTextExtractionService.java` | 新增 SLF4J logger + `System.err.println`+`printStackTrace` → `log.warn(\"...{}\", msg, ex)` |\n| `FallbackTextKnowledgeExtractionService.java` | 新增 SLF4J logger + `System.err.println`+`printStackTrace` → `log.warn(\"...{}\", msg, ex)` |\n\n**全局异常处理器**（`BaseJsonHandler.handle()` at lines 789-793）**已就绪** — 捕获 `IllegalArgumentException`→400 和通用 `Exception`→500 返回 JSON 错误响应。\n\n---\n\n## 待办 & 下一步建议\n\nSLF4J 日志改造和全局异常处理器两个任务都已在本轮**全部完成**。\n\n如果你准备继续开发新功能，推荐以下方向：\n\n1. **为 `ObsidianExportCommand` + `CliMain` 编写单元测试** — 独立于生产代码\n2. **添加 Notion 搜索功能** — 比如 CLI 子命令 `knowledge-base search <keyword>`\n3. **软删除 Notion** — 数据库添加 `deleted` 标记\n4. **配置文件校验** — 启动时校验 `config.properties` 必填字段\n\n请告诉我你倾向哪个方向？",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-06T08:48:39.025Z",
+  "updatedAt": "2026-05-06T08:48:39.025Z"
+}

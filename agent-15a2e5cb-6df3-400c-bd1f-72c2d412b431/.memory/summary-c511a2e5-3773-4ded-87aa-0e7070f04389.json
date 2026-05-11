@@ -1,0 +1,20 @@
+{
+  "id": "c511a2e5-3773-4ded-87aa-0e7070f04389",
+  "type": "short-term",
+  "title": "Summary: Turn 907",
+  "content": "Reviewed ObsidianExportService interface, implementation with Markdown + YAML export, and test cases. Next steps: either address implementation issues or proceed with P2 CLI integration.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "0580a236-cb44-4e8b-b51c-38402e49dcaa",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:06:08.622Z",
+  "updatedAt": "2026-05-05T15:06:08.622Z"
+}

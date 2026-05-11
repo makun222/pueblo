@@ -28,6 +28,11 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
     });
   }
 
+  const workflowContextMessage = buildWorkflowContextMessage(taskContext);
+  if (workflowContextMessage) {
+    messages.push({ role: 'system', content: workflowContextMessage });
+  }
+
   if (taskContext.resultItems.length > 0) {
     messages.push({
       role: 'system',
@@ -76,6 +81,36 @@ function buildPuebloSystemMessage(taskContext: TaskContext): string | null {
   }
 
   return sections.length > 0 ? sections.join('\n\n') : null;
+}
+
+function buildWorkflowContextMessage(taskContext: TaskContext): string | null {
+  const workflowContext = taskContext.workflowContext;
+  if (!workflowContext) {
+    return null;
+  }
+
+  const lines = [
+    'Active workflow context:',
+    `- Workflow type: ${workflowContext.workflowType}`,
+    `- Workflow status: ${workflowContext.status}`,
+    `- Runtime plan path: ${workflowContext.runtimePlanPath}`,
+  ];
+
+  if (workflowContext.activeRoundNumber !== null) {
+    lines.push(`- Active round: ${workflowContext.activeRoundNumber}`);
+  }
+
+  if (workflowContext.planSummary) {
+    lines.push('Plan summary:');
+    lines.push(...workflowContext.planSummary.split(/\r?\n/).map((line) => `- ${line}`));
+  }
+
+  if (workflowContext.todoSummary) {
+    lines.push('Current todo:');
+    lines.push(...workflowContext.todoSummary.split(/\r?\n/).map((line) => `- ${line}`));
+  }
+
+  return lines.join('\n');
 }
 
 function buildTargetDirectoryMessage(targetDirectory: string | null): string | null {

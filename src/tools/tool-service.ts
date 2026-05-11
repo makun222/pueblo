@@ -100,7 +100,7 @@ export class ToolService {
       },
       {
         name: 'read',
-        description: 'Read a text file by relative path or absolute path within the current task root and return numbered lines with bounded output. When a target directory is provided for the task, use that as the root; otherwise use the workspace root.',
+        description: 'Read a text file by relative path or absolute path within the current task root and return numbered lines with bounded output. Optionally provide startLine and endLine to read a specific range. When a target directory is provided for the task, use that as the root; otherwise use the workspace root.',
         inputSchema: providerReadToolInputSchema,
         executionPolicy: getToolExecutionPolicy('read'),
       },
@@ -247,7 +247,12 @@ export class ToolService {
   }
 
   private runRead(args: ProviderReadToolArgs, executionCwd: string): Promise<ToolExecutionResult> {
-    return this.readTool({ path: args.path, cwd: executionCwd });
+    return this.readTool({
+      path: args.path,
+      startLine: args.startLine,
+      endLine: args.endLine,
+      cwd: executionCwd,
+    });
   }
 
   private runEdit(args: ProviderEditToolArgs, executionCwd: string): Promise<ToolExecutionResult> {

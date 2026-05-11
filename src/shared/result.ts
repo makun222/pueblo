@@ -1,3 +1,6 @@
+import type { RendererFileChange } from './schema';
+import type { ProviderUsage } from '../providers/provider-adapter';
+
 export interface ResultMessage {
   readonly code: string;
   readonly message: string;
@@ -24,8 +27,10 @@ interface TaskModelMessageTraceEntry {
 
 interface TaskResultPayload {
   readonly outputSummary?: string;
+  readonly providerUsage?: ProviderUsage;
   readonly targetDirectory?: string | null;
   readonly toolExecutionCwd?: string | null;
+  readonly workflow?: WorkflowBlockData | null;
   readonly attribution?: SourceAttribution;
   readonly modelMessageTrace?: TaskModelMessageTraceEntry[];
   readonly stepTrace?: Array<{
@@ -41,6 +46,26 @@ interface TaskResultPayload {
     readonly summary: string;
     readonly executionCwd?: string | null;
   }>;
+  readonly fileChanges?: RendererFileChange[];
+}
+
+interface WorkflowBlockData {
+  readonly workflowId?: string;
+  readonly workflowType?: string;
+  readonly status?: string;
+  readonly routeReason?: string;
+  readonly activeRoundNumber?: number | null;
+  readonly completedRoundNumber?: number | null;
+  readonly planMemoryId?: string | null;
+  readonly todoMemoryId?: string | null;
+  readonly runtimePlanPath?: string | null;
+  readonly deliverablePlanPath?: string | null;
+  readonly recovered?: boolean;
+  readonly exportResult?: {
+    readonly status?: 'exported' | 'unchanged' | 'conflict';
+    readonly deliverablePlanPath?: string;
+    readonly exportedAt?: string | null;
+  } | null;
 }
 
 export interface OutputBlockInput {
@@ -49,6 +74,7 @@ export interface OutputBlockInput {
   readonly content: string;
   readonly collapsed?: boolean;
   readonly messageTrace?: TaskModelMessageTraceEntry[];
+  readonly fileChanges?: RendererFileChange[];
   readonly sourceRefs?: string[];
 }
 
@@ -72,8 +98,10 @@ export function successResult<TData>(code: string, message: string, data?: TData
 
 export interface ParsedTaskOutputSummary {
   readonly outputSummary?: string;
+  readonly providerUsage?: ProviderUsage;
   readonly targetDirectory?: string | null;
   readonly toolExecutionCwd?: string | null;
+  readonly workflow?: WorkflowBlockData | null;
   readonly attribution?: SourceAttribution;
   readonly modelMessageTrace?: TaskModelMessageTraceEntry[];
   readonly stepTrace?: Array<{
@@ -89,6 +117,7 @@ export interface ParsedTaskOutputSummary {
     readonly summary: string;
     readonly executionCwd?: string | null;
   }>;
+  readonly fileChanges?: RendererFileChange[];
 }
 
 export function failureResult(code: string, message: string, suggestions: string[] = []): CommandResult {
@@ -180,6 +209,7 @@ export function createOutputBlock(input: OutputBlockInput) {
     content: input.content,
     collapsed: input.collapsed ?? false,
     messageTrace: toRendererMessageTrace(input.messageTrace),
+    fileChanges: input.fileChanges ?? [],
     sourceRefs: input.sourceRefs ?? [],
     createdAt: now,
   };
@@ -213,6 +243,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
           title: 'Output Summary',
           content: outputSummary,
           messageTrace,
+          fileChanges: payload.fileChanges,
         }),
       );
 
@@ -262,6 +293,34 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         );
       }
 
+      const workflowBlockData = extractWorkflowBlockData(result.data, payload);
+      if (workflowBlockData) {
+        blocks.push(
+          createOutputBlock({
+            type: 'system',
+            title: 'Workflow',
+            content: formatWorkflowBlock(workflowBlockData),
+            messageTrace,
+            sourceRefs: [
+              workflowBlockData.runtimePlanPath,
+              workflowBlockData.deliverablePlanPath,
+            ].filter((value): value is string => Boolean(value)),
+          }),
+        );
+
+        if (workflowBlockData.exportResult) {
+          blocks.push(
+            createOutputBlock({
+              type: 'system',
+              title: 'Workflow Export',
+              content: formatWorkflowExportBlock(workflowBlockData.exportResult),
+              messageTrace,
+              sourceRefs: [workflowBlockData.exportResult.deliverablePlanPath].filter((value): value is string => Boolean(value)),
+            }),
+          );
+        }
+      }
+
       for (const toolResult of payload.toolResults ?? []) {
         blocks.push(
           createOutputBlock({
@@ -273,6 +332,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         );
       }
     } else {
+      const workflowBlockData = extractWorkflowBlockData(result.data, null);
       blocks.push(
         createOutputBlock({
           type: result.ok ? 'task-result' : 'error',
@@ -281,6 +341,33 @@ export function createResultBlocks(result: CommandResult<unknown>) {
           messageTrace,
         }),
       );
+
+      if (workflowBlockData) {
+        blocks.push(
+          createOutputBlock({
+            type: 'system',
+            title: 'Workflow',
+            content: formatWorkflowBlock(workflowBlockData),
+            messageTrace,
+            sourceRefs: [
+              workflowBlockData.runtimePlanPath,
+              workflowBlockData.deliverablePlanPath,
+            ].filter((value): value is string => Boolean(value)),
+          }),
+        );
+
+        if (workflowBlockData.exportResult) {
+          blocks.push(
+            createOutputBlock({
+              type: 'system',
+              title: 'Workflow Export',
+              content: formatWorkflowExportBlock(workflowBlockData.exportResult),
+              messageTrace,
+              sourceRefs: [workflowBlockData.exportResult.deliverablePlanPath].filter((value): value is string => Boolean(value)),
+            }),
+          );
+        }
+      }
     }
   }
 
@@ -319,6 +406,93 @@ function parseTaskResultPayload(outputSummary: string): ParsedTaskOutputSummary 
       outputSummary,
     };
   }
+}
+
+function extractWorkflowBlockData(data: unknown, payload: ParsedTaskOutputSummary | null): WorkflowBlockData | null {
+  const payloadWorkflow = payload?.workflow && typeof payload.workflow === 'object'
+    ? payload.workflow
+    : null;
+
+  if (!data || typeof data !== 'object') {
+    return payloadWorkflow;
+  }
+
+  const candidate = data as Record<string, unknown>;
+  const topLevelWorkflow = candidate.workflow && typeof candidate.workflow === 'object'
+    ? candidate.workflow as Record<string, unknown>
+    : null;
+  const directWorkflowLike = hasWorkflowShape(candidate) ? candidate : null;
+  const merged = {
+    ...(payloadWorkflow ?? {}),
+    ...(directWorkflowLike ?? {}),
+    ...(topLevelWorkflow ?? {}),
+  } satisfies WorkflowBlockData;
+
+  if (!merged.workflowId && !merged.runtimePlanPath && !merged.deliverablePlanPath) {
+    return null;
+  }
+
+  return merged;
+}
+
+function hasWorkflowShape(candidate: Record<string, unknown>): boolean {
+  return typeof candidate.workflowId === 'string'
+    || typeof candidate.runtimePlanPath === 'string'
+    || typeof candidate.deliverablePlanPath === 'string';
+}
+
+function formatWorkflowBlock(workflow: WorkflowBlockData): string {
+  const lines = [
+    `Workflow ID: ${workflow.workflowId ?? 'unknown'}`,
+  ];
+
+  if (workflow.workflowType) {
+    lines.push(`Workflow Type: ${workflow.workflowType}`);
+  }
+  if (workflow.status) {
+    lines.push(`Status: ${workflow.status}`);
+  }
+  if (workflow.routeReason) {
+    lines.push(`Route Reason: ${workflow.routeReason}`);
+  }
+  if (workflow.activeRoundNumber !== undefined) {
+    lines.push(`Active Round: ${workflow.activeRoundNumber ?? 'none'}`);
+  }
+  if (workflow.completedRoundNumber !== undefined) {
+    lines.push(`Completed Round: ${workflow.completedRoundNumber ?? 'none'}`);
+  }
+  if (workflow.runtimePlanPath) {
+    lines.push(`Runtime Plan Path: ${workflow.runtimePlanPath}`);
+  }
+  if (workflow.deliverablePlanPath) {
+    lines.push(`Deliverable Plan Path: ${workflow.deliverablePlanPath}`);
+  }
+  if (workflow.planMemoryId) {
+    lines.push(`Plan Memory ID: ${workflow.planMemoryId}`);
+  }
+  if (workflow.todoMemoryId) {
+    lines.push(`Todo Memory ID: ${workflow.todoMemoryId}`);
+  }
+  if (workflow.recovered) {
+    lines.push('Recovery: restored from runtime plan');
+  }
+
+  return lines.join('\n');
+}
+
+function formatWorkflowExportBlock(exportResult: NonNullable<WorkflowBlockData['exportResult']>): string {
+  const lines = [
+    `Export Status: ${exportResult.status ?? 'unknown'}`,
+  ];
+
+  if (exportResult.deliverablePlanPath) {
+    lines.push(`Deliverable Plan Path: ${exportResult.deliverablePlanPath}`);
+  }
+  if (exportResult.exportedAt) {
+    lines.push(`Exported At: ${exportResult.exportedAt}`);
+  }
+
+  return lines.join('\n');
 }
 
 function formatStepTraceLine(step: NonNullable<ParsedTaskOutputSummary['stepTrace']>[number]): string {

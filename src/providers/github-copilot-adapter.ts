@@ -1,5 +1,7 @@
 import {
   createLegacyStepContext,
+  normalizeProviderToolName,
+  parseProviderEditCompatibleToolArgs,
   parseProviderToolArgs,
   type ProviderAdapter,
   type ProviderMessage,
@@ -14,6 +16,7 @@ import {
 import { ProviderAuthError, ProviderError } from './provider-errors';
 import type { GitHubCopilotTokenType } from './github-copilot-auth';
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
+import { consumeServerSentEventStream } from './server-sent-events';
 
 interface GitHubCopilotResponsePayload {
   readonly choices?: Array<{
@@ -24,7 +27,26 @@ interface GitHubCopilotResponsePayload {
   }>;
 }
 
+interface GitHubCopilotStreamPayload {
+  readonly choices?: Array<{
+    readonly delta?: {
+      readonly content?: string | Array<{ readonly text?: string }>;
+      readonly tool_calls?: GitHubCopilotStreamToolCallDelta[];
+    };
+  }>;
+}
+
 interface GitHubCopilotToolCall {
+  readonly id?: string;
+  readonly type?: string;
+  readonly function?: {
+    readonly name?: string;
+    readonly arguments?: string;
+  };
+}
+
+interface GitHubCopilotStreamToolCallDelta {
+  readonly index?: number;
   readonly id?: string;
   readonly type?: string;
   readonly function?: {
@@ -100,6 +122,10 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
       response = await this.sendChatRequest(context, exchangedToken);
     }
 
+    if (context.onTextDelta) {
+      return this.readStreamingStepResult(response, context);
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       this.responseLogger.log({
@@ -136,6 +162,38 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
       });
       throw error;
     }
+  }
+
+  private async readStreamingStepResult(
+    response: Response,
+    context: ProviderStepContext,
+  ): Promise<ProviderStepResult> {
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.responseLogger.log({
+        providerId: 'github-copilot',
+        category: 'http-error',
+        message: `GitHub Copilot request failed (${response.status})`,
+        requestUrl: this.apiUrl,
+        modelId: context.modelId,
+        status: response.status,
+        statusText: response.statusText,
+        responseText: errorText,
+      });
+      throw new ProviderError(`GitHub Copilot request failed (${response.status}): ${errorText || response.statusText}`);
+    }
+
+    const aggregate = createGitHubCopilotStreamingAggregate();
+    await consumeServerSentEventStream(response, (eventData) => {
+      if (eventData === '[DONE]') {
+        return;
+      }
+
+      const payload = parseGitHubCopilotStreamingPayload(eventData, this.responseLogger, this.apiUrl, context.modelId);
+      applyGitHubCopilotStreamingChunk(aggregate, payload, context.onTextDelta);
+    });
+
+    return extractGitHubCopilotStepResult(buildGitHubCopilotResponsePayloadFromStream(aggregate));
   }
 
   async runTask(request: ProviderRunRequest): Promise<ProviderRunResult> {
@@ -181,7 +239,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
       },
       body: JSON.stringify({
         model: request.modelId,
-        stream: false,
+        stream: Boolean(request.onTextDelta),
         messages: request.messages.map(toGitHubCopilotMessage),
         tools: request.availableTools.length > 0 ? request.availableTools.map(toGitHubCopilotToolDefinition) : undefined,
         tool_choice: request.availableTools.length > 0 ? 'auto' : undefined,
@@ -301,6 +359,28 @@ function parseGitHubCopilotExchangePayload(
       details: error,
     });
     throw new ProviderError('GitHub Copilot token exchange returned an invalid JSON response');
+  }
+}
+
+function parseGitHubCopilotStreamingPayload(
+  responseText: string,
+  logger: LlmResponseLogger,
+  requestUrl: string,
+  modelId: string,
+): GitHubCopilotStreamPayload {
+  try {
+    return JSON.parse(responseText) as GitHubCopilotStreamPayload;
+  } catch (error) {
+    logger.log({
+      providerId: 'github-copilot',
+      category: 'invalid-json',
+      message: 'GitHub Copilot returned invalid streaming JSON',
+      requestUrl,
+      modelId,
+      responseText,
+      details: error,
+    });
+    throw new ProviderError('GitHub Copilot returned an invalid streaming JSON response');
   }
 }
 
@@ -442,9 +522,10 @@ function extractGitHubCopilotStepResult(payload: GitHubCopilotResponsePayload): 
 }
 
 function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderToolCall {
-  const toolName = toolCall.function?.name;
-  if (!isProviderToolName(toolName)) {
-    throw new ProviderError(`GitHub Copilot returned unsupported tool call: ${toolName ?? 'unknown'}`);
+  const rawToolName = toolCall.function?.name?.trim();
+  const toolName = normalizeProviderToolName(rawToolName);
+  if (!toolName) {
+    throw new ProviderError(`GitHub Copilot returned unsupported tool call: ${rawToolName ?? 'unknown'}`);
   }
 
   const rawArguments = toolCall.function?.arguments?.trim();
@@ -493,7 +574,7 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('edit', parsedArguments),
+        args: parseProviderEditCompatibleToolArgs(parsedArguments),
       };
   }
 }
@@ -514,6 +595,76 @@ function parseGitHubCopilotToolCalls(toolCalls: GitHubCopilotToolCall[]): Provid
   };
 }
 
-function isProviderToolName(value: string | undefined): value is ProviderToolName {
-  return value === 'glob' || value === 'grep' || value === 'exec' || value === 'read';
+function createGitHubCopilotStreamingAggregate(): {
+  readonly contentParts: string[];
+  readonly toolCalls: Map<number, GitHubCopilotToolCall>;
+} {
+  return {
+    contentParts: [],
+    toolCalls: new Map<number, GitHubCopilotToolCall>(),
+  };
+}
+
+function applyGitHubCopilotStreamingChunk(
+  aggregate: ReturnType<typeof createGitHubCopilotStreamingAggregate>,
+  payload: GitHubCopilotStreamPayload,
+  onTextDelta: ProviderStepContext['onTextDelta'],
+): void {
+  const delta = payload.choices?.[0]?.delta;
+  if (!delta) {
+    return;
+  }
+
+  const textDelta = extractGitHubCopilotDeltaText(delta.content);
+  if (textDelta) {
+    aggregate.contentParts.push(textDelta);
+    onTextDelta?.(textDelta);
+  }
+
+  for (const toolCallDelta of delta.tool_calls ?? []) {
+    const index = toolCallDelta.index ?? aggregate.toolCalls.size;
+    const current = aggregate.toolCalls.get(index) ?? { function: {} };
+    aggregate.toolCalls.set(index, {
+      id: toolCallDelta.id ?? current.id,
+      type: toolCallDelta.type ?? current.type,
+      function: {
+        name: `${current.function?.name ?? ''}${toolCallDelta.function?.name ?? ''}` || undefined,
+        arguments: `${current.function?.arguments ?? ''}${toolCallDelta.function?.arguments ?? ''}` || undefined,
+      },
+    });
+  }
+}
+
+function buildGitHubCopilotResponsePayloadFromStream(
+  aggregate: ReturnType<typeof createGitHubCopilotStreamingAggregate>,
+): GitHubCopilotResponsePayload {
+  return {
+    choices: [
+      {
+        message: {
+          content: aggregate.contentParts.join(''),
+          tool_calls: [...aggregate.toolCalls.entries()]
+            .sort((left, right) => left[0] - right[0])
+            .map(([, toolCall]) => toolCall),
+        },
+      },
+    ],
+  };
+}
+
+function extractGitHubCopilotDeltaText(
+  content: string | Array<{ readonly text?: string }> | undefined,
+): string | undefined {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const text = content
+    .map((part) => part.text ?? '')
+    .join('');
+  return text || undefined;
 }

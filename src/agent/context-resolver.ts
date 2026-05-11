@@ -8,6 +8,7 @@ import type { MemoryService } from '../memory/memory-service';
 import type { PromptService } from '../prompts/prompt-service';
 import type { ProviderRegistry } from '../providers/provider-registry';
 import type { SessionService } from '../sessions/session-service';
+import type { WorkflowService } from '../workflow/workflow-service';
 import {
   contextCountSchema,
   type BackgroundSummaryStatus,
@@ -53,6 +54,7 @@ export interface ContextResolverDependencies {
   readonly agentInstanceService: AgentInstanceService;
   readonly providerRegistry: ProviderRegistry;
   readonly pepeResultService?: PepeResultService;
+  readonly workflowService?: Pick<WorkflowService, 'getWorkflowContext'>;
   readonly resolveBackgroundSummaryStatus?: (sessionId: string | null) => BackgroundSummaryStatus;
   readonly puebloProfileLoader?: PuebloProfileLoader;
 }
@@ -134,6 +136,16 @@ export class ContextResolver {
       selectedMemoryIds: session?.selectedMemoryIds ?? [],
       pendingUserInput: input.pendingUserInput,
     });
+    const workflowContext = session?.id
+      ? this.dependencies.workflowService?.getWorkflowContext(session.id) ?? null
+      : null;
+    const filteredResultItems = filterPinnedWorkflowResultItems(resolvedPepeResult.resultItems, workflowContext);
+    const filteredResultSet = resolvedPepeResult.resultSet
+      ? {
+        ...resolvedPepeResult.resultSet,
+        items: filteredResultItems,
+      }
+      : null;
     const contextCount = this.budgetService.compute({
       puebloTexts: [
         ...puebloProfile.roleDirectives,
@@ -147,7 +159,11 @@ export class ContextResolver {
         puebloProfile.summaryPolicy.lineageHint ?? '',
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
-      memoryTexts: resolvedPepeResult.resultItems.map((item) => item.summary),
+      memoryTexts: [
+        ...filteredResultItems.map((item) => item.summary),
+        workflowContext?.planSummary ?? '',
+        workflowContext?.todoSummary ?? '',
+      ],
       recentMessages: promptRecentMessages,
       pendingUserInput: input.pendingUserInput,
       modelContextWindow: selection.model?.contextWindow ?? null,
@@ -169,8 +185,9 @@ export class ContextResolver {
       selectedModelId: selection.model?.id ?? null,
       selectedModelName: selection.model?.name ?? selection.model?.id ?? null,
       prompts,
-      resultSet: resolvedPepeResult.resultSet,
-      resultItems: resolvedPepeResult.resultItems,
+      resultSet: filteredResultSet,
+      resultItems: filteredResultItems,
+      workflowContext,
       sessionMessages,
       recentMessages,
       puebloProfile,
@@ -307,4 +324,20 @@ function resolveDirectoryCandidate(candidatePath: string): string | null {
   } catch {
     return null;
   }
+}
+
+function filterPinnedWorkflowResultItems(
+  resultItems: TaskContext['resultItems'],
+  workflowContext: TaskContext['workflowContext'],
+) {
+  const pinnedIds = new Set([
+    workflowContext?.planMemoryId ?? null,
+    workflowContext?.todoMemoryId ?? null,
+  ].filter((id): id is string => Boolean(id)));
+
+  if (pinnedIds.size === 0) {
+    return [...resultItems];
+  }
+
+  return resultItems.filter((item) => !pinnedIds.has(item.memoryId));
 }

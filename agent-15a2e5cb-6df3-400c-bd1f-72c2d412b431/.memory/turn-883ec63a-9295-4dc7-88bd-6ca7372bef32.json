@@ -1,0 +1,18 @@
+{
+  "id": "883ec63a-9295-4dc7-88bd-6ca7372bef32",
+  "type": "short-term",
+  "title": "Turn 1030",
+  "content": "User:\n好的，修复并运行测试\n\nAssistant:\nTask failed: DeepSeek network request failed to https://api.deepseek.com/chat/completions: fetch failed",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured"
+  ],
+  "parentId": null,
+  "derivationType": "summary",
+  "summaryDepth": 0,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-10T15:10:04.909Z",
+  "updatedAt": "2026-05-10T15:10:04.909Z"
+}

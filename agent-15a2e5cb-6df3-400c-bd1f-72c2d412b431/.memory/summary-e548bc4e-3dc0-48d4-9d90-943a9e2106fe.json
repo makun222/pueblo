@@ -1,0 +1,20 @@
+{
+  "id": "e548bc4e-3dc0-48d4-9d90-943a9e2106fe",
+  "type": "short-term",
+  "title": "Summary: Turn 1044",
+  "content": "KnowledgeBase仓库已完成Obsidian导出相关的3个修复，全部9个测试通过。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "4c7e66bb-9f59-4756-9e04-cbe737cab0dc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-11T01:35:49.381Z",
+  "updatedAt": "2026-05-11T01:35:49.381Z"
+}

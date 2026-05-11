@@ -59,6 +59,15 @@ const pepeSchema = z.object({
   workingDirectoryPattern: z.string().min(1).default('agent-{agentInstanceId}'),
 });
 
+const workflowSchema = z.object({
+  enabled: z.boolean().default(true),
+  defaultWorkflowType: z.string().min(1).default('pueblo-plan'),
+  runtimeDirectory: z.string().min(1).default('.plans'),
+  deliverableFilePattern: z.string().min(1).default('{slug}.plan.md'),
+  maxDirectTaskSteps: z.number().int().positive().default(30),
+  routeKeywords: z.array(z.string().min(1)).default(['plan.md', '.plan.md', 'workflow']),
+});
+
 const appConfigSchema = z.object({
   databasePath: z.string().min(1).default(path.join('.pueblo', 'pueblo.db')),
   defaultProviderId: z.string().min(1).nullable().default(null),
@@ -89,6 +98,14 @@ const appConfigSchema = z.object({
     similarityThreshold: 0.8,
     workingDirectoryPattern: 'agent-{agentInstanceId}',
   }),
+  workflow: workflowSchema.default({
+    enabled: true,
+    defaultWorkflowType: 'pueblo-plan',
+    runtimeDirectory: '.plans',
+    deliverableFilePattern: '{slug}.plan.md',
+    maxDirectTaskSteps: 30,
+    routeKeywords: ['plan.md', '.plan.md', 'workflow'],
+  }),
   githubCopilot: githubCopilotSchema.default({
     apiUrl: DEFAULT_GITHUB_COPILOT_API_URL,
     exchangeUrl: DEFAULT_GITHUB_COPILOT_EXCHANGE_URL,
@@ -106,6 +123,7 @@ export type ProviderSetting = z.infer<typeof providerSettingSchema>;
 export type DesktopWindowConfig = z.infer<typeof desktopWindowSchema>;
 export type DeepSeekConfig = z.infer<typeof deepseekSchema>;
 export type PepeConfig = z.infer<typeof pepeSchema>;
+export type WorkflowConfig = z.infer<typeof workflowSchema>;
 export type GitHubCopilotConfig = z.infer<typeof githubCopilotSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;
 
@@ -139,5 +157,9 @@ export function loadAppConfig(options: ConfigLoadOptions = {}): AppConfig {
   return {
     ...config,
     databasePath: path.resolve(cwd, config.databasePath),
+    workflow: {
+      ...config.workflow,
+      runtimeDirectory: path.resolve(cwd, config.workflow.runtimeDirectory),
+    },
   };
 }

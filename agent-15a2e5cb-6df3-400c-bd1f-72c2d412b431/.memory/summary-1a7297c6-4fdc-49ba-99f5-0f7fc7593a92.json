@@ -1,0 +1,20 @@
+{
+  "id": "1a7297c6-4fdc-49ba-99f5-0f7fc7593a92",
+  "type": "short-term",
+  "title": "Summary: Turn 829",
+  "content": "User asked \"你认可这个方案吗？\" but assistant failed due to DeepSeek network error, so no acknowledgment occurred.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7766d440-43e5-4ec7-b5a0-5ea88dede6dc",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T05:05:12.447Z",
+  "updatedAt": "2026-05-05T05:05:12.447Z"
+}

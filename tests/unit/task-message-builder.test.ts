@@ -78,6 +78,58 @@ describe('task message builder', () => {
     expect(messages[4]?.content).toBe('Inspect the current failure');
   });
 
+  it('injects active workflow context as a dedicated system block ahead of Pepe result items', () => {
+    const context = createTaskContext({
+      config: createTestAppConfig(),
+      puebloProfile: createEmptyPuebloProfile(null),
+      workflowContext: {
+        workflowId: 'workflow-1',
+        workflowType: 'pueblo-plan',
+        status: 'round-active',
+        planSummary: 'Goal: implement workflow context\nAcceptance: prompt always includes active plan',
+        todoSummary: 'Round 1 tasks:\n- wire workflow context\n- validate prompt injection',
+        planMemoryId: 'memory-plan-1',
+        todoMemoryId: 'memory-todo-1',
+        runtimePlanPath: 'D:/workspace/.plans/workflow-1/context.plan.md',
+        deliverablePlanPath: null,
+        activeRoundNumber: 1,
+        updatedAt: new Date().toISOString(),
+      },
+      resultSet: {
+        sessionId: 'session-1',
+        agentInstanceId: 'agent-1',
+        inputFingerprint: 'inspect-current-failure',
+        generatedAt: new Date().toISOString(),
+        items: [
+          {
+            memoryId: 'memory-1',
+            summary: 'Repo fact: Repository uses sqlite.',
+            similarity: 0.91,
+            sourceSessionId: null,
+            vectorVersion: 'pepe-local-v1',
+          },
+        ],
+      },
+      sessionMessages: [],
+      contextCount: {
+        estimatedTokens: 0,
+        contextWindowLimit: null,
+        utilizationRatio: null,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+      },
+    });
+
+    const messages = buildProviderMessages(context, 'Inspect the current failure');
+
+    expect(messages[0]?.content).toContain('Active workflow context:');
+    expect(messages[0]?.content).toContain('Goal: implement workflow context');
+    expect(messages[0]?.content).toContain('Round 1 tasks:');
+    expect(messages[1]?.content).toContain('Relevant result items');
+  });
+
   it('dedupes repeated pueblo directives while preserving section order', () => {
     const profile = createEmptyPuebloProfile(null);
     profile.roleDirectives.push('Inspect root cause first.', 'Inspect root cause first.  ');

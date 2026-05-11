@@ -3,6 +3,7 @@ import type { Session } from '../shared/schema';
 import type { SessionMessage, SessionMessageRole } from '../shared/schema';
 import { SessionCommandError } from '../commands/command-errors';
 import type { MemoryService } from '../memory/memory-service';
+import type { ProviderUsage } from '../providers/provider-adapter';
 import { SessionQueries } from './session-queries';
 import type { SessionStore } from './session-repository';
 
@@ -156,6 +157,17 @@ export class SessionService {
     });
   }
 
+  addProviderUsage(sessionId: string, usage?: ProviderUsage | null): Session {
+    if (!usage) {
+      return this.requireSession(sessionId);
+    }
+
+    const session = this.requireSession(sessionId);
+    return this.updateSession(session, {
+      providerUsageStats: accumulateProviderUsageStats(session.providerUsageStats, usage),
+    });
+  }
+
   addSelectedPrompt(sessionId: string, promptId: string): Session {
     const session = this.requireSession(sessionId);
     return this.updateSession(session, {
@@ -219,6 +231,16 @@ export class SessionService {
     return this.queries.getCurrentSession();
   }
 
+  getMostRecentSessionForAgentInstance(agentInstanceId: string | null | undefined): Session | null {
+    if (!agentInstanceId) {
+      return null;
+    }
+
+    return this.queries.listSessions()
+      .filter((session) => session.agentInstanceId === agentInstanceId && session.status !== 'deleted')
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null;
+  }
+
   private requireSession(sessionId: string): Session {
     const session = this.repository.getById(sessionId);
 
@@ -242,4 +264,30 @@ export class SessionService {
 
 function uniqueValues(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function accumulateProviderUsageStats(
+  current: Session['providerUsageStats'],
+  usage: ProviderUsage,
+): Session['providerUsageStats'] {
+  const promptTokens = current.promptTokens + (usage.promptTokens ?? 0);
+  const completionTokens = current.completionTokens + (usage.completionTokens ?? 0);
+  const totalTokens = current.totalTokens + (usage.totalTokens ?? 0);
+  const promptCacheHitTokens = current.promptCacheHitTokens + (usage.promptCacheHitTokens ?? 0);
+  const promptCacheMissTokens = current.promptCacheMissTokens + (usage.promptCacheMissTokens ?? 0);
+  const cachedPromptTokens = current.cachedPromptTokens + (usage.promptTokensDetails?.cachedTokens ?? 0);
+  const reasoningTokens = current.reasoningTokens + (usage.completionTokensDetails?.reasoningTokens ?? 0);
+  const promptTokensSent = promptCacheHitTokens + promptCacheMissTokens;
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    promptCacheHitTokens,
+    promptCacheMissTokens,
+    cachedPromptTokens,
+    reasoningTokens,
+    promptTokensSent,
+    cacheHitRatio: promptTokensSent > 0 ? Number((promptCacheHitTokens / promptTokensSent).toFixed(4)) : null,
+  };
 }

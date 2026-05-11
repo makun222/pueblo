@@ -1,0 +1,20 @@
+{
+  "id": "2927e83f-5c54-4646-8c86-b4884b53918e",
+  "type": "short-term",
+  "title": "Summary: Turn 899",
+  "content": "Design Obsidian export from KnowledgeBase: hierarchical vault directory (categories, _notions index), Notion→Markdown with YAML + wikilink tables, Java interface `ObsidianExportService` (~650 lines over 4 phases).",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7dc5823e-bfba-4437-b9df-4e66345ea84b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:31:36.777Z",
+  "updatedAt": "2026-05-05T14:31:36.777Z"
+}

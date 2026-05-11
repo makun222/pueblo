@@ -1,0 +1,20 @@
+{
+  "id": "cd626467-4ad2-4df8-96ea-c02394dd1a6f",
+  "type": "short-term",
+  "title": "Summary: Turn 2",
+  "content": "User greeted; Assistant responded with philosophical inquiry into meaning of life and origin of consciousness.",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "f1a46316-95f4-46ee-87a1-c3a871e963a7",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "e26db175-9b70-4c7b-8ed0-00c1e478f639",
+  "createdAt": "2026-05-03T16:10:39.353Z",
+  "updatedAt": "2026-05-03T16:10:39.353Z"
+}

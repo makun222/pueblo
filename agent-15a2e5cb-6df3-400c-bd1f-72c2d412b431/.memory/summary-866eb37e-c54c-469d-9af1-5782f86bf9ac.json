@@ -1,0 +1,20 @@
+{
+  "id": "866eb37e-c54c-469d-9af1-5782f86bf9ac",
+  "type": "short-term",
+  "title": "Summary: Turn 915",
+  "content": "P2已完成：添加picocli 4.7.6依赖，新建CliMain（默认流水线回调）和ObsidianExportCommand（支持--vault和--db选项），修改KnowledgeBaseApplication.main()在有参数时分派给CLI，实现向后兼容。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "3c12127e-058d-4d76-b73f-8f3c6b706772",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T15:11:00.017Z",
+  "updatedAt": "2026-05-05T15:11:00.017Z"
+}

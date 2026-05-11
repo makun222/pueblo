@@ -2,6 +2,16 @@ import type { MemoryRecord, MemoryScope } from '../shared/schema';
 import { MemoryQueries } from './memory-queries';
 import type { MemoryStore } from './memory-repository';
 import type { CreateMemoryModelOptions } from './memory-model';
+import type { WorkflowInstance } from '../shared/schema';
+import {
+  buildWorkflowPlanMemoryContent,
+  buildWorkflowPlanMemoryTags,
+  buildWorkflowPlanMemoryTitle,
+  buildWorkflowTodoMemoryContent,
+  buildWorkflowTodoMemoryTags,
+  buildWorkflowTodoMemoryTitle,
+} from './workflow-memory';
+import type { PuebloPlanRound, PuebloPlanTask } from '../workflow/pueblo-plan/pueblo-plan-markdown';
 
 export class MemoryService {
   private readonly queries: MemoryQueries;
@@ -79,6 +89,38 @@ export class MemoryService {
         parentId: args.parentMemory.id,
         derivationType: 'summary',
         summaryDepth: args.parentMemory.summaryDepth + 1,
+        sourceSessionId: args.sessionId,
+      },
+    );
+  }
+
+  createWorkflowPlanMemory(args: {
+    readonly workflow: WorkflowInstance;
+    readonly sessionId: string;
+  }): MemoryRecord {
+    return this.createMemory(
+      buildWorkflowPlanMemoryTitle(args.workflow),
+      buildWorkflowPlanMemoryContent(args.workflow),
+      'session',
+      {
+        tags: buildWorkflowPlanMemoryTags(args.workflow.type),
+        sourceSessionId: args.sessionId,
+      },
+    );
+  }
+
+  createWorkflowTodoMemory(args: {
+    readonly workflow: WorkflowInstance;
+    readonly sessionId: string;
+    readonly round: PuebloPlanRound;
+    readonly tasks: PuebloPlanTask[];
+  }): MemoryRecord {
+    return this.createMemory(
+      buildWorkflowTodoMemoryTitle({ workflow: args.workflow, round: args.round }),
+      buildWorkflowTodoMemoryContent({ workflow: args.workflow, round: args.round, tasks: args.tasks }),
+      'session',
+      {
+        tags: buildWorkflowTodoMemoryTags(args.workflow.type),
         sourceSessionId: args.sessionId,
       },
     );

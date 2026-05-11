@@ -6,6 +6,7 @@ import { DeepSeekAdapter } from '../../src/providers/deepseek-adapter';
 import { resolveDeepSeekAuth } from '../../src/providers/deepseek-auth';
 import { createDeepSeekProfile } from '../../src/providers/deepseek-profile';
 import {
+  providerEditToolInputSchema,
   getToolExecutionPolicy,
   providerGlobToolInputSchema,
   providerReadToolInputSchema,
@@ -26,6 +27,54 @@ describe('DeepSeek Provider Contract', () => {
     expect(adapter).toBeInstanceOf(DeepSeekAdapter);
     expect(profile.id).toBe('deepseek');
     expect(profile.defaultModelId).toBe('deepseek-v4-flash');
+  });
+
+  it('should preserve DeepSeek usage fields on task execution responses', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'DeepSeek output',
+            },
+          },
+        ],
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 45,
+          total_tokens: 165,
+          prompt_cache_hit_tokens: 80,
+          prompt_cache_miss_tokens: 40,
+        },
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const result = await adapter.runTask({
+      modelId: 'deepseek-v4-flash',
+      goal: 'Inspect repository state',
+      inputContextSummary: 'Task execution test',
+    });
+
+    expect(result).toMatchObject({
+      outputSummary: 'DeepSeek output',
+      usage: {
+        promptTokens: 120,
+        completionTokens: 45,
+        totalTokens: 165,
+        promptCacheHitTokens: 80,
+        promptCacheMissTokens: 40,
+      },
+    });
   });
 
   it('should handle task execution requests', async () => {
@@ -60,6 +109,93 @@ describe('DeepSeek Provider Contract', () => {
     expect(result.outputSummary).toBe('DeepSeek output');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://api.deepseek.com/chat/completions');
+  });
+
+  it('should stream DeepSeek final text deltas through the step callback', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response([
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+        '',
+        'data: {"choices":[{"delta":{"content":" world"}}]}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+        },
+      }),
+    );
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const streamedText: string[] = [];
+    const result = await adapter.runStep({
+      modelId: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Say hello.' }],
+      availableTools: [],
+      onTextDelta: (text) => {
+        streamedText.push(text);
+      },
+    });
+
+    expect(result).toEqual({
+      type: 'final',
+      outputSummary: 'Hello world',
+    });
+    expect(streamedText).toEqual(['Hello', ' world']);
+  });
+
+  it('should preserve DeepSeek usage fields from streaming responses', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response([
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+        '',
+        'data: {"choices":[{"delta":{"content":" world"}}]}',
+        '',
+        'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":120,"completion_tokens":45,"total_tokens":165,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":40}}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+        },
+      }),
+    );
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const streamedText: string[] = [];
+    const result = await adapter.runStep({
+      modelId: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Say hello.' }],
+      availableTools: [],
+      onTextDelta: (text) => {
+        streamedText.push(text);
+      },
+    });
+
+    expect(result).toMatchObject({
+      type: 'final',
+      outputSummary: 'Hello world',
+      usage: {
+        promptTokens: 120,
+        completionTokens: 45,
+        totalTokens: 165,
+        promptCacheHitTokens: 80,
+        promptCacheMissTokens: 40,
+      },
+    });
+    expect(streamedText).toEqual(['Hello', ' world']);
   });
 
   it('should validate DeepSeek credentials', () => {
@@ -247,6 +383,287 @@ describe('DeepSeek Provider Contract', () => {
     const assistantMessage = secondRequestPayload.messages?.find((message) => message.role === 'assistant');
 
     expect(assistantMessage?.reasoning_content).toBe('Need repository visibility before answering.');
+  });
+
+  it('should accept edit tool calls returned by DeepSeek', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'I can apply the requested edit now.',
+              tool_calls: [
+                {
+                  id: 'tool-edit-1',
+                  type: 'function',
+                  function: {
+                    name: 'edit',
+                    arguments: JSON.stringify({
+                      path: 'src/example.ts',
+                      oldText: 'alpha',
+                      newText: 'beta',
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const context: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: 'Replace alpha with beta.' },
+      ],
+      availableTools: [
+        {
+          name: 'edit',
+          description: 'Edit a file',
+          executionPolicy: getToolExecutionPolicy('edit'),
+          inputSchema: providerEditToolInputSchema,
+        },
+      ],
+    };
+
+    const result = await adapter.runStep(context);
+
+    expect(result.type).toBe('tool-call');
+    if (result.type !== 'tool-call') {
+      throw new Error('Expected tool-call result');
+    }
+
+    expect(result.toolName).toBe('edit');
+    expect(result.toolCallId).toBe('tool-edit-1');
+    expect(result.args).toEqual({
+      path: 'src/example.ts',
+      oldText: 'alpha',
+      newText: 'beta',
+    });
+  });
+
+  it('should accept create-file edit tool calls returned by DeepSeek', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'I can create the file now.',
+              tool_calls: [
+                {
+                  id: 'tool-edit-create-1',
+                  type: 'function',
+                  function: {
+                    name: 'edit',
+                    arguments: JSON.stringify({
+                      path: 'src/example.ts',
+                      oldText: '',
+                      newText: 'export const value = 1;\n',
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const context: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: 'Create src/example.ts.' },
+      ],
+      availableTools: [
+        {
+          name: 'edit',
+          description: 'Edit a file',
+          executionPolicy: getToolExecutionPolicy('edit'),
+          inputSchema: providerEditToolInputSchema,
+        },
+      ],
+    };
+
+    const result = await adapter.runStep(context);
+
+    expect(result.type).toBe('tool-call');
+    if (result.type !== 'tool-call') {
+      throw new Error('Expected tool-call result');
+    }
+
+    expect(result.toolName).toBe('edit');
+    expect(result.toolCallId).toBe('tool-edit-create-1');
+    expect(result.args).toEqual({
+      path: 'src/example.ts',
+      oldText: '',
+      newText: 'export const value = 1;\n',
+    });
+  });
+
+  it('should accept legacy write tool calls returned by DeepSeek', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'I can write the file now.',
+              tool_calls: [
+                {
+                  id: 'tool-write-1',
+                  type: 'function',
+                  function: {
+                    name: 'write',
+                    arguments: JSON.stringify({
+                      path: 'src/example.ts',
+                      content: 'export const value = 1;\n',
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const context: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: 'Create src/example.ts.' },
+      ],
+      availableTools: [
+        {
+          name: 'edit',
+          description: 'Edit a file',
+          executionPolicy: getToolExecutionPolicy('edit'),
+          inputSchema: providerEditToolInputSchema,
+        },
+      ],
+    };
+
+    const result = await adapter.runStep(context);
+
+    expect(result.type).toBe('tool-call');
+    if (result.type !== 'tool-call') {
+      throw new Error('Expected tool-call result');
+    }
+
+    expect(result.toolName).toBe('edit');
+    expect(result.toolCallId).toBe('tool-write-1');
+    expect(result.args).toEqual({
+      path: 'src/example.ts',
+      oldText: '',
+      newText: 'export const value = 1;\n',
+    });
+  });
+
+  it('should accept start-only edit tool calls returned by DeepSeek', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'I can update the lower section now.',
+              tool_calls: [
+                {
+                  id: 'tool-edit-start-1',
+                  type: 'function',
+                  function: {
+                    name: 'edit',
+                    arguments: JSON.stringify({
+                      path: 'src/example.ts',
+                      oldText: 'alpha',
+                      newText: 'beta',
+                      startLine: 20,
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const context: ProviderStepContext = {
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: 'Update the lower section from line 20 onward.' },
+      ],
+      availableTools: [
+        {
+          name: 'edit',
+          description: 'Edit a file',
+          executionPolicy: getToolExecutionPolicy('edit'),
+          inputSchema: providerEditToolInputSchema,
+        },
+      ],
+    };
+
+    const result = await adapter.runStep(context);
+
+    expect(result.type).toBe('tool-call');
+    if (result.type !== 'tool-call') {
+      throw new Error('Expected tool-call result');
+    }
+
+    expect(result.toolName).toBe('edit');
+    expect(result.toolCallId).toBe('tool-edit-start-1');
+    expect(result.args).toEqual({
+      path: 'src/example.ts',
+      oldText: 'alpha',
+      newText: 'beta',
+      startLine: 20,
+    });
   });
 
   it('should preserve multiple DeepSeek tool calls within one assistant turn', async () => {
@@ -437,6 +854,62 @@ describe('DeepSeek Provider Contract', () => {
       toolCallId: 'tool-read-1',
       toolName: 'read',
       args: { path: 'src/agent/task-runner.ts' },
+      rationale: undefined,
+      reasoningContent: undefined,
+    });
+  });
+
+  it('should accept start-only read tool calls returned by DeepSeek', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  id: 'tool-read-start-1',
+                  type: 'function',
+                  function: {
+                    name: 'read',
+                    arguments: JSON.stringify({ path: 'src/agent/task-runner.ts', startLine: 200 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'deepseek-v4-pro',
+      messages: [{ role: 'user', content: 'Read the rest of the task runner from line 200.' }],
+      availableTools: [
+        {
+          name: 'read',
+          description: 'Read a file',
+          executionPolicy: getToolExecutionPolicy('read'),
+          inputSchema: providerReadToolInputSchema,
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      type: 'tool-call',
+      toolCallId: 'tool-read-start-1',
+      toolName: 'read',
+      args: { path: 'src/agent/task-runner.ts', startLine: 200 },
       rationale: undefined,
       reasoningContent: undefined,
     });

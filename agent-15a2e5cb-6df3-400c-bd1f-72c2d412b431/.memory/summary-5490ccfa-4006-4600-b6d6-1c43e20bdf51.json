@@ -1,0 +1,20 @@
+{
+  "id": "5490ccfa-4006-4600-b6d6-1c43e20bdf51",
+  "type": "short-term",
+  "title": "Summary: Turn 899",
+  "content": "用户设计了一个将 KnowledgeBase 中的 Notion/关系数据导出为 Obsidian Markdown 格式的方案，包括分层目录结构（按 category 分组）、YAML front matter、双向 wikilink 表格，以及 Java 接口 `ObsidianExportService`，实现规模约 650 行。",
+  "scope": "session",
+  "status": "active",
+  "tags": [
+    "conversation-turn",
+    "auto-captured",
+    "pepe-summary",
+    "semantic-summary"
+  ],
+  "parentId": "7dc5823e-bfba-4437-b9df-4e66345ea84b",
+  "derivationType": "summary",
+  "summaryDepth": 1,
+  "sourceSessionId": "75fc05db-e26e-4edb-82e0-5cc1b4bcae5f",
+  "createdAt": "2026-05-05T14:31:32.941Z",
+  "updatedAt": "2026-05-05T14:31:32.941Z"
+}
