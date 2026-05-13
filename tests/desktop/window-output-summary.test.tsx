@@ -575,6 +575,52 @@ describe('Desktop Output Summary Rendering', () => {
     expect(screen.getByText('42.9%')).toBeTruthy();
   });
 
+  it('keeps file approval rows concise and preserves the highlighted allow button class', async () => {
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true,
+      value: {
+        ...window.electronAPI,
+        getToolApprovalState: vi.fn().mockResolvedValue({
+          activeBatch: {
+            id: 'batch-1',
+            taskId: 'task-1',
+            createdAt: '2026-05-12T00:00:00.000Z',
+            requests: [
+              {
+                id: 'call-edit-1',
+                toolCallId: 'call-edit-1',
+                toolName: 'edit',
+                title: 'Allow edit in src/desktop/renderer/App.tsx?',
+                summary: 'Edit src/desktop/renderer/App.tsx by replacing renderToolApprovalSidebar with a compact approval row.',
+                detail: 'Edit approval detail',
+                targetLabel: 'src/desktop/renderer/App.tsx',
+                operationLabel: 'edit',
+              },
+              {
+                id: 'call-exec-1',
+                toolCallId: 'call-exec-1',
+                toolName: 'exec',
+                title: 'Allow command execution in the workspace?',
+                summary: 'Command: npm test',
+                detail: 'Exec approval detail',
+                targetLabel: 'npm test',
+                operationLabel: 'exec',
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    render(createElement(App));
+
+    expect(await screen.findByText('Queued Calls')).toBeTruthy();
+    expect(screen.getByText('App.tsx')).toBeTruthy();
+    expect(screen.queryByText(/compact approval row/i)).toBeNull();
+    expect(screen.getByText('Command: npm test')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Allow' }).className).toContain('tool-approval-allow-button');
+  });
+
   it('shows the agent picker before a session is started', async () => {
     Object.defineProperty(window, 'electronAPI', {
       configurable: true,

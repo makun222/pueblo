@@ -15,6 +15,9 @@ const THINKING_PLACEHOLDER = 'Thinking through the next step...';
 const STREAM_CHUNK_SIZE = 24;
 const STREAM_TICK_MS = 18;
 const VISIBLE_TRANSCRIPT_GROUP_LIMIT = 10;
+const TOOL_APPROVAL_SIDEBAR_MIN_WIDTH = 280;
+const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
+const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
 const EMPTY_TOOL_APPROVAL_STATE: DesktopToolApprovalState = {
   activeBatch: null,
 };
@@ -175,6 +178,8 @@ export function App() {
   const [transcriptSearchInput, setTranscriptSearchInput] = useState('');
   const [transcriptSearchTerm, setTranscriptSearchTerm] = useState('');
   const [isTranscriptHistoryExpanded, setIsTranscriptHistoryExpanded] = useState(false);
+  const [toolApprovalSidebarWidth, setToolApprovalSidebarWidth] = useState(TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH);
+  const [isResizingToolApprovalSidebar, setIsResizingToolApprovalSidebar] = useState(false);
   const runtimeStatusRef = useRef(runtimeStatus);
   const selectedToolApprovalIdsRef = useRef<string[]>([]);
   const pendingAssistantEntryIdRef = useRef<string | null>(null);
@@ -182,6 +187,7 @@ export function App() {
   const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRunIdRef = useRef(0);
   const outputPaneRef = useRef<HTMLElement | null>(null);
+  const toolApprovalSidebarRef = useRef<HTMLElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
 
   const refreshActiveSessionMemories = async (sessionId: string | null) => {
@@ -281,6 +287,33 @@ export function App() {
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ block: 'end' });
   }, [transcriptEntries]);
+
+  useEffect(() => {
+    if (!isResizingToolApprovalSidebar) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const sidebarRect = toolApprovalSidebarRef.current?.getBoundingClientRect();
+      if (!sidebarRect) {
+        return;
+      }
+
+      setToolApprovalSidebarWidth(clampToolApprovalSidebarWidth(sidebarRect.right - event.clientX));
+    };
+
+    const stopResizing = () => {
+      setIsResizingToolApprovalSidebar(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', stopResizing);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizingToolApprovalSidebar]);
 
   useEffect(() => {
     const disposeMenuAction = window.electronAPI.onMenuAction((action) => {
@@ -825,7 +858,7 @@ export function App() {
   const workspaceColumns = [
     'minmax(0, 1fr)',
     ...(isSessionSidebarOpen ? ['minmax(280px, 24vw)'] : []),
-    ...(isToolApprovalSidebarOpen ? ['minmax(260px, 21vw)'] : []),
+    ...(isToolApprovalSidebarOpen ? [`minmax(${TOOL_APPROVAL_SIDEBAR_MIN_WIDTH}px, ${toolApprovalSidebarWidth}px)`] : []),
     ...(isTodoSidebarOpen ? ['minmax(260px, 21vw)'] : []),
   ].join(' ');
   const effectiveSelectedToolApprovalIds = activeToolApprovalBatch && !hasEditedToolApprovalSelection
@@ -862,6 +895,11 @@ export function App() {
     } finally {
       setIsResolvingToolApproval(false);
     }
+  };
+
+  const handleStartToolApprovalSidebarResize = (event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsResizingToolApprovalSidebar(true);
   };
 
   const handleTranscriptSearchSubmit = (event: React.FormEvent) => {
@@ -1044,7 +1082,17 @@ export function App() {
           </aside>
         ) : null}
         {isToolApprovalSidebarOpen ? (
-          <aside className="workspace-sidebar workspace-sidebar-approval" aria-label="workspace-tool-approval-sidebar">
+          <aside
+            ref={toolApprovalSidebarRef}
+            className={`workspace-sidebar workspace-sidebar-approval ${isResizingToolApprovalSidebar ? 'workspace-sidebar-approval-resizing' : ''}`}
+            aria-label="workspace-tool-approval-sidebar"
+          >
+            <button
+              type="button"
+              className="workspace-sidebar-resize-handle"
+              aria-label="Resize tool approval sidebar"
+              onMouseDown={handleStartToolApprovalSidebarResize}
+            />
             {renderToolApprovalSidebar({
               toolApprovalBatch: activeToolApprovalBatch,
               selectedRequestIds: effectiveSelectedToolApprovalIds,
@@ -1154,7 +1202,7 @@ export function App() {
         </div>
       </section>
       <form className="input-pane" aria-label="input-region" onSubmit={handleSubmit}>
-        <label className="input-label" htmlFor="pueblo-input">pueblo&gt;</label>
+        <label className="input-label" htmlFor="pueblo-input">Pueblo&gt;</label>
         <input
           id="pueblo-input"
           type="text"
@@ -1347,6 +1395,8 @@ function renderToolApprovalSidebar(args: {
             <div className="tool-approval-list" role="list" aria-label="tool-approval-list">
               {args.toolApprovalBatch.requests.map((request) => {
                 const isSelected = args.selectedRequestIds.includes(request.id);
+                const displayTargetLabel = getToolApprovalDisplayLabel(request.targetLabel);
+                const displaySummary = getToolApprovalDisplaySummary(request.summary, request.targetLabel, displayTargetLabel);
                 return (
                   <article
                     key={request.id}
@@ -1355,10 +1405,10 @@ function renderToolApprovalSidebar(args: {
                   >
                     <div className="tool-approval-row-main">
                       <div className="tool-approval-row-line">
-                        <span className="tool-approval-target">{request.targetLabel}</span>
+                        <span className="tool-approval-target">{displayTargetLabel}</span>
                         <span className="tool-approval-operation">{request.operationLabel}</span>
                       </div>
-                      <p className="tool-approval-summary">{request.summary}</p>
+                      {displaySummary ? <p className="tool-approval-summary">{displaySummary}</p> : null}
                     </div>
                     <button
                       type="button"
@@ -1377,7 +1427,7 @@ function renderToolApprovalSidebar(args: {
             <div className="tool-approval-actions">
               <button
                 type="button"
-                className="provider-config-primary"
+                className="provider-config-primary tool-approval-allow-button"
                 onClick={args.onAllow}
                 disabled={args.isResolvingToolApproval}
               >
@@ -1609,6 +1659,50 @@ function formatCredentialSource(value: DesktopProviderStatus['credentialSource']
     default:
       return 'Environment variable';
   }
+}
+
+function clampToolApprovalSidebarWidth(value: number): number {
+  return Math.min(TOOL_APPROVAL_SIDEBAR_MAX_WIDTH, Math.max(TOOL_APPROVAL_SIDEBAR_MIN_WIDTH, Math.round(value)));
+}
+
+function getToolApprovalDisplayLabel(targetLabel: string): string {
+  const trimmed = targetLabel.trim();
+  if (!trimmed) {
+    return 'workspace';
+  }
+
+  const normalized = trimmed.replace(/\\/g, '/');
+  if (!normalized.includes('/')) {
+    return trimmed;
+  }
+
+  const segments = normalized.split('/').filter((segment) => segment.length > 0);
+  return segments.at(-1) ?? trimmed;
+}
+
+function getToolApprovalDisplaySummary(summary: string, targetLabel: string, displayTargetLabel: string): string {
+  if (isToolApprovalFileTarget(targetLabel)) {
+    return '';
+  }
+
+  if (!summary.includes(targetLabel) || displayTargetLabel === targetLabel) {
+    return summary;
+  }
+
+  return summary.replaceAll(targetLabel, displayTargetLabel);
+}
+
+function isToolApprovalFileTarget(targetLabel: string): boolean {
+  const trimmed = targetLabel.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.includes('/') || trimmed.includes('\\')) {
+    return true;
+  }
+
+  return /\.[A-Za-z0-9_-]+$/.test(trimmed);
 }
 
 function findProviderProfile(profiles: ProviderProfile[], providerId: string | null): ProviderProfile | null {

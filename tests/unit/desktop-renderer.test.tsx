@@ -380,8 +380,9 @@ describe('Desktop Renderer', () => {
 
     expect(await screen.findByLabelText('workspace-tool-approval-sidebar')).toBeTruthy();
     expect(screen.getByLabelText('workspace-todo-sidebar')).toBeTruthy();
-    expect(await screen.findByText('Pending Requests')).toBeTruthy();
-    expect(screen.getByText('src/desktop/renderer/App.tsx')).toBeTruthy();
+    expect(await screen.findByText('Queued Calls')).toBeTruthy();
+    expect(screen.getByLabelText('Resize tool approval sidebar')).toBeTruthy();
+    expect(screen.getByText('App.tsx')).toBeTruthy();
     expect(screen.getByText('Merge tool approvals into sidebar')).toBeTruthy();
     expect(screen.getByText('Show todo items below approval list')).toBeTruthy();
 
