@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 import { providerEditToolArgsSchema } from '../../src/providers/provider-adapter';
 import { buildEditApprovalPreview, createEditTool } from '../../src/tools/edit-tool';
 
@@ -263,6 +265,128 @@ describe('edit tool', () => {
       oldText: '',
       newText: 'alpha',
     });
+  });
+
+  it('automatically exports edited document attachment JSON back to the source docx file', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-attachment-docx-'));
+    tempDirs.push(tempDir);
+    const assetPath = path.join(tempDir, 'attachment.json');
+    const sourcePath = path.join(tempDir, 'notes.docx');
+    const originalJson = JSON.stringify({
+      attachmentId: 'att-doc',
+      kind: 'document',
+      source: {
+        fileName: 'notes.docx',
+        originalPath: sourcePath,
+        extension: '.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      asset: {
+        jsonPath: assetPath,
+        createdAt: new Date().toISOString(),
+        sizeBytes: 0,
+        editable: true,
+        schemaVersion: 1,
+      },
+      summary: {
+        isLarge: false,
+        chunkCount: 1,
+        sheetCount: null,
+        rowCount: null,
+        cellCount: null,
+        previewText: 'Original paragraph',
+      },
+      content: {
+        chunks: [
+          { index: 0, heading: null, text: 'Original paragraph' },
+        ],
+      },
+    }, null, 2);
+    fs.writeFileSync(assetPath, originalJson, 'utf8');
+
+    const editTool = createEditTool();
+    const result = await editTool({
+      cwd: tempDir,
+      path: assetPath,
+      oldText: '"text": "Original paragraph"',
+      newText: '"text": "Updated paragraph from edited JSON"',
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.summary).toContain('Exported notes.docx');
+  expect(result.fileChanges).toHaveLength(2);
+  expect(result.fileChanges?.[1]?.absolutePath).toBe(sourcePath);
+  expect(result.fileChanges?.[1]?.currentContent).toContain('Updated paragraph from edited JSON');
+    expect(fs.existsSync(sourcePath)).toBe(true);
+
+    const extracted = await mammoth.extractRawText({ path: sourcePath });
+    expect(extracted.value).toContain('Updated paragraph from edited JSON');
+  });
+
+  it('automatically exports edited spreadsheet attachment JSON back to the source xlsx file', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-attachment-xlsx-'));
+    tempDirs.push(tempDir);
+    const assetPath = path.join(tempDir, 'spreadsheet.json');
+    const sourcePath = path.join(tempDir, 'budget.xlsx');
+    const originalJson = JSON.stringify({
+      attachmentId: 'att-xlsx',
+      kind: 'spreadsheet',
+      source: {
+        fileName: 'budget.xlsx',
+        originalPath: sourcePath,
+        extension: '.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      asset: {
+        jsonPath: assetPath,
+        createdAt: new Date().toISOString(),
+        sizeBytes: 0,
+        editable: true,
+        schemaVersion: 1,
+      },
+      summary: {
+        isLarge: false,
+        chunkCount: null,
+        sheetCount: 1,
+        rowCount: 1,
+        cellCount: 1,
+        previewText: 'Sheet1: A1=Alpha',
+      },
+      content: {
+        sheets: [
+          {
+            name: 'Sheet1',
+            rows: [
+              {
+                rowIndex: 1,
+                cells: [
+                  { column: 'A', address: 'A1', value: 'Alpha' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    }, null, 2);
+    fs.writeFileSync(assetPath, originalJson, 'utf8');
+
+    const editTool = createEditTool();
+    const result = await editTool({
+      cwd: tempDir,
+      path: assetPath,
+      oldText: '"value": "Alpha"',
+      newText: '"value": "Updated Alpha"',
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.summary).toContain('Exported budget.xlsx');
+  expect(result.fileChanges).toHaveLength(2);
+  expect(result.fileChanges?.[1]?.absolutePath).toBe(sourcePath);
+  expect(result.fileChanges?.[1]?.currentContent).toContain('Sheet1!A1 = Updated Alpha');
+    expect(fs.existsSync(sourcePath)).toBe(true);
+
+    const workbook = XLSX.readFile(sourcePath);
+    expect(workbook.Sheets.Sheet1?.A1?.v).toBe('Updated Alpha');
   });
 
   it('rejects ranged create-file edits in the provider schema', () => {

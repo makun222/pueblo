@@ -17,6 +17,7 @@ import { ProviderAuthError, ProviderError } from './provider-errors';
 import type { GitHubCopilotTokenType } from './github-copilot-auth';
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
 import { consumeServerSentEventStream } from './server-sent-events';
+import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
 
 interface GitHubCopilotResponsePayload {
   readonly choices?: Array<{
@@ -118,7 +119,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     let response = await this.sendChatRequest(context, this.options.token);
 
     if (!response.ok && tokenType === 'github-auth-token' && shouldFallbackToExchange(response.status)) {
-      const exchangedToken = await this.resolveExchangedAccessToken();
+      const exchangedToken = await this.resolveExchangedAccessToken(context.signal);
       response = await this.sendChatRequest(context, exchangedToken);
     }
 
@@ -184,14 +185,22 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     }
 
     const aggregate = createGitHubCopilotStreamingAggregate();
-    await consumeServerSentEventStream(response, (eventData) => {
-      if (eventData === '[DONE]') {
-        return;
+    try {
+      await consumeServerSentEventStream(response, (eventData) => {
+        if (eventData === '[DONE]') {
+          return;
+        }
+
+        const payload = parseGitHubCopilotStreamingPayload(eventData, this.responseLogger, this.apiUrl, context.modelId);
+        applyGitHubCopilotStreamingChunk(aggregate, payload, context.onTextDelta);
+      });
+    } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw toTaskCancellationError(error, 'GitHub Copilot stream was cancelled.');
       }
 
-      const payload = parseGitHubCopilotStreamingPayload(eventData, this.responseLogger, this.apiUrl, context.modelId);
-      applyGitHubCopilotStreamingChunk(aggregate, payload, context.onTextDelta);
-    });
+      throw error;
+    }
 
     return extractGitHubCopilotStepResult(buildGitHubCopilotResponsePayloadFromStream(aggregate));
   }
@@ -215,12 +224,12 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     };
   }
 
-  private async resolveExchangedAccessToken(): Promise<string> {
+  private async resolveExchangedAccessToken(signal?: AbortSignal): Promise<string> {
     if (this.cachedExchangeToken && !isTokenExpired(this.cachedExchangeToken.expiresAt)) {
       return this.cachedExchangeToken.token;
     }
 
-    const exchanged = await this.exchangeGitHubToken(this.options.token);
+    const exchanged = await this.exchangeGitHubToken(this.options.token, signal);
     this.cachedExchangeToken = exchanged;
     return exchanged.token;
   }
@@ -244,10 +253,11 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
         tools: request.availableTools.length > 0 ? request.availableTools.map(toGitHubCopilotToolDefinition) : undefined,
         tool_choice: request.availableTools.length > 0 ? 'auto' : undefined,
       }),
+      signal: request.signal,
     });
   }
 
-  private async exchangeGitHubToken(token: string): Promise<CachedExchangeToken> {
+  private async exchangeGitHubToken(token: string, signal?: AbortSignal): Promise<CachedExchangeToken> {
     let lastErrorMessage = 'GitHub Copilot token exchange failed';
 
     for (const authorization of [`token ${token}`, `Bearer ${token}`]) {
@@ -260,6 +270,7 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
           'Editor-Version': this.editorVersion,
           'Editor-Plugin-Version': this.editorPluginVersion,
         },
+        signal,
       });
 
       if (!response.ok) {
@@ -305,6 +316,10 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
     try {
       return await this.fetchImpl(input, init);
     } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw toTaskCancellationError(error, 'GitHub Copilot request was cancelled.');
+      }
+
       this.responseLogger.log({
         providerId: 'github-copilot',
         category: 'network-error',

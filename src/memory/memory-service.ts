@@ -13,6 +13,9 @@ import {
 } from './workflow-memory';
 import type { PuebloPlanRound, PuebloPlanTask } from '../workflow/pueblo-plan/pueblo-plan-markdown';
 
+const WORKSPACE_MEMORY_TITLE = 'Workspace Root';
+const WORKSPACE_MEMORY_TAG = 'workspace-setting';
+
 export class MemoryService {
   private readonly queries: MemoryQueries;
 
@@ -22,6 +25,27 @@ export class MemoryService {
 
   createMemory(title: string, content: string, scope: MemoryScope, options: CreateMemoryModelOptions = {}): MemoryRecord {
     return this.repository.create(title, content, scope, options);
+  }
+
+  expireMemories(memoryIds: string[]): MemoryRecord[] {
+    const now = new Date().toISOString();
+    const updated: MemoryRecord[] = [];
+
+    for (const memoryId of memoryIds) {
+      const memory = this.repository.getById(memoryId);
+
+      if (!memory || memory.status !== 'active') {
+        continue;
+      }
+
+      updated.push(this.repository.save({
+        ...memory,
+        status: 'expired',
+        updatedAt: now,
+      }));
+    }
+
+    return updated;
   }
 
   listMemories(): MemoryRecord[] {
@@ -54,6 +78,73 @@ export class MemoryService {
 
   listSessionMemories(sessionId: string): MemoryRecord[] {
     return this.listMemories().filter((memory) => memory.sourceSessionId === sessionId);
+  }
+
+  getWorkspaceMemory(): MemoryRecord | null {
+    return this.listMemories()
+      .filter((memory) => memory.scope === 'global' && memory.tags.includes(WORKSPACE_MEMORY_TAG))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null;
+  }
+
+  getWorkspacePath(): string | null {
+    const memory = this.getWorkspaceMemory();
+    if (!memory) {
+      return null;
+    }
+
+    const workspaceLine = memory.content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('workspace:'));
+
+    if (!workspaceLine) {
+      return null;
+    }
+
+    const workspacePath = workspaceLine.slice('workspace:'.length).trim();
+    return workspacePath.length > 0 ? workspacePath : null;
+  }
+
+  setWorkspacePath(workspacePath: string): MemoryRecord {
+    const normalizedWorkspacePath = workspacePath.trim();
+    if (!normalizedWorkspacePath) {
+      throw new Error('Workspace path is required');
+    }
+
+    const now = new Date().toISOString();
+    const existingWorkspaceMemories = this.listMemories()
+      .filter((memory) => memory.scope === 'global' && memory.tags.includes(WORKSPACE_MEMORY_TAG))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+    const current = existingWorkspaceMemories[0] ?? null;
+
+    for (const staleMemory of existingWorkspaceMemories.slice(1)) {
+      this.repository.save({
+        ...staleMemory,
+        status: 'expired',
+        updatedAt: now,
+      });
+    }
+
+    if (current) {
+      return this.repository.save({
+        ...current,
+        title: WORKSPACE_MEMORY_TITLE,
+        content: `workspace: ${normalizedWorkspacePath}`,
+        scope: 'global',
+        tags: uniqueTags([...current.tags, WORKSPACE_MEMORY_TAG, 'persistent-setting']),
+        updatedAt: now,
+      });
+    }
+
+    return this.createMemory(
+      WORKSPACE_MEMORY_TITLE,
+      `workspace: ${normalizedWorkspacePath}`,
+      'global',
+      {
+        type: 'long-term',
+        tags: [WORKSPACE_MEMORY_TAG, 'persistent-setting'],
+      },
+    );
   }
 
   createConversationTurnMemory(args: {

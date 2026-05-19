@@ -27,6 +27,10 @@ describe('DeepSeek Provider Contract', () => {
     expect(adapter).toBeInstanceOf(DeepSeekAdapter);
     expect(profile.id).toBe('deepseek');
     expect(profile.defaultModelId).toBe('deepseek-v4-flash');
+    expect(profile.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'deepseek-v4-flash', contextWindow: 64000 }),
+      expect.objectContaining({ id: 'deepseek-v4-pro', contextWindow: 64000 }),
+    ]));
   });
 
   it('should preserve DeepSeek usage fields on task execution responses', async () => {

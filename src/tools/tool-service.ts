@@ -21,16 +21,18 @@ import {
   type ProviderToolDefinition,
   type ProviderToolName,
 } from '../providers/provider-adapter';
+import { throwIfTaskCancelled } from '../shared/task-cancellation';
 
 export interface ToolServiceDependencies {
   readonly repository: ToolInvocationRepository;
-  readonly cwd: string;
+  readonly cwd: string | (() => string);
 }
 
 export interface ExecuteToolInput {
   readonly taskId: string;
   readonly inputSummary?: string;
   readonly executionCwd?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface ToolApprovalDescription {
@@ -71,7 +73,7 @@ export class ToolService {
   constructor(private readonly dependencies: ToolServiceDependencies) {}
 
   getDefaultExecutionCwd(): string {
-    return this.dependencies.cwd;
+    return this.resolveDefaultExecutionCwd();
   }
 
   async runAll(taskId: string): Promise<{ invocations: ReturnType<ToolInvocationRepository['listByTask']>; outputs: ToolExecutionResult[] }> {
@@ -114,6 +116,7 @@ export class ToolService {
   }
 
   async execute(input: ExecuteToolRequest): Promise<{ invocation: ReturnType<ToolInvocationRepository['create']>; output: ToolExecutionResult }> {
+    throwIfTaskCancelled(input.signal, 'Task cancelled before running the requested tool.');
     const output = await this.executeTool(input);
     const invocation = this.recordInvocation({
       toolName: output.toolName,
@@ -152,12 +155,12 @@ export class ToolService {
           summary: `Command: ${input.args.command}`,
           detail: [
             `Command: ${input.args.command}`,
-            `Workspace: ${this.dependencies.cwd}`,
+            `Workspace: ${this.resolveDefaultExecutionCwd()}`,
           ].join('\n'),
         };
       case 'edit':
         return buildEditApprovalPreview({
-          cwd: this.dependencies.cwd,
+          cwd: this.resolveDefaultExecutionCwd(),
           path: input.args.path,
           oldText: input.args.oldText,
           newText: input.args.newText,
@@ -218,7 +221,7 @@ export class ToolService {
   }
 
   private async executeTool(input: ExecuteToolRequest): Promise<ToolExecutionResult> {
-    const executionCwd = input.executionCwd ?? this.dependencies.cwd;
+    const executionCwd = input.executionCwd ?? this.resolveDefaultExecutionCwd();
 
     switch (input.toolName) {
       case 'glob':
@@ -226,12 +229,18 @@ export class ToolService {
       case 'grep':
         return this.runGrep(parseProviderToolArgs('grep', input.args), executionCwd);
       case 'exec':
-        return this.runExec(parseProviderToolArgs('exec', input.args), executionCwd);
+        return this.runExec(parseProviderToolArgs('exec', input.args), executionCwd, input.signal);
       case 'read':
         return this.runRead(parseProviderToolArgs('read', input.args), executionCwd);
       case 'edit':
         return this.runEdit(parseProviderToolArgs('edit', input.args), executionCwd);
     }
+  }
+
+  private resolveDefaultExecutionCwd(): string {
+    return typeof this.dependencies.cwd === 'function'
+      ? this.dependencies.cwd()
+      : this.dependencies.cwd;
   }
 
   private runGlob(args: ProviderGlobToolArgs, executionCwd: string): Promise<ToolExecutionResult> {
@@ -242,8 +251,8 @@ export class ToolService {
     return this.grepTool({ pattern: args.pattern, include: args.include, cwd: executionCwd });
   }
 
-  private runExec(args: ProviderExecToolArgs, executionCwd: string): Promise<ToolExecutionResult> {
-    return this.execTool({ command: args.command, cwd: executionCwd });
+  private runExec(args: ProviderExecToolArgs, executionCwd: string, signal?: AbortSignal): Promise<ToolExecutionResult> {
+    return this.execTool({ command: args.command, cwd: executionCwd, signal });
   }
 
   private runRead(args: ProviderReadToolArgs, executionCwd: string): Promise<ToolExecutionResult> {

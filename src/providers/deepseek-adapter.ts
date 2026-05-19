@@ -17,6 +17,7 @@ import {
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
 import { ProviderAuthError, ProviderError } from './provider-errors';
 import { consumeServerSentEventStream } from './server-sent-events';
+import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
 
 interface DeepSeekResponsePayload {
   readonly choices?: Array<{
@@ -115,6 +116,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
         tools: context.availableTools.length > 0 ? context.availableTools.map(toDeepSeekToolDefinition) : undefined,
         tool_choice: context.availableTools.length > 0 ? 'auto' : undefined,
       }),
+      signal: context.signal,
     });
 
     if (streamingEnabled) {
@@ -191,6 +193,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
         applyDeepSeekStreamingChunk(aggregate, payload, context.onTextDelta);
       });
     } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw toTaskCancellationError(error, 'DeepSeek stream was cancelled.');
+      }
+
       this.responseLogger.log({
         providerId: 'deepseek',
         category: 'stream-read-failed',
@@ -229,6 +235,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
     try {
       return await this.fetchImpl(input, init);
     } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw toTaskCancellationError(error, 'DeepSeek request was cancelled.');
+      }
+
       this.responseLogger.log({
         providerId: 'deepseek',
         category: 'network-error',

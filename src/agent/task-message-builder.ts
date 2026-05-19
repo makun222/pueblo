@@ -1,13 +1,14 @@
 import type { ProviderMessage } from '../providers/provider-adapter';
 import type { TaskContext } from './task-context';
 
-const RECENT_CONTEXT_MESSAGE_LIMIT = 6;
-const RECENT_CONTEXT_MESSAGE_CHAR_LIMIT = 480;
+export const RECENT_CONTEXT_MESSAGE_LIMIT = 6;
+export const RECENT_CONTEXT_MESSAGE_CHAR_LIMIT = 480;
 
 export function buildProviderMessages(taskContext: TaskContext, goal: string): ProviderMessage[] {
   const messages: ProviderMessage[] = [];
   const puebloMessage = buildPuebloSystemMessage(taskContext);
   const targetDirectoryMessage = buildTargetDirectoryMessage(taskContext.targetDirectory);
+  const attachmentContextMessage = buildAttachmentContextMessage(taskContext);
   const recentConversationMessage = buildRecentConversationMessage(taskContext.recentMessages);
 
   if (puebloMessage) {
@@ -33,6 +34,10 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
     messages.push({ role: 'system', content: workflowContextMessage });
   }
 
+  if (attachmentContextMessage) {
+    messages.push({ role: 'system', content: attachmentContextMessage });
+  }
+
   if (taskContext.resultItems.length > 0) {
     messages.push({
       role: 'system',
@@ -49,6 +54,48 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
 
   messages.push({ role: 'user', content: goal });
   return dedupeSafeSystemBlocks(messages);
+}
+
+function buildAttachmentContextMessage(taskContext: TaskContext): string | null {
+  if (taskContext.uploadedAttachments.length === 0) {
+    return null;
+  }
+
+  const lines = [
+    'Uploaded attachment context:',
+    'Treat uploaded files as canonical JSON assets.',
+    'When you edit a canonical attachment JSON asset with the edit tool, Pueblo will automatically rewrite the original docx or spreadsheet file from that JSON.',
+    'If an attachment is marked large, inspect its JSON path with the read tool instead of assuming the full content is already in context.',
+  ];
+
+  for (const [index, attachment] of taskContext.uploadedAttachments.entries()) {
+    lines.push(`${index + 1}. ${attachment.source.fileName}`);
+    lines.push(`   - kind: ${attachment.kind}`);
+    lines.push(`   - jsonPath: ${attachment.asset.jsonPath}`);
+    lines.push(`   - large: ${attachment.summary.isLarge ? 'yes' : 'no'}`);
+
+    if (attachment.summary.chunkCount !== null) {
+      lines.push(`   - chunks: ${attachment.summary.chunkCount}`);
+    }
+    if (attachment.summary.sheetCount !== null) {
+      lines.push(`   - sheets: ${attachment.summary.sheetCount}`);
+    }
+    if (attachment.summary.rowCount !== null) {
+      lines.push(`   - rows: ${attachment.summary.rowCount}`);
+    }
+    if (attachment.summary.cellCount !== null) {
+      lines.push(`   - cells: ${attachment.summary.cellCount}`);
+    }
+    if (attachment.summary.previewText) {
+      lines.push(`   - preview: ${attachment.summary.previewText}`);
+    }
+    if (attachment.inlineJsonExcerpt) {
+      lines.push('   - inline JSON excerpt:');
+      lines.push(...attachment.inlineJsonExcerpt.split(/\r?\n/).map((line) => `     ${line}`));
+    }
+  }
+
+  return lines.join('\n');
 }
 
 export function buildLegacyProviderMessages(goal: string, inputContextSummary: string): ProviderMessage[] {
@@ -145,7 +192,7 @@ function buildRecentConversationMessage(recentMessages: readonly string[]): stri
   ].join('\n');
 }
 
-function compactRecentMessageForPrompt(message: string): string {
+export function compactRecentMessageForPrompt(message: string): string {
   if (message.length <= RECENT_CONTEXT_MESSAGE_CHAR_LIMIT) {
     return message;
   }

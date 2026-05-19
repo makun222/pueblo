@@ -1,11 +1,14 @@
 import path from 'node:path';
-import { ipcMain, BrowserWindow } from 'electron';
+import { dialog, ipcMain, BrowserWindow } from 'electron';
 import { createRuntimeCoordinator, RuntimeMessage } from '../../app/runtime';
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../agent/task-runner';
 import { createCliDependencies } from '../../cli/index';
 import { routeInput } from '../../commands/input-router';
 import { loadAppConfig } from '../../shared/config';
 import { createOutputBlock, createResultBlocks } from '../../shared/result';
+import { ipcInputEnvelopeSchema, type IpcInputEnvelope } from '../../shared/schema';
+import { createTaskCancellationError, isTaskCancellationError } from '../../shared/task-cancellation';
+import { ATTACHMENT_FILE_DIALOG_FILTERS, ingestInputFiles } from './attachment-ingestion';
 import type {
   DesktopRuntimeStatus,
   DesktopToolApprovalBatch,
@@ -15,6 +18,18 @@ import type {
 } from '../shared/ipc-contract';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
+const DESKTOP_IPC_CHANNELS = [
+  'get-runtime-status',
+  'get-tool-approval-state',
+  'respond-tool-approval',
+  'list-agent-profiles',
+  'start-agent-session',
+  'list-agent-sessions',
+  'list-session-memories',
+  'select-session',
+  'select-input-files',
+  'submit-input',
+] as const;
 
 interface PendingToolApprovalBatch {
   readonly state: DesktopToolApprovalState;
@@ -22,10 +37,12 @@ interface PendingToolApprovalBatch {
   readonly reject: (error: Error) => void;
 }
 
-export function setupIpcHandlers(mainWindow: BrowserWindow): void {
+export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
   let activeToolApprovalBatch: PendingToolApprovalBatch | null = null;
+  const activeSubmitControllers = new Set<AbortController>();
+  let cleanedUp = false;
 
   const publishToolApprovalState = (state: DesktopToolApprovalState = resolveToolApprovalState(activeToolApprovalBatch)) => {
     if (!mainWindow.isDestroyed()) {
@@ -75,17 +92,44 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     });
   });
 
-  runtime.onMessage((message: RuntimeMessage) => {
-    mainWindow.webContents.send('output', message.block);
+  const disposeRuntimeListener = runtime.onMessage((message: RuntimeMessage) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('output', message.block);
+    }
   });
 
-  ipcMain.removeHandler('get-runtime-status');
+  const cleanup = () => {
+    if (cleanedUp) {
+      return;
+    }
+
+    cleanedUp = true;
+
+    for (const controller of activeSubmitControllers) {
+      controller.abort(createTaskCancellationError('Task cancelled because the desktop window closed.'));
+    }
+    activeSubmitControllers.clear();
+
+    if (activeToolApprovalBatch) {
+      const pendingBatch = activeToolApprovalBatch;
+      activeToolApprovalBatch = null;
+      pendingBatch.reject(createTaskCancellationError('Tool approval was cancelled because the desktop window closed.'));
+    }
+
+    cli.setProgressReporter(null);
+    cli.setToolApprovalBatchHandler(null);
+    cli.setToolApprovalHandler(null);
+    disposeRuntimeListener();
+    runtime.dispose();
+    removeDesktopIpcHandlers();
+    cli.databaseClose();
+  };
+
+  removeDesktopIpcHandlers();
   ipcMain.handle('get-runtime-status', async () => resolveRuntimeStatus(cli));
 
-  ipcMain.removeHandler('get-tool-approval-state');
   ipcMain.handle('get-tool-approval-state', async () => resolveToolApprovalState(activeToolApprovalBatch));
 
-  ipcMain.removeHandler('respond-tool-approval');
   ipcMain.handle('respond-tool-approval', async (_event, response: DesktopToolApprovalResponse) => {
     if (!activeToolApprovalBatch?.state.activeBatch) {
       throw new Error('No tool approval batch is pending.');
@@ -105,25 +149,43 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
     return { activeBatch: null } satisfies DesktopToolApprovalState;
   });
 
-  ipcMain.removeHandler('list-agent-profiles');
   ipcMain.handle('list-agent-profiles', async () => cli.listAgentProfiles());
 
-  ipcMain.removeHandler('start-agent-session');
   ipcMain.handle('start-agent-session', async (_event, profileId: string) => cli.startAgentSession(profileId));
 
-  ipcMain.removeHandler('list-agent-sessions');
   ipcMain.handle('list-agent-sessions', async (_event, agentInstanceId: string) => cli.listAgentSessions(agentInstanceId));
 
-  ipcMain.removeHandler('list-session-memories');
   ipcMain.handle('list-session-memories', async (_event, sessionId: string) => cli.listSessionMemories(sessionId));
 
-  ipcMain.removeHandler('select-session');
   ipcMain.handle('select-session', async (_event, sessionId: string) => cli.selectSession(sessionId));
 
-  ipcMain.removeHandler('submit-input');
-  ipcMain.handle('submit-input', async (_event, input: string) => {
+  ipcMain.handle('select-input-files', async (_event, sessionId: string | null) => {
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: ATTACHMENT_FILE_DIALOG_FILTERS,
+    });
+
+    if (selection.canceled || selection.filePaths.length === 0) {
+      return [];
+    }
+
+    return ingestInputFiles({
+      filePaths: selection.filePaths,
+      workspaceRoot: cli.getRuntimeStatus().workspace ?? process.cwd(),
+      sessionId,
+    });
+  });
+
+  ipcMain.handle('submit-input', async (_event, inputEnvelope: IpcInputEnvelope) => {
+    const submitController = new AbortController();
+    activeSubmitControllers.add(submitController);
+
     try {
-      const result = await routeInput({ input, runtime });
+      const envelope = ipcInputEnvelopeSchema.parse({
+        ...inputEnvelope,
+        attachments: inputEnvelope.attachments ?? [],
+      });
+      const result = await routeInput({ input: envelope, runtime, signal: submitController.signal });
       const blocks = createResultBlocks(result);
 
       for (const block of blocks) {
@@ -136,6 +198,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
         runtimeStatus: resolveRuntimeStatus(cli),
       };
     } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw error;
+      }
+
       const errorBlock = createOutputBlock({
         type: 'error',
         title: 'Input Processing Error',
@@ -145,14 +211,20 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): void {
       runtime.publish({ block: errorBlock });
 
       throw error;
+    } finally {
+      activeSubmitControllers.delete(submitController);
     }
   });
 
-  mainWindow.on('closed', () => {
-    if (activeToolApprovalBatch) {
-      activeToolApprovalBatch.reject(new Error('Tool approval was cancelled because the desktop window closed.'));
-    }
-  });
+  mainWindow.once('closed', cleanup);
+
+  return cleanup;
+}
+
+function removeDesktopIpcHandlers(): void {
+  for (const channel of DESKTOP_IPC_CHANNELS) {
+    ipcMain.removeHandler(channel);
+  }
 }
 
 function resolveRuntimeStatus(

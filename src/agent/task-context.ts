@@ -2,6 +2,7 @@ import type { AppConfig } from '../shared/config';
 import type {
   BackgroundSummaryStatus,
   ContextCount,
+  InputAttachmentManifest,
   PepeResultItem,
   PepeResultSet,
   PromptAsset,
@@ -30,6 +31,7 @@ export interface TaskContext {
   readonly puebloProfile: PuebloProfile;
   readonly contextCount: ContextCount;
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
+  readonly uploadedAttachments: InputAttachmentManifest[];
   readonly config: AppConfig;
 }
 
@@ -50,6 +52,7 @@ export interface TaskContextInput {
   readonly puebloProfile: PuebloProfile;
   readonly contextCount: ContextCount;
   readonly backgroundSummaryStatus?: BackgroundSummaryStatus;
+  readonly uploadedAttachments?: InputAttachmentManifest[];
   readonly config: AppConfig;
 }
 
@@ -79,6 +82,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     recentMessages: input.recentMessages ?? sessionMessages.map(formatSessionMessageForContext),
     puebloProfile: input.puebloProfile,
     contextCount: input.contextCount,
+    uploadedAttachments: input.uploadedAttachments ?? [],
     backgroundSummaryStatus: input.backgroundSummaryStatus ?? {
       state: 'idle',
       activeSummarySessionId: null,

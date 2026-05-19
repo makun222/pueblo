@@ -1,12 +1,14 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ToolExecutionResult } from './glob-tool';
+import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
 
 const execFileAsync = promisify(execFile);
 
 export interface ExecToolRequest {
   readonly command: string;
   readonly cwd: string;
+  readonly signal?: AbortSignal;
 }
 
 function splitCommand(commandText: string): string[] {
@@ -28,7 +30,7 @@ export function createExecTool() {
     }
 
     try {
-      const result = await execFileAsync(command, args, { cwd: request.cwd, shell: false });
+      const result = await execFileAsync(command, args, { cwd: request.cwd, shell: false, signal: request.signal });
       const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean);
 
       return {
@@ -38,6 +40,10 @@ export function createExecTool() {
         output,
       };
     } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw toTaskCancellationError(error, 'Command execution was cancelled.');
+      }
+
       return {
         toolName: 'exec',
         status: 'failed',

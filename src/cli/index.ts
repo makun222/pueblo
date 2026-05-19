@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import type { AppConfig } from '../shared/config';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import fs from 'node:fs';
@@ -100,7 +101,8 @@ import { WorkflowRepository } from '../workflow/workflow-repository';
 import { WorkflowRouter } from '../workflow/workflow-router';
 import { WorkflowService } from '../workflow/workflow-service';
 import type { DesktopProviderStatuses, DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
-import type { AgentProfileTemplate, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
+import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
+import { isTaskCancellationError } from '../shared/task-cancellation';
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const config = loadAppConfig();
@@ -152,7 +154,7 @@ async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: stri
 
 export interface CliDependencies {
   readonly dispatcher: CommandDispatcher;
-  readonly submitInput: (input: string) => Promise<import('../shared/result').CommandResult<unknown>>;
+  readonly submitInput: (input: string | IpcInputEnvelope, signal?: AbortSignal) => Promise<import('../shared/result').CommandResult<unknown>>;
   readonly getRuntimeStatus: () => DesktopRuntimeStatus;
   readonly listAgentProfiles: () => AgentProfileTemplate[];
   readonly startAgentSession: (profileId: string) => DesktopRuntimeStatus;
@@ -355,6 +357,7 @@ export function createCliDependencies(
   const githubCopilotAuth = resolveGitHubCopilotAuth(currentConfig, { credentialStore });
   const deepSeekAuth = resolveDeepSeekAuth(currentConfig, { credentialStore });
   const providerRegistry = createConfiguredProviderRegistry(currentConfig, { credentialStore });
+  const inputAbortSignalContext = new AsyncLocalStorage<AbortSignal | undefined>();
 
   const modelService = new ModelService(providerRegistry);
   const taskRepository = new AgentTaskRepository({ connection: database.connection });
@@ -364,11 +367,12 @@ export function createCliDependencies(
   const cliProjectRoot = resolveProjectRoot(__dirname);
   const promptService = new PromptService(promptRepository);
   const memoryService = new MemoryService(memoryRepository);
+  let currentWorkspace = initializeWorkspacePath(memoryService, process.cwd());
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
   const pepeSemanticClient = new PepeSemanticClient(providerRegistry, currentConfig);
   const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
-  const toolService = new ToolService({ repository: toolInvocationRepository, cwd: process.cwd() });
+  const toolService = new ToolService({ repository: toolInvocationRepository, cwd: () => currentWorkspace });
   const workflowRepository = new WorkflowRepository({ connection: database.connection });
   const workflowRegistry = new WorkflowRegistry([
     {
@@ -434,9 +438,15 @@ export function createCliDependencies(
   let activeAgentInstanceId: string | null = null;
   let activeAgentProfileId: string | null = options.deferAgentSelection ? null : (currentConfig.defaultAgentProfileId ?? 'code-master');
 
-  const runTask = async (goal: string, inputContextSummary: string, userInputOverride?: string | null) => {
+  const runTask = async (
+    goal: string,
+    inputContextSummary: string,
+    userInputOverride?: string | null,
+    uploadedAttachments: InputAttachmentManifest[] = [],
+  ) => {
     const trimmedGoal = goal.trim();
     const normalizedUserInput = userInputOverride?.trim() || trimmedGoal;
+    const submitAbortSignal = inputAbortSignalContext.getStore();
 
     if (!trimmedGoal) {
       return failureResult('TASK_GOAL_REQUIRED', 'Task goal is required', ['Provide a task goal and retry.']);
@@ -447,7 +457,9 @@ export function createCliDependencies(
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
-      cwd: process.cwd(),
+      uploadedAttachments,
+      cwd: currentWorkspace,
+      workspace: currentWorkspace,
     });
     const providerId = resolvedContext.taskContext.providerId;
     const modelId = resolvedContext.taskContext.selectedModelId;
@@ -470,7 +482,9 @@ export function createCliDependencies(
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
-      cwd: process.cwd(),
+      uploadedAttachments,
+      cwd: currentWorkspace,
+      workspace: currentWorkspace,
     });
 
     pepeSupervisor.recordInput(sessionId, normalizedUserInput);
@@ -485,6 +499,8 @@ export function createCliDependencies(
         modelId,
         inputContextSummary: JSON.stringify({
           trigger: inputContextSummary,
+          workspace: currentWorkspace,
+          uploadedAttachmentIds: uploadedAttachments.map((attachment) => attachment.attachmentId),
           contextCount: executionContext.taskContext.contextCount,
           puebloProfilePath: executionContext.taskContext.puebloProfile.loadedFromPath,
           selectedPromptIds: executionContext.taskContext.selectedPromptIds,
@@ -493,6 +509,8 @@ export function createCliDependencies(
         taskContext: executionContext.taskContext,
         prompts: executionContext.taskContext.prompts,
         memoryIds: executionContext.taskContext.resultItems.map((item) => item.memoryId),
+        uploadedAttachments,
+        signal: submitAbortSignal,
       });
 
       const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
@@ -526,6 +544,10 @@ export function createCliDependencies(
         workflow: workflowProgress,
       } : task);
     } catch (error) {
+      if (isTaskCancellationError(error)) {
+        throw error;
+      }
+
       const accumulateLatestTaskProviderUsage = () => {
         const persistedTasks = taskRepository.listBySession(sessionId);
         const latestTask = persistedTasks[persistedTasks.length - 1] ?? null;
@@ -570,6 +592,7 @@ export function createCliDependencies(
     goal: string,
     workflowType: WorkflowType = PUEBLO_PLAN_WORKFLOW_TYPE,
     routeReason: string = 'explicit',
+    uploadedAttachments: InputAttachmentManifest[] = [],
   ) => {
     const trimmedGoal = goal.trim();
 
@@ -591,7 +614,7 @@ export function createCliDependencies(
       goal: trimmedGoal,
       sessionId,
       agentInstanceId: ensureAgentInstance(),
-      targetDirectory: process.cwd(),
+      targetDirectory: currentWorkspace,
       initialStatus: 'planning',
     });
     const planOutline = createInitialPuebloPlanOutline({ goal: trimmedGoal });
@@ -647,7 +670,7 @@ export function createCliDependencies(
     };
 
     if (routeReason !== 'explicit') {
-      const continuationResult = await continueActiveWorkflow(trimmedGoal, `Workflow handoff (${routeReason})`);
+      const continuationResult = await continueActiveWorkflow(trimmedGoal, `Workflow handoff (${routeReason})`, uploadedAttachments);
       return mergeWorkflowResult(continuationResult, workflowStartData);
     }
 
@@ -663,6 +686,11 @@ export function createCliDependencies(
     }
 
     return memoryService.resolveMemorySelection(session.selectedMemoryIds)
+      .filter((memory) => memory.tags.includes('workflow'));
+  };
+
+  const listSessionWorkflowMemories = (sessionId: string): MemoryRecord[] => {
+    return memoryService.listSessionMemories(sessionId)
       .filter((memory) => memory.tags.includes('workflow'));
   };
 
@@ -688,6 +716,46 @@ export function createCliDependencies(
     for (const memory of memories) {
       sessionService.removeSelectedMemory(sessionId, memory.id);
     }
+  };
+
+  const clearStaleWorkflowMemories = (workflowId?: string | null) => {
+    const sessionId = getActiveWorkflowSessionId();
+    if (!sessionId) {
+      return failureResult('NO_ACTIVE_SESSION', 'No active session is available.', [
+        'Select or create a session before clearing stale workflow state.',
+      ]);
+    }
+
+    const requestedWorkflowId = workflowId?.trim() || null;
+    const activeWorkflow = workflowService.getActiveWorkflowForSession(sessionId);
+    if (activeWorkflow && (!requestedWorkflowId || activeWorkflow.id === requestedWorkflowId)) {
+      return failureResult('WORKFLOW_STILL_ACTIVE', 'The workflow is still active.', [
+        'Use /workflow-cancel to stop the active workflow first.',
+      ]);
+    }
+
+    const staleWorkflowMemories = (requestedWorkflowId
+      ? listSessionWorkflowMemories(sessionId).filter((memory) => extractWorkflowIdFromMemory(memory) === requestedWorkflowId)
+      : listSelectedWorkflowMemories(sessionId)
+    ).filter((memory) => memory.status === 'active');
+
+    if (staleWorkflowMemories.length === 0) {
+      return failureResult('NO_STALE_WORKFLOW_MEMORIES', 'No stale workflow memories matched the current request.', [
+        requestedWorkflowId
+          ? `No workflow memories were found for workflow ${requestedWorkflowId}.`
+          : 'Select stale workflow memories first or pass a workflow id.',
+      ]);
+    }
+
+    const expiredMemories = memoryService.expireMemories(staleWorkflowMemories.map((memory) => memory.id));
+    clearSelectedWorkflowMemories(sessionId, staleWorkflowMemories);
+
+    return successResult('WORKFLOW_STALE_CLEARED', 'Stale workflow memories cleared', {
+      sessionId,
+      workflowId: requestedWorkflowId,
+      clearedMemoryIds: expiredMemories.map((memory) => memory.id),
+      clearedCount: expiredMemories.length,
+    });
   };
 
   const resolveActiveWorkflowState = (sessionId: string) => {
@@ -772,7 +840,11 @@ export function createCliDependencies(
     ].filter((line): line is string => Boolean(line)).join('\n');
   };
 
-  const continueActiveWorkflow = async (userInput?: string | null, trigger = 'Active workflow continuation') => {
+  const continueActiveWorkflow = async (
+    userInput?: string | null,
+    trigger = 'Active workflow continuation',
+    uploadedAttachments: InputAttachmentManifest[] = [],
+  ) => {
     const sessionId = getActiveWorkflowSessionId();
     if (!sessionId) {
       return buildNoActiveWorkflowResult();
@@ -787,7 +859,7 @@ export function createCliDependencies(
 
     const workflowGoal = buildActiveWorkflowContinuationGoal(workflow, userInput);
 
-    return runTask(workflowGoal, trigger, userInput ?? 'Continue the active workflow');
+    return runTask(workflowGoal, trigger, userInput ?? 'Continue the active workflow', uploadedAttachments);
   };
 
   const getActiveWorkflowStatus = () => {
@@ -944,17 +1016,32 @@ export function createCliDependencies(
     };
   };
 
+  const setWorkspaceRoot = (requestedPath?: string | null) => {
+    const nextWorkspace = resolveWorkspaceDirectory(requestedPath ?? process.cwd());
+    currentWorkspace = nextWorkspace;
+    const workspaceMemory = memoryService.setWorkspacePath(nextWorkspace);
+
+    if (activeAgentInstanceId) {
+      agentInstanceService.updateWorkspaceRoot(activeAgentInstanceId, nextWorkspace);
+    }
+
+    return successResult('WORKSPACE_SET', 'Workspace updated', {
+      workspace: nextWorkspace,
+      memoryId: workspaceMemory.id,
+    });
+  };
+
   const inputRouter = new InputRouter({
     dispatcher,
-    runTaskFromText: (text) => runTask(text, 'Plain-text task execution'),
-    routeTextInput: async (text) => {
+    runTaskFromText: (text, attachments) => runTask(text, 'Plain-text task execution', undefined, attachments ?? []),
+    routeTextInput: async (text, attachments) => {
       if (getActiveWorkflow()) {
-        return continueActiveWorkflow(text, 'Plain-text active workflow continuation');
+        return continueActiveWorkflow(text, 'Plain-text active workflow continuation', attachments ?? []);
       }
 
       const decision = workflowRouter.decide({ input: text });
       if (decision.kind === 'handoff') {
-        return startWorkflow(decision.normalizedInput, decision.workflowType, decision.reason);
+        return startWorkflow(decision.normalizedInput, decision.workflowType, decision.reason, attachments ?? []);
       }
 
       return null;
@@ -979,7 +1066,8 @@ export function createCliDependencies(
       activeSessionId: sessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
-      cwd: process.cwd(),
+      cwd: currentWorkspace,
+      workspace: currentWorkspace,
     });
     selectionState.providerId = resolved.runtimeStatus.providerId;
     selectionState.modelId = resolved.runtimeStatus.modelId;
@@ -1052,6 +1140,18 @@ export function createCliDependencies(
   dispatcher.register('/workflow-status', () => getActiveWorkflowStatus());
   dispatcher.register('/workflow-continue', (args) => continueActiveWorkflow(args.join(' ').trim() || null, 'Manual workflow continuation'));
   dispatcher.register('/workflow-cancel', (args) => cancelActiveWorkflow(args.join(' ').trim() || null));
+  dispatcher.register('/workflow-clear-stale', (args) => clearStaleWorkflowMemories(args.join(' ').trim() || null));
+  dispatcher.register('/set', (args) => {
+    const [settingName, ...settingArgs] = args;
+
+    if (settingName !== 'workspace') {
+      return failureResult('SETTING_NOT_SUPPORTED', 'Unsupported setting', [
+        'Use /set workspace [path].',
+      ]);
+    }
+
+    return setWorkspaceRoot(settingArgs.join(' ').trim() || process.cwd());
+  });
   const providerConfigCommand = createProviderConfigCommand({
     getCurrentConfig: () => currentConfig,
     setCurrentConfig: (nextConfig) => {
@@ -1112,19 +1212,26 @@ export function createCliDependencies(
 
   return {
     dispatcher,
-    submitInput(input: string) {
-      return inputRouter.route(input);
+    submitInput(input: string | IpcInputEnvelope, signal?: AbortSignal) {
+      const envelope = typeof input === 'string'
+        ? createIpcEnvelopeFromText(input, selectionState.sessionId ?? currentConfig.defaultSessionId)
+        : input;
+      return inputAbortSignalContext.run(signal, () => inputRouter.route(envelope));
     },
     getRuntimeStatus() {
       const runtimeStatus = contextResolver.resolve({
         activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
         explicitProviderId: selectionState.providerId,
         explicitModelId: selectionState.modelId,
-        cwd: process.cwd(),
+        cwd: currentWorkspace,
+        workspace: currentWorkspace,
       }).runtimeStatus;
       const currentSession = selectionState.sessionId
         ? sessionService.getSession(selectionState.sessionId)
         : sessionService.getCurrentSession();
+      const activeWorkflow = currentSession?.id
+        ? workflowService.getActiveWorkflowForSession(currentSession.id)
+        : null;
 
       return {
         ...runtimeStatus,
@@ -1133,9 +1240,17 @@ export function createCliDependencies(
         agentInstanceId: runtimeStatus.agentInstanceId ?? activeAgentInstanceId,
         modelMessageCount: lastModelMessageCount,
         modelMessageCharCount: lastModelMessageCharCount,
+        workspace: currentWorkspace,
         providerUsageStats: currentSession?.providerUsageStats,
         availableProviders: providerRegistry.listProfiles(),
         providerStatuses: buildDesktopProviderStatuses(currentConfig, credentialStore),
+        workflow: {
+          hasActiveWorkflow: Boolean(activeWorkflow),
+          workflowId: activeWorkflow?.id ?? null,
+          workflowType: activeWorkflow?.type ?? null,
+          status: activeWorkflow?.status ?? null,
+          activeRoundNumber: activeWorkflow?.activeRoundNumber ?? null,
+        },
       };
     },
     listAgentProfiles() {
@@ -1144,7 +1259,7 @@ export function createCliDependencies(
     startAgentSession(profileId: string) {
       activeAgentProfileId = profileId;
       const agentInstance = agentInstanceService.markActive(
-        agentInstanceService.getOrCreateDefaultAgentInstance(profileId, process.cwd()).id,
+        agentInstanceService.getOrCreateDefaultAgentInstance(profileId, currentWorkspace).id,
       );
       activeAgentInstanceId = agentInstance.id;
       const mostRecentSession = sessionService.getMostRecentSessionForAgentInstance(agentInstance.id);
@@ -1193,7 +1308,7 @@ export function createCliDependencies(
 
     const profileId = activeAgentProfileId ?? currentConfig.defaultAgentProfileId ?? 'code-master';
     const agentInstance = agentInstanceService.markActive(
-      agentInstanceService.getOrCreateDefaultAgentInstance(profileId, process.cwd()).id,
+      agentInstanceService.getOrCreateDefaultAgentInstance(profileId, currentWorkspace).id,
     );
     activeAgentProfileId = agentInstance.profileId;
     activeAgentInstanceId = agentInstance.id;
@@ -1282,6 +1397,54 @@ export function renderToolApprovalPrompt(request: ToolApprovalRequest): string {
 function createSessionTitle(goal: string): string {
   const trimmed = goal.trim();
   return trimmed.length <= 60 ? trimmed : `${trimmed.slice(0, 57)}...`;
+}
+
+function createIpcEnvelopeFromText(inputText: string, sessionId: string | null): IpcInputEnvelope {
+  const submittedAt = new Date().toISOString();
+
+  return {
+    requestId: `${submittedAt}-${Math.random().toString(16).slice(2)}`,
+    windowId: 'cli',
+    sessionId,
+    inputText,
+    attachments: [],
+    submittedAt,
+  };
+}
+
+function initializeWorkspacePath(memoryService: MemoryService, fallbackPath: string): string {
+  const persistedWorkspace = memoryService.getWorkspacePath();
+
+  if (persistedWorkspace) {
+    try {
+      return resolveWorkspaceDirectory(persistedWorkspace);
+    } catch {
+      // Fall back to the current process directory if the persisted workspace is no longer available.
+    }
+  }
+
+  const defaultWorkspace = resolveWorkspaceDirectory(fallbackPath);
+  memoryService.setWorkspacePath(defaultWorkspace);
+  return defaultWorkspace;
+}
+
+function resolveWorkspaceDirectory(requestedPath: string): string {
+  const normalizedPath = path.resolve(requestedPath.trim() || process.cwd());
+
+  if (!fs.existsSync(normalizedPath)) {
+    throw new Error(`Workspace path does not exist: ${normalizedPath}`);
+  }
+
+  const stat = fs.statSync(normalizedPath);
+  if (stat.isDirectory()) {
+    return normalizedPath;
+  }
+
+  if (stat.isFile()) {
+    return path.dirname(normalizedPath);
+  }
+
+  throw new Error(`Workspace path must resolve to a directory: ${normalizedPath}`);
 }
 
 function shouldRunGitHubCopilotCliSetup(config: AppConfig): boolean {

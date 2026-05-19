@@ -13,10 +13,13 @@ import {
   contextCountSchema,
   type BackgroundSummaryStatus,
   type ContextCount,
+  type ContextCountBreakdown,
+  type InputAttachmentManifest,
   type ProviderProfile,
   type Session,
+  type SessionMessage,
 } from '../shared/schema';
-import { selectRecentMessagesForPrompt } from './task-message-builder';
+import { compactRecentMessageForPrompt, RECENT_CONTEXT_MESSAGE_LIMIT, selectRecentMessagesForPrompt } from './task-message-builder';
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
@@ -25,7 +28,9 @@ export interface ResolveContextInput {
   readonly explicitProviderId?: string | null;
   readonly explicitModelId?: string | null;
   readonly pendingUserInput?: string;
+  readonly uploadedAttachments?: InputAttachmentManifest[];
   readonly cwd?: string;
+  readonly workspace?: string | null;
 }
 
 export interface ResolvedContext {
@@ -68,6 +73,7 @@ export class ContextBudgetService {
     readonly pendingUserInput?: string;
     readonly modelContextWindow: number | null;
     readonly derivedMemoryCount: number;
+    readonly contextBreakdown?: ContextCountBreakdown;
   }): ContextCount {
     const textParts = [
       ...args.puebloTexts,
@@ -89,6 +95,7 @@ export class ContextBudgetService {
       selectedPromptCount: args.promptTexts.length,
       selectedMemoryCount: args.memoryTexts.length,
       derivedMemoryCount: args.derivedMemoryCount,
+      breakdown: args.contextBreakdown,
     });
   }
 }
@@ -129,6 +136,7 @@ export class ContextResolver {
     const targetDirectory = resolveTargetDirectory({
       pendingUserInput: input.pendingUserInput,
       sessionMessages,
+      workspace: input.workspace ?? input.cwd ?? null,
     });
     const resolvedPepeResult = this.pepeResultService.resolve({
       sessionId: session?.id ?? input.activeSessionId ?? null,
@@ -139,6 +147,8 @@ export class ContextResolver {
     const workflowContext = session?.id
       ? this.dependencies.workflowService?.getWorkflowContext(session.id) ?? null
       : null;
+    const uploadedAttachments = input.uploadedAttachments ?? [];
+    const attachmentContextTexts = uploadedAttachments.map((attachment) => summarizeAttachmentForContext(attachment));
     const filteredResultItems = filterPinnedWorkflowResultItems(resolvedPepeResult.resultItems, workflowContext);
     const filteredResultSet = resolvedPepeResult.resultSet
       ? {
@@ -146,6 +156,28 @@ export class ContextResolver {
         items: filteredResultItems,
       }
       : null;
+    const contextBreakdown = buildContextCountBreakdown({
+      puebloTexts: [
+        ...puebloProfile.roleDirectives,
+        ...puebloProfile.goalDirectives,
+        ...puebloProfile.constraintDirectives,
+        ...puebloProfile.styleDirectives,
+        ...puebloProfile.memoryPolicy.retentionHints,
+        ...puebloProfile.memoryPolicy.summaryHints,
+        ...puebloProfile.contextPolicy.priorityHints,
+        ...puebloProfile.contextPolicy.truncationHints,
+        puebloProfile.summaryPolicy.lineageHint ?? '',
+      ],
+      promptTexts: prompts.map((prompt) => prompt.content),
+      memoryTexts: [
+        ...filteredResultItems.map((item) => item.summary),
+        workflowContext?.planSummary ?? '',
+        workflowContext?.todoSummary ?? '',
+        ...attachmentContextTexts,
+      ],
+      sessionMessages,
+      pendingUserInput: input.pendingUserInput,
+    });
     const contextCount = this.budgetService.compute({
       puebloTexts: [
         ...puebloProfile.roleDirectives,
@@ -163,11 +195,13 @@ export class ContextResolver {
         ...filteredResultItems.map((item) => item.summary),
         workflowContext?.planSummary ?? '',
         workflowContext?.todoSummary ?? '',
+        ...attachmentContextTexts,
       ],
       recentMessages: promptRecentMessages,
       pendingUserInput: input.pendingUserInput,
       modelContextWindow: selection.model?.contextWindow ?? null,
       derivedMemoryCount: resolvedPepeResult.sourceMemories.filter((memory) => memory.derivationType === 'summary' || memory.summaryDepth > 0).length,
+      contextBreakdown,
     });
     const backgroundSummaryStatus = this.dependencies.resolveBackgroundSummaryStatus?.(session?.id ?? input.activeSessionId ?? null) ?? {
       state: 'idle',
@@ -192,6 +226,7 @@ export class ContextResolver {
       recentMessages,
       puebloProfile,
       contextCount,
+      uploadedAttachments,
       backgroundSummaryStatus,
     });
 
@@ -278,6 +313,7 @@ function estimateTokens(input: string): number {
 function resolveTargetDirectory(args: {
   readonly pendingUserInput?: string;
   readonly sessionMessages: Session['messageHistory'];
+  readonly workspace: string | null;
 }): string | null {
   const candidateInputs = [
     args.pendingUserInput ?? '',
@@ -296,7 +332,7 @@ function resolveTargetDirectory(args: {
     }
   }
 
-  return null;
+  return args.workspace;
 }
 
 function extractAbsolutePaths(inputText: string): string[] {
@@ -340,4 +376,59 @@ function filterPinnedWorkflowResultItems(
   }
 
   return resultItems.filter((item) => !pinnedIds.has(item.memoryId));
+}
+
+function buildContextCountBreakdown(args: {
+  readonly puebloTexts: readonly string[];
+  readonly promptTexts: readonly string[];
+  readonly memoryTexts: readonly string[];
+  readonly sessionMessages: readonly SessionMessage[];
+  readonly pendingUserInput?: string;
+}): ContextCountBreakdown {
+  let systemPromptTokens = estimateTokens(args.puebloTexts.filter(Boolean).join('\n'))
+    + estimateTokens(args.promptTexts.filter(Boolean).join('\n'))
+    + estimateTokens(args.memoryTexts.filter(Boolean).join('\n'));
+  let userInputTokens = estimateTokens(args.pendingUserInput ?? '');
+  let toolResultTokens = 0;
+
+  for (const message of args.sessionMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT)) {
+    const compactedMessage = compactRecentMessageForPrompt(formatSessionMessageForContext(message));
+    const messageTokens = estimateTokens(compactedMessage);
+
+    if (message.role === 'user') {
+      userInputTokens += messageTokens;
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      toolResultTokens += messageTokens;
+      continue;
+    }
+
+    systemPromptTokens += messageTokens;
+  }
+
+  return {
+    systemPromptTokens,
+    userInputTokens,
+    toolResultTokens,
+  };
+}
+
+function summarizeAttachmentForContext(attachment: InputAttachmentManifest): string {
+  const metrics = [
+    attachment.summary.chunkCount !== null ? `${attachment.summary.chunkCount} chunks` : null,
+    attachment.summary.sheetCount !== null ? `${attachment.summary.sheetCount} sheets` : null,
+    attachment.summary.rowCount !== null ? `${attachment.summary.rowCount} rows` : null,
+    attachment.summary.cellCount !== null ? `${attachment.summary.cellCount} cells` : null,
+    attachment.summary.isLarge ? 'large asset' : 'inline asset',
+  ].filter((value): value is string => Boolean(value));
+
+  return [
+    `Uploaded attachment: ${attachment.source.fileName}`,
+    `kind=${attachment.kind}`,
+    `jsonPath=${attachment.asset.jsonPath}`,
+    metrics.length > 0 ? `metrics=${metrics.join(', ')}` : null,
+    attachment.summary.previewText ? `preview=${attachment.summary.previewText}` : null,
+  ].filter((value): value is string => Boolean(value)).join(' | ');
 }

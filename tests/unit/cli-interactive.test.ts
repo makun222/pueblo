@@ -3,6 +3,7 @@ import type { CliDependencies } from '../../src/cli/index';
 import { renderToolApprovalPrompt, runInteractiveCliSession } from '../../src/cli/index';
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../src/agent/task-runner';
 import { successResult } from '../../src/shared/result';
+import type { IpcInputEnvelope } from '../../src/shared/schema';
 
 describe('interactive cli session', () => {
   it('keeps the terminal session open and routes input until exit', async () => {
@@ -12,9 +13,10 @@ describe('interactive cli session', () => {
     let index = 0;
     const cli: CliDependencies = {
       dispatcher: {} as never,
-      async submitInput(input: string) {
-        handledInputs.push(input);
-        return successResult('HANDLED', `Handled ${input}`);
+      async submitInput(input: string | IpcInputEnvelope) {
+        const normalizedInput = typeof input === 'string' ? input : input.inputText;
+        handledInputs.push(normalizedInput);
+        return successResult('HANDLED', `Handled ${normalizedInput}`);
       },
       getRuntimeStatus() {
         return {
@@ -182,9 +184,13 @@ describe('interactive cli session', () => {
       taskId: 'task-1',
       toolCallId: 'call-1',
       toolName: 'edit',
-      args: { path: 'src/example.ts', oldText: 'old', newText: 'new' },
+      args: {
+        path: 'src/example.ts',
+        oldText: 'old',
+        newText: 'new',
+      },
       title: 'Allow edit in src/example.ts?',
-      summary: 'src/example.ts',
+      summary: 'src/example.ts @ lines 3-4\n@@ lines 3-4 @@\n- old\n+ new',
       detail: 'Path: src/example.ts',
     }));
     registeredHandlers.push(await activeApprovalHandler({

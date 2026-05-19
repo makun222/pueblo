@@ -247,6 +247,7 @@ export interface ProviderStepContext {
   readonly messages: ProviderMessage[];
   readonly availableTools: ProviderToolDefinition[];
   readonly onTextDelta?: (text: string) => void;
+  readonly signal?: AbortSignal;
 }
 
 export interface ProviderPromptUsageDetails {

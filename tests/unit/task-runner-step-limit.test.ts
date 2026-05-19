@@ -6,6 +6,7 @@ import { createProviderProfile } from '../../src/providers/provider-profile';
 import { ToolService } from '../../src/tools/tool-service';
 import type { ExecuteToolRequest } from '../../src/tools/tool-service';
 import type { AgentTask } from '../../src/shared/schema';
+import { createTaskCancellationError } from '../../src/shared/task-cancellation';
 
 type SingleToolName = 'grep' | 'exec' | 'edit';
 type SingleToolArgs =
@@ -111,13 +112,13 @@ class ClarifyingStepLimitProviderAdapter implements ProviderAdapter {
 
 class StepBudgetPromptObservingProviderAdapter implements ProviderAdapter {
   async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
-    const budgetMessage = context.messages.find((message) => message.role === 'system' && message.content.includes('Execution budget policy:'));
+    const budgetMessage = context.messages.find((message) => message.role === 'system' && message.content.includes('执行预算政策：'));
     return {
       type: 'final',
       outputSummary: [
-        `Budget prompt observed: ${budgetMessage?.content.includes('hard limit of 48 model steps') ? 'yes' : 'no'}`,
-        `Multi-turn prompt observed: ${budgetMessage?.content.includes('decide whether this work should be completed in one turn or split across multiple turns') ? 'yes' : 'no'}`,
-        `Early handoff prompt observed: ${budgetMessage?.content.includes('you may end the current turn early after finishing the first batch') ? 'yes' : 'no'}`,
+        `Budget prompt observed: ${budgetMessage?.content.includes('本轮有 48 步的硬性模型调用限制。') ? 'yes' : 'no'}`,
+        `Multi-turn prompt observed: ${budgetMessage?.content.includes('划分为多个子任务') ? 'yes' : 'no'}`,
+        `Early handoff prompt observed: ${budgetMessage?.content.includes('留到后续轮次继续') ? 'yes' : 'no'}`,
       ].join('\n'),
     };
   }
@@ -259,6 +260,20 @@ class StreamingFinalProviderAdapter implements ProviderAdapter {
       type: 'final',
       outputSummary: 'Hello world',
     };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class AbortableProviderAdapter implements ProviderAdapter {
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    return await new Promise<ProviderStepResult>((_resolve, reject) => {
+      context.signal?.addEventListener('abort', () => {
+        reject(context.signal?.reason ?? createTaskCancellationError('Task cancelled during provider execution.'));
+      }, { once: true });
+    });
   }
 
   async runTask(): Promise<ProviderRunResult> {
@@ -1000,6 +1015,7 @@ describe('AgentTaskRunner step limit', () => {
           lastSummaryAt: null,
           lastSummaryMemoryId: null,
         },
+        uploadedAttachments: [],
         config: {} as never,
       },
     });
@@ -1094,6 +1110,7 @@ describe('AgentTaskRunner step limit', () => {
           lastSummaryAt: null,
           lastSummaryMemoryId: null,
         },
+        uploadedAttachments: [],
         config: {} as never,
       },
     });
@@ -1121,5 +1138,32 @@ describe('AgentTaskRunner step limit', () => {
       todoMemoryId: 'memory-todo-1',
     });
     expect(outputSummary.attribution?.memoryIds).toEqual(['memory-plan-1', 'memory-todo-1']);
+  });
+
+  it('aborts an in-flight task when the submit signal is cancelled', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new AbortableProviderAdapter());
+
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository());
+    const controller = new AbortController();
+
+    const pendingRun = runner.run({
+      goal: 'Wait for cancellation',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+      signal: controller.signal,
+    });
+
+    controller.abort(createTaskCancellationError('Task cancelled because the desktop window closed.'));
+
+    await expect(pendingRun).rejects.toThrow('Task cancelled because the desktop window closed.');
   });
 });

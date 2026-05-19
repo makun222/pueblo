@@ -28,7 +28,7 @@ export class AgentInstanceService {
   getOrCreateDefaultAgentInstance(profileId: string, workspaceRoot: string): AgentInstance {
     const existing = this.getDefaultAgentInstance(profileId);
     if (existing) {
-      return existing;
+      return this.syncWorkspaceRoot(existing, workspaceRoot);
     }
 
     const legacyCandidate = this.repository.list()
@@ -36,11 +36,20 @@ export class AgentInstanceService {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null;
 
     if (legacyCandidate) {
-      return this.setDefaultAgentInstance(profileId, legacyCandidate.id);
+      return this.syncWorkspaceRoot(this.setDefaultAgentInstance(profileId, legacyCandidate.id), workspaceRoot);
     }
 
     const profile = this.requireProfileTemplate(profileId);
     return this.repository.create(profile, workspaceRoot, true);
+  }
+
+  updateWorkspaceRoot(agentInstanceId: string, workspaceRoot: string): AgentInstance {
+    const existing = this.getAgentInstance(agentInstanceId);
+    if (!existing) {
+      throw new Error(`Agent instance not found: ${agentInstanceId}`);
+    }
+
+    return this.syncWorkspaceRoot(existing, workspaceRoot);
   }
 
   getAgentInstance(agentInstanceId: string | null | undefined): AgentInstance | null {
@@ -104,5 +113,17 @@ export class AgentInstanceService {
     }
 
     return profile;
+  }
+
+  private syncWorkspaceRoot(instance: AgentInstance, workspaceRoot: string): AgentInstance {
+    if (instance.workspaceRoot === workspaceRoot) {
+      return instance;
+    }
+
+    return this.repository.save({
+      ...instance,
+      workspaceRoot,
+      updatedAt: new Date().toISOString(),
+    });
   }
 }

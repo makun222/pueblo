@@ -7,7 +7,7 @@ import type {
   DesktopToolApprovalResponse,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
-import type { AgentProfileTemplate, MemoryRecord, Session } from '../../shared/schema';
+import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session } from '../../shared/schema';
 
 const MENU_ACTION_CHANNEL = 'desktop-menu-action';
 const TOOL_APPROVAL_CHANNEL = 'tool-approval-state';
@@ -15,7 +15,8 @@ const TOOL_APPROVAL_CHANNEL = 'tool-approval-state';
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-  submitInput: (input: string): Promise<DesktopSubmitResponse> => ipcRenderer.invoke('submit-input', input),
+  submitInput: (envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse> => ipcRenderer.invoke('submit-input', envelope),
+  selectInputFiles: (sessionId: string | null): Promise<InputAttachmentManifest[]> => ipcRenderer.invoke('select-input-files', sessionId),
   getRuntimeStatus: (): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('get-runtime-status'),
   getToolApprovalState: (): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('get-tool-approval-state'),
   respondToolApproval: (response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('respond-tool-approval', response),

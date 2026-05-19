@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolExecutionResult } from './glob-tool';
 import type { RendererFileChange } from '../shared/schema';
+import { inspectAttachmentAssetContent, maybeExportAttachmentAssetFromContent } from './attachment-asset-export';
 
 export interface EditToolRequest {
   readonly path: string;
@@ -54,17 +55,57 @@ export function createEditTool() {
       const nextScopedContent = preparedEdit.scopedContent.replace(preparedEdit.normalizedOldText, preparedEdit.normalizedNewText);
       const nextNormalizedContent = `${preparedEdit.normalizedContent.slice(0, preparedEdit.scope.startOffset)}${nextScopedContent}${preparedEdit.normalizedContent.slice(preparedEdit.scope.endOffset)}`;
       const nextContent = restoreLineEndings(nextNormalizedContent, preparedEdit.preferredLineEnding);
+      const previousAssetInspection = inspectAttachmentAssetContent(
+        restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
+      );
+      const nextAssetInspection = inspectAttachmentAssetContent(nextContent);
       fs.writeFileSync(preparedEdit.absolutePath, nextContent, 'utf8');
+      let exportedAttachmentSummary: string | null = null;
+      let exportedSourceFileChange: RendererFileChange | null = null;
+
+      try {
+        const exportResult = await maybeExportAttachmentAssetFromContent({
+          assetPath: preparedEdit.absolutePath,
+          content: nextContent,
+        });
+
+        if (exportResult) {
+          exportedAttachmentSummary = `Exported ${exportResult.sourceFileName} from edited attachment JSON`;
+          if (
+            previousAssetInspection
+            && nextAssetInspection
+            && previousAssetInspection.sourcePath === exportResult.exportedPath
+            && nextAssetInspection.sourcePath === exportResult.exportedPath
+          ) {
+            exportedSourceFileChange = createAttachmentExportFileChange({
+              workspaceRoot: path.resolve(request.cwd),
+              absolutePath: exportResult.exportedPath,
+              previousContent: previousAssetInspection.previewContent,
+              currentContent: nextAssetInspection.previewContent,
+            });
+          }
+        }
+      } catch (error) {
+        fs.writeFileSync(
+          preparedEdit.absolutePath,
+          restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
+          'utf8',
+        );
+        throw error;
+      }
 
       return {
         toolName: 'edit',
         status: 'succeeded',
-        summary: `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`,
+        summary: exportedAttachmentSummary
+          ? `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}; ${exportedAttachmentSummary}`
+          : `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`,
         output: [
           `path: ${preparedEdit.relativePath}`,
           `scope: ${preparedEdit.scope.label}`,
           `oldTextChars: ${request.oldText.length}`,
           `newTextChars: ${request.newText.length}`,
+          ...(exportedAttachmentSummary ? [exportedAttachmentSummary] : []),
         ],
         fileChanges: [createRendererFileChange({
           absolutePath: preparedEdit.absolutePath,
@@ -72,7 +113,7 @@ export function createEditTool() {
           changeType: 'modified',
           previousContent: restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
           currentContent: nextContent,
-        })],
+        }), ...(exportedSourceFileChange ? [exportedSourceFileChange] : [])],
       };
     } catch (error) {
       return {
@@ -525,4 +566,24 @@ function createRendererFileChange(input: {
     previousContent: input.previousContent,
     currentContent: input.currentContent,
   };
+}
+
+function createAttachmentExportFileChange(input: {
+  readonly workspaceRoot: string;
+  readonly absolutePath: string;
+  readonly previousContent: string;
+  readonly currentContent: string;
+}): RendererFileChange {
+  const relativePath = path.relative(input.workspaceRoot, input.absolutePath);
+  const displayPath = relativePath.startsWith('..') || path.isAbsolute(relativePath)
+    ? input.absolutePath
+    : relativePath;
+
+  return createRendererFileChange({
+    absolutePath: input.absolutePath,
+    relativePath: displayPath,
+    changeType: 'modified',
+    previousContent: input.previousContent,
+    currentContent: input.currentContent,
+  });
 }

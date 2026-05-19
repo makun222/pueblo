@@ -12,11 +12,12 @@ import {
   type ProviderUsage,
 } from '../providers/provider-adapter';
 import { ProviderRegistry } from '../providers/provider-registry';
-import type { PromptAsset } from '../shared/schema';
+import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
 import { ToolService } from '../tools/tool-service';
 import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
+import { throwIfTaskCancelled } from '../shared/task-cancellation';
 
 export interface RunAgentTaskInput {
   readonly goal: string;
@@ -27,6 +28,8 @@ export interface RunAgentTaskInput {
   readonly taskContext?: TaskContext;
   readonly prompts?: PromptAsset[];
   readonly memoryIds?: string[];
+  readonly uploadedAttachments?: InputAttachmentManifest[];
+  readonly signal?: AbortSignal;
 }
 
 export interface AgentTaskRunnerOptions {
@@ -113,6 +116,7 @@ export class AgentTaskRunner {
   }
 
   async run(input: RunAgentTaskInput): Promise<AgentTask> {
+    throwIfTaskCancelled(input.signal, 'Task cancelled before execution started.');
     const inputSummary = this.buildInputSummary(input);
     this.providerRegistry.ensureModel(input.providerId, input.modelId);
     const adapter = this.providerRegistry.getAdapter(input.providerId);
@@ -163,6 +167,7 @@ export class AgentTaskRunner {
         stepTrace,
         modelMessageTrace,
         providerUsageRef,
+        signal: input.signal,
       });
       const enrichedOutput = this.createCompletedOutputSummary(
         input,
@@ -206,6 +211,7 @@ export class AgentTaskRunner {
       inputContextSummary: input.inputContextSummary,
       promptIds: this.getPrompts(input).map((prompt) => prompt.id),
       memoryIds: this.getMemoryIds(input),
+      uploadedAttachmentIds: input.uploadedAttachments?.map((attachment) => attachment.attachmentId) ?? [],
       workflow: this.getWorkflowMetadata(input),
     });
   }
@@ -222,12 +228,14 @@ export class AgentTaskRunner {
     readonly stepTrace: AgentStepTraceEntry[];
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly providerUsageRef: { current?: ProviderUsage };
+    readonly signal?: AbortSignal;
   }): Promise<ProviderRunResult> {
     const messages = [...args.executionMessages];
     let previousToolLoopFingerprint: string | null = null;
     let repeatedToolLoopCount = 0;
 
     for (let stepIndex = 0; stepIndex < this.maxSteps; stepIndex += 1) {
+      throwIfTaskCancelled(args.signal, 'Task cancelled during agent execution.');
       const stepMessages = prepareMessagesForModel(messages);
       args.modelMessageTrace.push({
         stepNumber: stepIndex + 1,
@@ -244,10 +252,13 @@ export class AgentTaskRunner {
         modelId: args.modelId,
         messages: stepMessages,
         availableTools: args.availableTools,
+        signal: args.signal,
         onTextDelta: (text) => {
           this.reportAssistantDelta?.(text);
         },
       });
+
+      throwIfTaskCancelled(args.signal, 'Task cancelled during agent execution.');
 
       args.providerUsageRef.current = mergeProviderUsage(args.providerUsageRef.current, result.usage);
 
@@ -282,10 +293,12 @@ export class AgentTaskRunner {
       const approvalDecisions = await this.resolveToolApprovalDecisions(args.taskId, requestedToolCalls);
       const toolExecutions = [] as Array<Awaited<ReturnType<typeof this.executeToolCall>>>;
       for (const toolCall of requestedToolCalls) {
+        throwIfTaskCancelled(args.signal, 'Task cancelled before running the next tool.');
         const toolExecution = await this.executeToolCall(
           args.taskId,
           toolCall,
           args.executionCwd,
+          args.signal,
           approvalDecisions.get(toolCall.toolCallId) ?? null,
         );
         args.toolInvocationIds.push(toolExecution.invocation.id);
@@ -339,9 +352,10 @@ export class AgentTaskRunner {
       } else {
         previousToolLoopFingerprint = currentToolLoopFingerprint;
         repeatedToolLoopCount = 1;
-      }AgentTaskRunner
+      }
 
       if (repeatedToolLoopCount >= REPEATED_TOOL_LOOP_LIMIT) {
+        throwIfTaskCancelled(args.signal, 'Task cancelled during repeated tool loop handling.');
         const clarificationResult = await this.createClarificationFallbackResult({
           adapter: args.adapter,
           modelId: args.modelId,
@@ -350,6 +364,7 @@ export class AgentTaskRunner {
           stepTrace: args.stepTrace,
           stepNumber: stepIndex + 2,
           reason: `Agent task entered a repeated ${requestedToolCalls[0]?.toolName ?? 'tool'} loop for ${repeatedToolLoopCount} consecutive steps without making progress`,
+          signal: args.signal,
         });
         args.providerUsageRef.current = mergeProviderUsage(args.providerUsageRef.current, clarificationResult.usage);
         return {
@@ -359,6 +374,7 @@ export class AgentTaskRunner {
       }
     }
 
+    throwIfTaskCancelled(args.signal, 'Task cancelled before step budget handoff.');
     const handoffResult = await this.createStepBudgetHandoffResult({
       adapter: args.adapter,
       modelId: args.modelId,
@@ -367,6 +383,7 @@ export class AgentTaskRunner {
       stepTrace: args.stepTrace,
       stepNumber: this.maxSteps + 1,
       reason: `Agent task exceeded ${this.maxSteps} steps without producing a final response`,
+      signal: args.signal,
     });
     args.providerUsageRef.current = mergeProviderUsage(args.providerUsageRef.current, handoffResult.usage);
     return {
@@ -383,6 +400,7 @@ export class AgentTaskRunner {
     readonly stepTrace: AgentStepTraceEntry[];
     readonly stepNumber: number;
     readonly reason: string;
+    readonly signal?: AbortSignal;
   }): Promise<ProviderRunResult> {
     this.emitProgress(`Preparing step budget handoff: ${truncateProgressMessage(args.reason)}`);
     const handoffMessages = [
@@ -410,6 +428,7 @@ export class AgentTaskRunner {
         modelId: args.modelId,
         messages: stepMessages,
         availableTools: [],
+        signal: args.signal,
       });
 
       if (result.type === 'final') {
@@ -446,6 +465,7 @@ export class AgentTaskRunner {
     readonly stepTrace: AgentStepTraceEntry[];
     readonly stepNumber: number;
     readonly reason: string;
+    readonly signal?: AbortSignal;
   }): Promise<ProviderRunResult> {
     this.emitProgress(`Preparing clarification fallback: ${truncateProgressMessage(args.reason)}`);
     const clarificationMessages = [
@@ -473,6 +493,7 @@ export class AgentTaskRunner {
         modelId: args.modelId,
         messages: stepMessages,
         availableTools: [],
+        signal: args.signal,
       });
 
       if (result.type === 'final') {
@@ -509,6 +530,7 @@ export class AgentTaskRunner {
     taskId: string,
     result: ProviderToolCall,
     executionCwd?: string,
+    signal?: AbortSignal,
     approvalDecision?: ToolApprovalDecision | null,
   ) {
     if (!this.toolService) {
@@ -526,6 +548,7 @@ export class AgentTaskRunner {
       result,
       inputSummary,
       executionCwd,
+      signal,
       approvalDecision,
     });
   }
@@ -607,6 +630,7 @@ export class AgentTaskRunner {
     readonly result: ProviderToolCall;
     readonly inputSummary: string;
     readonly executionCwd?: string;
+    readonly signal?: AbortSignal;
     readonly approvalDecision?: ToolApprovalDecision | null;
   }) {
     if (!this.toolService) {
@@ -658,6 +682,7 @@ export class AgentTaskRunner {
           args: args.result.args,
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
+          signal: args.signal,
         });
       case 'grep':
         return this.toolService.execute({
@@ -666,6 +691,7 @@ export class AgentTaskRunner {
           args: args.result.args,
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
+          signal: args.signal,
         });
       case 'exec':
         return this.toolService.execute({
@@ -674,6 +700,7 @@ export class AgentTaskRunner {
           args: args.result.args,
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
+          signal: args.signal,
         });
       case 'read':
         return this.toolService.execute({
@@ -682,6 +709,7 @@ export class AgentTaskRunner {
           args: args.result.args,
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
+          signal: args.signal,
         });
       case 'edit':
         return this.toolService.execute({
@@ -690,6 +718,7 @@ export class AgentTaskRunner {
           args: args.result.args,
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
+          signal: args.signal,
         });
     }
   }
@@ -1002,25 +1031,13 @@ function createLocalStepBudgetHandoff(reason: string, stepTrace: readonly AgentS
 function createStepBudgetExecutionMessage(maxSteps: number): string {
   const finalizationThreshold = Math.max(1, maxSteps - STEP_BUDGET_FINALIZATION_BUFFER);
   return [
- /*    'Execution budget policy:',
-    `- This round has a hard limit of ${maxSteps} model steps.`,
-    '- Before using tools heavily, estimate whether the full user request can fit inside this step budget.',
-    '- At the start of the task, decide whether this work should be completed in one turn or split across multiple turns.',
-    `- If the work is too large, choose only the highest-value first batch of 1 to 3 sub-tasks that can be completed reliably within about ${finalizationThreshold} steps, then stop and hand off the rest.`,
-    '- Prefer concrete progress on a smaller slice over partial coverage of the whole task.',
-    '- When you determine that multiple turns are needed, you may end the current turn early after finishing the first batch instead of using the remaining budget.',
-    '- Whenever you hand work off to a later turn, use exactly these section headings in the final answer: Completed this round, Remaining work, Recommended next request.',
-    '- Before the budget is exhausted, produce a final answer that clearly states what was completed in this round, what remains, and what the next request should focus on.',
-    '- Do not spend the whole budget exploring if that would prevent a useful checkpoint.' */
     '执行预算政策：',
     `- 本轮有 ${maxSteps} 步的硬性模型调用限制。`,
-    '- 在任务开始前，先评估请求是否能在这个步数预算内完成。',
-    '- 当你判断需要多轮时，可以在完成第一批子任务后提前结束当前轮，而不是用完剩余预算。',
-    `- 如果需要更多步数才能完成整个请求，就对工作进行切分，选择最重要的前 1 到 3 个子任务，这些子任务应该能在大约 ${finalizationThreshold} 步内可靠完成，然后停止并把剩余的工作留到后续轮次继续。`,
-    '- 宁可在较小的切片上取得具体进展，也不要在整个任务上取得部分覆盖。',    
-    '- 每当你把工作交给后续轮次时，在最终答案中使用完全相同的这些部分标题：（本轮已完成、剩余工作、推荐下一步请求）。',
-    '- 在预算耗尽前，给出一个最终答案，清楚地说明本轮完成了什么，剩下什么，以及下一步请求应该关注什么。',
-    '- 如果探索会导致无法得到有用的检查点，就不要花费整个预算去探索。',
+    `- 在任务开始前，先评估请求能否在 ${maxSteps} 步内完成。`,
+    '- 如果超过步数限制，就对工作进行切分，划分为多个子任务，并进行任务排序。',
+    `- 按照顺序选择几个子任务，这些子任务应该能在大约 ${finalizationThreshold} 步内完成。先完成这些子任务，并把剩余的工作留到后续轮次继续。`,
+    '- 每当你把工作交给后续轮次时，反馈：（本轮已完成、剩余工作、推荐下一步）。',
+    `- 如果在 ${finalizationThreshold} 步数内仍无法得到对工作的有效评估或规划，则先引导用户进一步明确其目标。`,
   ].join('\n');
 }
 

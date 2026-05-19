@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { AgentProfileTemplate, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
+import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopMenuAction,
   DesktopProviderStatus,
@@ -65,6 +65,7 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
   agentInstanceId: null,
   modelId: null,
   modelName: null,
+  workspace: null,
   activeSessionId: null,
   contextCount: {
     estimatedTokens: 0,
@@ -74,6 +75,11 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
     selectedPromptCount: 0,
     selectedMemoryCount: 0,
     derivedMemoryCount: 0,
+    breakdown: {
+      systemPromptTokens: 0,
+      userInputTokens: 0,
+      toolResultTokens: 0,
+    },
   },
   modelMessageCount: 0,
   modelMessageCharCount: 0,
@@ -96,6 +102,13 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
     activeSummarySessionId: null,
     lastSummaryAt: null,
     lastSummaryMemoryId: null,
+  },
+  workflow: {
+    hasActiveWorkflow: false,
+    workflowId: null,
+    workflowType: null,
+    status: null,
+    activeRoundNumber: null,
   },
   providerStatuses: {
     githubCopilot: {
@@ -120,7 +133,8 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
 declare global {
   interface Window {
     electronAPI: {
-      submitInput: (input: string) => Promise<DesktopSubmitResponse>;
+      submitInput: (input: IpcInputEnvelope) => Promise<DesktopSubmitResponse>;
+      selectInputFiles: (sessionId: string | null) => Promise<InputAttachmentManifest[]>;
       getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
       getToolApprovalState: () => Promise<DesktopToolApprovalState>;
       respondToolApproval: (response: { batchId: string; decision: 'allow' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
@@ -139,6 +153,7 @@ declare global {
 
 export function App() {
   const [input, setInput] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<InputAttachmentManifest[]>([]);
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [runtimeStatus, setRuntimeStatus] = useState<DesktopRuntimeStatus>(EMPTY_RUNTIME_STATUS);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileTemplate[]>([]);
@@ -178,6 +193,7 @@ export function App() {
   const [transcriptSearchInput, setTranscriptSearchInput] = useState('');
   const [transcriptSearchTerm, setTranscriptSearchTerm] = useState('');
   const [isTranscriptHistoryExpanded, setIsTranscriptHistoryExpanded] = useState(false);
+  const [isContextBreakdownOpen, setIsContextBreakdownOpen] = useState(false);
   const [toolApprovalSidebarWidth, setToolApprovalSidebarWidth] = useState(TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH);
   const [isResizingToolApprovalSidebar, setIsResizingToolApprovalSidebar] = useState(false);
   const runtimeStatusRef = useRef(runtimeStatus);
@@ -188,6 +204,7 @@ export function App() {
   const streamRunIdRef = useRef(0);
   const outputPaneRef = useRef<HTMLElement | null>(null);
   const toolApprovalSidebarRef = useRef<HTMLElement | null>(null);
+  const contextBreakdownRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
 
   const refreshActiveSessionMemories = async (sessionId: string | null) => {
@@ -282,10 +299,12 @@ export function App() {
     setTranscriptSearchInput('');
     setTranscriptSearchTerm('');
     setIsTranscriptHistoryExpanded(false);
+    setIsContextBreakdownOpen(false);
+    setPendingAttachments([]);
   }, [runtimeStatus.activeSessionId]);
 
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ block: 'end' });
+    transcriptEndRef.current?.scrollIntoView?.({ block: 'end' });
   }, [transcriptEntries]);
 
   useEffect(() => {
@@ -314,6 +333,24 @@ export function App() {
       window.removeEventListener('mouseup', stopResizing);
     };
   }, [isResizingToolApprovalSidebar]);
+
+  useEffect(() => {
+    if (!isContextBreakdownOpen) {
+      return;
+    }
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!contextBreakdownRef.current?.contains(event.target as Node)) {
+        setIsContextBreakdownOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handleMouseDown);
+
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [isContextBreakdownOpen]);
 
   useEffect(() => {
     const disposeMenuAction = window.electronAPI.onMenuAction((action) => {
@@ -548,7 +585,10 @@ export function App() {
     streamFrame(initialCursor);
   };
 
-  const executeInput = async (submittedInput: string, options: { recordUserEntry: boolean } = { recordUserEntry: true }) => {
+  const executeInput = async (
+    submittedInput: string,
+    options: { recordUserEntry: boolean; attachments?: InputAttachmentManifest[] } = { recordUserEntry: true },
+  ) => {
     const trimmedInput = submittedInput.trim();
 
     if (!trimmedInput || !runtimeStatus.agentProfileId || !runtimeStatus.activeSessionId) {
@@ -579,7 +619,11 @@ export function App() {
       }
 
       setIsSubmitting(true);
-      const response = await window.electronAPI.submitInput(trimmedInput);
+      const response = await window.electronAPI.submitInput(createRendererInputEnvelope({
+        inputText: trimmedInput,
+        sessionId: runtimeStatusRef.current.activeSessionId,
+        attachments: options.attachments ?? [],
+      }));
       const messageTrace = response.blocks.find((block) => block.messageTrace.length > 0)?.messageTrace ?? [];
 
       if (options.recordUserEntry) {
@@ -603,6 +647,9 @@ export function App() {
 
       const shouldHydrateCurrentSession = response.runtimeStatus.activeSessionId !== runtimeStatusRef.current.activeSessionId;
       setRuntimeStatus(response.runtimeStatus);
+      if ((options.attachments ?? []).length > 0) {
+        setPendingAttachments([]);
+      }
       void refreshAgentSessions(response.runtimeStatus, { hydrateCurrentSession: shouldHydrateCurrentSession });
       void refreshActiveSessionMemories(response.runtimeStatus.activeSessionId);
       return response;
@@ -657,7 +704,7 @@ export function App() {
     }
 
     setInput('');
-    await executeInput(submittedInput, { recordUserEntry: true });
+    await executeInput(submittedInput, { recordUserEntry: true, attachments: pendingAttachments });
   };
 
   const handleStartAgentSession = async (profileId: string) => {
@@ -835,8 +882,11 @@ export function App() {
   const availableModels = selectedProviderProfile?.models ?? [];
   const activeToolApprovalBatch = toolApprovalState.activeBatch;
   const activeSession = agentSessions.find((session) => session.id === runtimeStatus.activeSessionId) ?? null;
-  const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSession?.selectedMemoryIds ?? []);
+  const hasActiveWorkflow = runtimeStatus.workflow?.hasActiveWorkflow ?? false;
+  const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSession?.selectedMemoryIds ?? [], hasActiveWorkflow);
   const todoItems = parseTodoMemoryItems(todoMemory);
+  const staleTodoMemory = !hasActiveWorkflow ? selectLatestTodoMemory(activeSessionMemories) : null;
+  const staleTodoItems = parseTodoMemoryItems(staleTodoMemory);
   const transcriptGroups = createTranscriptGroups(transcriptEntries);
   const filteredTranscriptGroups = transcriptSearchTerm.trim().length > 0
     ? transcriptGroups.filter((group) => doesTranscriptGroupMatch(group, transcriptSearchTerm))
@@ -851,10 +901,18 @@ export function App() {
     runtimeStatus.providerUsageStats,
     activeSession?.providerUsageStats,
   );
-  const promptTokens = displayedProviderUsageStats.promptTokens;
-  const completionTokens = displayedProviderUsageStats.completionTokens;
   const totalTokens = displayedProviderUsageStats.totalTokens;
   const cacheHitRatio = displayedProviderUsageStats.cacheHitRatio;
+  const contextWindowSummary = formatContextWindowSummary(
+    runtimeStatus.contextCount.estimatedTokens,
+    runtimeStatus.contextCount.contextWindowLimit,
+  );
+  const contextUtilizationRatio = resolveContextUtilizationRatio(
+    runtimeStatus.contextCount.estimatedTokens,
+    runtimeStatus.contextCount.contextWindowLimit,
+    runtimeStatus.contextCount.utilizationRatio,
+  );
+  const contextBreakdownItems = createContextBreakdownItems(runtimeStatus.contextCount);
   const workspaceColumns = [
     'minmax(0, 1fr)',
     ...(isSessionSidebarOpen ? ['minmax(280px, 24vw)'] : []),
@@ -897,6 +955,27 @@ export function App() {
     }
   };
 
+  const handleRequeueStaleTodo = async () => {
+    if (!staleTodoMemory || isSubmitting) {
+      return;
+    }
+
+    await executeInput(`/workflow ${buildWorkflowGoalFromTodo(staleTodoMemory, staleTodoItems)}`, { recordUserEntry: true });
+  };
+
+  const handleClearStaleTodo = async () => {
+    if (!staleTodoMemory || isSubmitting) {
+      return;
+    }
+
+    const workflowId = extractWorkflowIdFromMemory(staleTodoMemory);
+    const command = workflowId
+      ? `/workflow-clear-stale ${workflowId}`
+      : '/workflow-clear-stale';
+
+    await executeInput(command, { recordUserEntry: true });
+  };
+
   const handleStartToolApprovalSidebarResize = (event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
     setIsResizingToolApprovalSidebar(true);
@@ -911,6 +990,27 @@ export function App() {
   const handleClearTranscriptSearch = () => {
     setTranscriptSearchInput('');
     setTranscriptSearchTerm('');
+  };
+
+  const handleSelectInputFiles = async () => {
+    try {
+      const nextAttachments = await window.electronAPI.selectInputFiles(runtimeStatus.activeSessionId);
+      if (nextAttachments.length === 0) {
+        return;
+      }
+
+      setPendingAttachments((current) => {
+        const seenIds = new Set(current.map((attachment) => attachment.attachmentId));
+        const uniqueNext = nextAttachments.filter((attachment) => !seenIds.has(attachment.attachmentId));
+        return [...current, ...uniqueNext];
+      });
+    } catch (error) {
+      appendErrorBlock('Attachment Upload Error', error instanceof Error ? error.message : 'Failed to select files.');
+    }
+  };
+
+  const handleRemovePendingAttachment = (attachmentId: string) => {
+    setPendingAttachments((current) => current.filter((attachment) => attachment.attachmentId !== attachmentId));
   };
 
   return (
@@ -1112,97 +1212,185 @@ export function App() {
             {renderTodoSidebar({
               todoMemory,
               todoItems,
+              hasActiveWorkflow,
+              staleTodoMemory,
+              staleTodoItems,
+              isSubmitting,
+              onRequeueStaleTodo: () => {
+                void handleRequeueStaleTodo();
+              },
+              onClearStaleTodo: () => {
+                void handleClearStaleTodo();
+              },
             })}
           </aside>
         ) : null}
       </div>
       <section className="status-strip" aria-label="runtime-status">
-        <label className="status-chip status-chip-select">
-          <span className="status-chip-label">Agent</span>
-          <select
-            className="status-chip-select-control"
-            value={runtimeStatus.agentProfileId ?? ''}
-            onChange={(event) => {
-              void handleStartAgentSession(event.target.value);
-            }}
-            disabled={startingProfileId !== null || agentProfiles.length === 0}
+        <div className="status-strip-controls">
+          <label className="status-chip status-chip-select">
+            <span className="status-chip-label">Agent</span>
+            <select
+              className="status-chip-select-control"
+              value={runtimeStatus.agentProfileId ?? ''}
+              onChange={(event) => {
+                void handleStartAgentSession(event.target.value);
+              }}
+              disabled={startingProfileId !== null || agentProfiles.length === 0}
+            >
+              {agentProfiles.length === 0 ? <option value="">No agents available</option> : null}
+              {agentProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="status-chip status-chip-select">
+            <span className="status-chip-label">Provider</span>
+            <select
+              className="status-chip-select-control"
+              value={runtimeStatus.providerId ?? ''}
+              onChange={(event) => {
+                void handleProviderSelection(event.target.value);
+              }}
+              disabled={availableProviders.length === 0}
+            >
+              {availableProviders.length === 0 ? <option value="">No providers available</option> : null}
+              {availableProviders.map((provider) => (
+                <option
+                  key={provider.id}
+                  value={provider.id}
+                  disabled={provider.status !== 'active' || provider.authState !== 'configured'}
+                >
+                  {provider.name}{provider.authState !== 'configured' ? ' (not configured)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="status-chip status-chip-select">
+            <span className="status-chip-label">Model</span>
+            <select
+              className="status-chip-select-control"
+              value={runtimeStatus.modelId ?? ''}
+              onChange={(event) => {
+                if (runtimeStatus.providerId) {
+                  void handleModelSelection(runtimeStatus.providerId, event.target.value);
+                }
+              }}
+              disabled={!runtimeStatus.providerId || availableModels.length === 0}
+            >
+              {availableModels.length === 0 ? <option value="">No models available</option> : null}
+              {availableModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="status-chip" title={runtimeStatus.workspace ?? 'No workspace selected'}>
+            <span className="status-chip-label">Workspace</span>
+            <span className="status-chip-value">{formatWorkspaceLabel(runtimeStatus.workspace)}</span>
+          </span>
+        </div>
+        <div className="status-strip-context">
+          <div
+            ref={contextBreakdownRef}
+            className={`context-window-chip ${isContextBreakdownOpen ? 'context-window-chip-open' : ''}`}
           >
-            {agentProfiles.length === 0 ? <option value="">No agents available</option> : null}
-            {agentProfiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="status-chip status-chip-select">
-          <span className="status-chip-label">Provider</span>
-          <select
-            className="status-chip-select-control"
-            value={runtimeStatus.providerId ?? ''}
-            onChange={(event) => {
-              void handleProviderSelection(event.target.value);
-            }}
-            disabled={availableProviders.length === 0}
-          >
-            {availableProviders.length === 0 ? <option value="">No providers available</option> : null}
-            {availableProviders.map((provider) => (
-              <option
-                key={provider.id}
-                value={provider.id}
-                disabled={provider.status !== 'active' || provider.authState !== 'configured'}
-              >
-                {provider.name}{provider.authState !== 'configured' ? ' (not configured)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="status-chip status-chip-select">
-          <span className="status-chip-label">Model</span>
-          <select
-            className="status-chip-select-control"
-            value={runtimeStatus.modelId ?? ''}
-            onChange={(event) => {
-              if (runtimeStatus.providerId) {
-                void handleModelSelection(runtimeStatus.providerId, event.target.value);
-              }
-            }}
-            disabled={!runtimeStatus.providerId || availableModels.length === 0}
-          >
-            {availableModels.length === 0 ? <option value="">No models available</option> : null}
-            {availableModels.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="status-strip-spacer" />
-        <div className="status-strip-metrics">
-          <span className="status-chip">
-            <span className="status-chip-label">Message Length</span>
-            <span className="status-chip-value">{runtimeStatus.modelMessageCharCount} chars</span>
-          </span>
-          <span className="status-chip">
-            <span className="status-chip-label">Prompt Tokens</span>
-            <span className="status-chip-value">{formatCompactInteger(promptTokens)} tokens</span>
-          </span>
-          <span className="status-chip">
-            <span className="status-chip-label">Completion Tokens</span>
-            <span className="status-chip-value">{formatCompactInteger(completionTokens)} tokens</span>
-          </span>
-          <span className="status-chip">
-            <span className="status-chip-label">Total Tokens</span>
-            <span className="status-chip-value">{formatCompactInteger(totalTokens)} tokens</span>
-          </span>
-          <span className="status-chip">
-            <span className="status-chip-label">Cache Hit</span>
-            <span className="status-chip-value">{formatCacheHitRatio(cacheHitRatio)}</span>
-          </span>
+            <button
+              type="button"
+              className="context-window-button"
+              aria-label="Show context window breakdown"
+              aria-expanded={isContextBreakdownOpen}
+              onClick={() => {
+                setIsContextBreakdownOpen((current) => !current);
+              }}
+            >
+              <span className="status-chip-label">Context Window</span>
+              <span className="context-window-summary">
+                <span className="context-window-value">{contextWindowSummary}</span>
+                <span className="context-window-ratio">{formatRatioPercent(contextUtilizationRatio)}</span>
+              </span>
+              <span className="context-window-bar" aria-hidden="true">
+                <span
+                  className="context-window-bar-fill"
+                  style={{ width: `${formatProgressPercent(contextUtilizationRatio)}%` }}
+                />
+              </span>
+            </button>
+            {isContextBreakdownOpen ? (
+              <div className="context-breakdown-popover" role="dialog" aria-label="context-breakdown">
+                <div className="context-breakdown-header">
+                  <span className="status-chip-label">Context Mix</span>
+                  <span className="context-breakdown-total">{formatCompactInteger(runtimeStatus.contextCount.estimatedTokens)} tokens</span>
+                </div>
+                <div className="context-breakdown-list">
+                  {contextBreakdownItems.map((item) => (
+                    <div key={item.key} className="context-breakdown-item">
+                      <span className={`context-breakdown-swatch context-breakdown-swatch-${item.key}`} aria-hidden="true" />
+                      <span className="context-breakdown-name">{item.label}</span>
+                      <span className="context-breakdown-share">{formatPercentage(item.share)}</span>
+                      <span className="context-breakdown-tokens">{formatCompactInteger(item.tokens)} tokens</span>
+                      <span className="context-breakdown-bar" aria-hidden="true">
+                        <span
+                          className={`context-breakdown-bar-fill context-breakdown-bar-fill-${item.key}`}
+                          style={{ width: `${item.share}%` }}
+                        />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="context-breakdown-footer">
+                  <div className="context-breakdown-header">
+                    <span className="status-chip-label">Runtime Stats</span>
+                  </div>
+                  <div className="context-breakdown-stats">
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Message Length</span>
+                      <span className="context-breakdown-total">{runtimeStatus.modelMessageCharCount} chars</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Total Tokens</span>
+                      <span className="context-breakdown-total">{formatCompactInteger(totalTokens)} tokens</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Cache Hit</span>
+                      <span className="context-breakdown-total">{formatCacheHitRatio(cacheHitRatio)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </section>
       <form className="input-pane" aria-label="input-region" onSubmit={handleSubmit}>
-        <label className="input-label" htmlFor="pueblo-input">Pueblo&gt;</label>
+        {pendingAttachments.length > 0 ? (
+          <div className="input-attachments" aria-label="pending-attachments">
+            {pendingAttachments.map((attachment) => (
+              <div key={attachment.attachmentId} className="input-attachment-chip">
+                <div className="input-attachment-chip-copy">
+                  <span className="input-attachment-chip-name">{attachment.source.fileName}</span>
+                  <span className="input-attachment-chip-meta">
+                    {attachment.kind} · {attachment.summary.isLarge ? 'read via JSON' : 'inline JSON'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="input-attachment-chip-remove"
+                  aria-label={`Remove ${attachment.source.fileName}`}
+                  onClick={() => {
+                    handleRemovePendingAttachment(attachment.attachmentId);
+                  }}
+                >
+                  X
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <button type="button" className="input-label input-label-upload" onClick={() => { void handleSelectInputFiles(); }}>pueblo&gt;</button>
         <input
           id="pueblo-input"
           type="text"
@@ -1253,6 +1441,86 @@ function formatCompactUnit(value: number, suffix: 'K' | 'M'): string {
   return `${rounded.replace(/\.0$/, '')}${suffix}`;
 }
 
+function resolveContextUtilizationRatio(
+  estimatedTokens: number,
+  contextWindowLimit: number | null,
+  fallbackRatio: number | null,
+): number | null {
+  if (contextWindowLimit && contextWindowLimit > 0) {
+    return Math.min(estimatedTokens / contextWindowLimit, 1);
+  }
+
+  if (fallbackRatio === null) {
+    return null;
+  }
+
+  return Math.min(Math.max(fallbackRatio, 0), 1);
+}
+
+function formatContextWindowSummary(estimatedTokens: number, contextWindowLimit: number | null): string {
+  if (!contextWindowLimit || contextWindowLimit <= 0) {
+    return `${formatCompactInteger(estimatedTokens)} / n/a`;
+  }
+
+  return `${formatCompactInteger(estimatedTokens)} / ${formatCompactInteger(contextWindowLimit)}`;
+}
+
+function formatRatioPercent(value: number | null): string {
+  if (value === null) {
+    return 'n/a';
+  }
+
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatProgressPercent(value: number | null): number {
+  if (value === null) {
+    return 0;
+  }
+
+  return Number((Math.min(Math.max(value, 0), 1) * 100).toFixed(1));
+}
+
+function formatPercentage(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function createContextBreakdownItems(contextCount: DesktopRuntimeStatus['contextCount']): Array<{
+  key: 'system' | 'user' | 'tool';
+  label: string;
+  tokens: number;
+  share: number;
+}> {
+  const totalTokens = contextCount.estimatedTokens;
+  const breakdown = contextCount.breakdown ?? {
+    systemPromptTokens: 0,
+    userInputTokens: 0,
+    toolResultTokens: 0,
+  };
+  const createShare = (tokens: number) => (totalTokens > 0 ? Number(((tokens / totalTokens) * 100).toFixed(1)) : 0);
+
+  return [
+    {
+      key: 'system',
+      label: 'System Prompt',
+      tokens: breakdown.systemPromptTokens,
+      share: createShare(breakdown.systemPromptTokens),
+    },
+    {
+      key: 'user',
+      label: 'User Input',
+      tokens: breakdown.userInputTokens,
+      share: createShare(breakdown.userInputTokens),
+    },
+    {
+      key: 'tool',
+      label: 'Tool Result',
+      tokens: breakdown.toolResultTokens,
+      share: createShare(breakdown.toolResultTokens),
+    },
+  ];
+}
+
 function selectDisplayedProviderUsageStats(
   runtimeUsage: ProviderUsageStats | undefined,
   sessionUsage: ProviderUsageStats | undefined,
@@ -1291,6 +1559,31 @@ function formatCacheHitRatio(value: number | null): string {
 
   const percentage = Number((value * 100).toFixed(1));
   return `${percentage}%`;
+}
+
+function formatWorkspaceLabel(value: string | null | undefined): string {
+  if (!value) {
+    return 'Not set';
+  }
+
+  return value.length <= 40 ? value : `...${value.slice(-37)}`;
+}
+
+function createRendererInputEnvelope(args: {
+  inputText: string;
+  sessionId: string | null;
+  attachments: InputAttachmentManifest[];
+}): IpcInputEnvelope {
+  const submittedAt = new Date().toISOString();
+
+  return {
+    requestId: `${submittedAt}-${Math.random().toString(16).slice(2)}`,
+    windowId: 'desktop-window',
+    sessionId: args.sessionId,
+    inputText: args.inputText,
+    attachments: args.attachments,
+    submittedAt,
+  };
 }
 
 function renderTranscriptToolbar(args: {
@@ -1378,75 +1671,72 @@ function renderToolApprovalSidebar(args: {
       <header className="workflow-sidebar-header">
         <div className="workflow-sidebar-header-main">
           <p className="workflow-sidebar-eyebrow">Tool Approval</p>
-        
+          <h2>Queued Calls</h2>
         </div>
+        {args.toolApprovalBatch ? <span className="workflow-sidebar-badge">{args.toolApprovalBatch.requests.length}</span> : null}
       </header>
-      <section className="workflow-sidebar-section workflow-sidebar-section-top">
-        <div className="workflow-sidebar-section-header">
-          <div>
-            <p className="workflow-sidebar-eyebrow">Batch</p>
-            <h3>Queued Calls</h3>
-          </div>
-          {args.toolApprovalBatch ? <span className="workflow-sidebar-badge">{args.toolApprovalBatch.requests.length}</span> : null}
-        </div>
-        {args.toolApprovalBatch ? (
-          <>
-            <p className="workflow-sidebar-copy">Predictable tool calls are grouped here. Use the X button on each row to keep or remove it from the current approval set.</p>
-            <div className="tool-approval-list" role="list" aria-label="tool-approval-list">
-              {args.toolApprovalBatch.requests.map((request) => {
-                const isSelected = args.selectedRequestIds.includes(request.id);
-                const displayTargetLabel = getToolApprovalDisplayLabel(request.targetLabel);
-                const displaySummary = getToolApprovalDisplaySummary(request.summary, request.targetLabel, displayTargetLabel);
-                return (
-                  <article
-                    key={request.id}
-                    className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
-                    title={request.detail}
-                  >
-                    <div className="tool-approval-row-main">
-                      <div className="tool-approval-row-line">
-                        <span className="tool-approval-target">{displayTargetLabel}</span>
-                        <span className="tool-approval-operation">{request.operationLabel}</span>
-                      </div>
-                      {displaySummary ? <p className="tool-approval-summary">{displaySummary}</p> : null}
+      {args.toolApprovalBatch ? (
+        <>
+          <p className="workflow-sidebar-copy">Predictable tool calls are grouped here. Use the X button on each row to keep or remove it from the current approval set.</p>
+          <div className="tool-approval-list" role="list" aria-label="tool-approval-list">
+            {args.toolApprovalBatch.requests.map((request) => {
+              const isSelected = args.selectedRequestIds.includes(request.id);
+              const displayTargetLabel = truncateToolApprovalText(getToolApprovalDisplayLabel(request.targetLabel), 52);
+              const displayOperationLabel = truncateToolApprovalText(request.operationLabel, 18);
+              const displaySummary = truncateToolApprovalText(
+                getToolApprovalDisplaySummary(request.summary, request.targetLabel, displayTargetLabel),
+                92,
+              );
+              return (
+                <article
+                  key={request.id}
+                  className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
+                  title={request.detail}
+                >
+                  <div className="tool-approval-row-main">
+                    <div className="tool-approval-row-line">
+                      <span className="tool-approval-target">{displayTargetLabel}</span>
+                      <span className="tool-approval-operation">{displayOperationLabel}</span>
+                      <button
+                        type="button"
+                        className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
+                        aria-pressed={isSelected}
+                        aria-label={isSelected ? `Deselect ${request.targetLabel}` : `Select ${request.targetLabel}`}
+                        onClick={() => args.onToggleRequest(request.id)}
+                        disabled={args.isResolvingToolApproval}
+                      >
+                        X
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
-                      aria-pressed={isSelected}
-                      aria-label={isSelected ? `Deselect ${request.targetLabel}` : `Select ${request.targetLabel}`}
-                      onClick={() => args.onToggleRequest(request.id)}
-                      disabled={args.isResolvingToolApproval}
-                    >
-                      X
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-            <div className="tool-approval-actions">
-              <button
-                type="button"
-                className="provider-config-primary tool-approval-allow-button"
-                onClick={args.onAllow}
-                disabled={args.isResolvingToolApproval}
-              >
-                {args.isResolvingToolApproval ? 'Applying...' : 'Allow'}
-              </button>
-              <button
-                type="button"
-                className="provider-config-secondary"
-                onClick={args.onDeny}
-                disabled={args.isResolvingToolApproval}
-              >
-                Deny
-              </button>
-            </div>
-          </>
-        ) : (
-          <p className="session-panel-empty">No pending tool approvals.</p>
-        )}
-      </section>
+                    {displaySummary ? <p className="tool-approval-summary">{displaySummary}</p> : null}
+                  </div>
+
+                </article>
+              );
+            })}
+          </div>
+          <div className="tool-approval-actions">
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-allow-button"
+              onClick={args.onAllow}
+              disabled={args.isResolvingToolApproval}
+            >
+              {args.isResolvingToolApproval ? 'Applying...' : 'Allow'}
+            </button>
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-deny-button"
+              onClick={args.onDeny}
+              disabled={args.isResolvingToolApproval}
+            >
+              Deny
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="session-panel-empty">No pending tool approvals.</p>
+      )}
     </section>
   );
 }
@@ -1454,43 +1744,80 @@ function renderToolApprovalSidebar(args: {
 function renderTodoSidebar(args: {
   todoMemory: MemoryRecord | null;
   todoItems: WorkflowTodoItem[];
+  hasActiveWorkflow: boolean;
+  staleTodoMemory: MemoryRecord | null;
+  staleTodoItems: WorkflowTodoItem[];
+  isSubmitting: boolean;
+  onRequeueStaleTodo: () => void;
+  onClearStaleTodo: () => void;
 }) {
+  const visibleTodoCount = args.hasActiveWorkflow ? args.todoItems.length : args.staleTodoItems.length;
+
   return (
     <section className="workflow-sidebar-panel">
       <header className="workflow-sidebar-header">
         <div className="workflow-sidebar-header-main">
           <p className="workflow-sidebar-eyebrow">Todo</p>
+          <h2>{args.hasActiveWorkflow ? 'Current Tasks' : 'Historical Tasks'}</h2>
         </div>
+        {visibleTodoCount > 0 ? <span className="workflow-sidebar-badge">{visibleTodoCount}</span> : null}
       </header>
-      <section className="workflow-sidebar-section workflow-sidebar-section-bottom">
-        <div className="workflow-sidebar-section-header">
-          <div>
-            <p className="workflow-sidebar-eyebrow">Active Round</p>
-            <h3>Current Tasks</h3>
+      {args.todoMemory ? (
+        <>
+          <p className="workflow-sidebar-copy">{args.todoMemory.title}</p>
+          <p className="workflow-sidebar-meta">Updated {formatTimestamp(args.todoMemory.updatedAt)}</p>
+          {args.todoItems.length > 0 ? (
+            <div className="todo-list" role="list" aria-label="todo-list">
+              {args.todoItems.map((item) => (
+                <article key={`${item.id}-${item.title}`} className="todo-item">
+                  <span className="todo-item-id">{item.id}</span>
+                  <p className="todo-item-title">{item.title}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="session-panel-empty">Todo memory exists, but no task rows were parsed.</p>
+          )}
+        </>
+      ) : args.staleTodoMemory ? (
+        <>
+          <p className="workflow-sidebar-copy">
+            No active workflow is running. These tasks come from a historical workflow todo memory and are not currently scheduled.
+          </p>
+          <p className="workflow-sidebar-copy">{args.staleTodoMemory.title}</p>
+          <p className="workflow-sidebar-meta">Updated {formatTimestamp(args.staleTodoMemory.updatedAt)}</p>
+          {args.staleTodoItems.length > 0 ? (
+            <div className="todo-list" role="list" aria-label="stale-todo-list">
+              {args.staleTodoItems.map((item) => (
+                <article key={`${item.id}-${item.title}`} className="todo-item">
+                  <span className="todo-item-id">{item.id}</span>
+                  <p className="todo-item-title">{item.title}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          <div className="todo-sidebar-actions">
+            <button
+              type="button"
+              className="provider-config-primary"
+              onClick={args.onRequeueStaleTodo}
+              disabled={args.isSubmitting}
+            >
+              Re-dispatch Tasks
+            </button>
+            <button
+              type="button"
+              className="provider-config-secondary"
+              onClick={args.onClearStaleTodo}
+              disabled={args.isSubmitting}
+            >
+              Clear Stale Workflow
+            </button>
           </div>
-          {args.todoItems.length > 0 ? <span className="workflow-sidebar-badge">{args.todoItems.length}</span> : null}
-        </div>
-        {args.todoMemory ? (
-          <>
-            <p className="workflow-sidebar-copy">{args.todoMemory.title}</p>
-            <p className="workflow-sidebar-meta">Updated {formatTimestamp(args.todoMemory.updatedAt)}</p>
-            {args.todoItems.length > 0 ? (
-              <div className="todo-list" role="list" aria-label="todo-list">
-                {args.todoItems.map((item) => (
-                  <article key={`${item.id}-${item.title}`} className="todo-item">
-                    <span className="todo-item-id">{item.id}</span>
-                    <p className="todo-item-title">{item.title}</p>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="session-panel-empty">Todo memory exists, but no task rows were parsed.</p>
-            )}
-          </>
-        ) : (
-          <p className="session-panel-empty">No todo list is available for the current session.</p>
-        )}
-      </section>
+        </>
+      ) : (
+        <p className="session-panel-empty">No todo list is available for the current session.</p>
+      )}
     </section>
   );
 }
@@ -1692,6 +2019,15 @@ function getToolApprovalDisplaySummary(summary: string, targetLabel: string, dis
   return summary.replaceAll(targetLabel, displayTargetLabel);
 }
 
+function truncateToolApprovalText(value: string, maxChars: number): string {
+  const normalized = value.trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxChars - 2)).trimEnd()}..`;
+}
+
 function isToolApprovalFileTarget(targetLabel: string): boolean {
   const trimmed = targetLabel.trim();
   if (!trimmed) {
@@ -1826,8 +2162,8 @@ function renderSessionSidebar(args: {
           </select>
         </label>
       </div>
-      <div className="session-panel-actions">
-        {args.isNewSessionComposerOpen ? (
+      {args.isNewSessionComposerOpen ? (
+        <div className="session-panel-actions">
           <div className="session-panel-new-composer">
             <input
               type="text"
@@ -1855,8 +2191,8 @@ function renderSessionSidebar(args: {
               </button>
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {args.error ? <p className="session-panel-error">{args.error}</p> : null}
       {args.disabled ? (
         <p className="session-panel-empty">Select an agent and provider setup first.</p>
@@ -2111,16 +2447,60 @@ function mapSessionMessageToTranscriptEntry(message: SessionMessage): Transcript
   };
 }
 
-function selectSelectedTodoMemory(memories: MemoryRecord[], selectedMemoryIds: string[]): MemoryRecord | null {
-  if (selectedMemoryIds.length === 0) {
+function selectLatestTodoMemory(memories: MemoryRecord[]): MemoryRecord | null {
+  const todoMemories = memories
+    .filter((memory) => memory.tags.includes('todo'))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+
+  return todoMemories[0] ?? null;
+}
+
+function selectSelectedTodoMemory(memories: MemoryRecord[], selectedMemoryIds: string[], hasActiveWorkflow: boolean): MemoryRecord | null {
+  if (!hasActiveWorkflow) {
     return null;
+  }
+
+  const todoMemories = memories
+    .filter((memory) => memory.tags.includes('todo'))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+
+  if (selectedMemoryIds.length === 0) {
+    return todoMemories[0] ?? null;
   }
 
   const selectedMemoryIdSet = new Set(selectedMemoryIds);
 
-  return memories
-    .filter((memory) => selectedMemoryIdSet.has(memory.id) && memory.tags.includes('todo'))
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null;
+  return todoMemories.find((memory) => selectedMemoryIdSet.has(memory.id)) ?? todoMemories[0] ?? null;
+}
+
+function extractWorkflowIdFromMemory(memory: MemoryRecord | null): string | null {
+  if (!memory) {
+    return null;
+  }
+
+  const workflowIdLine = memory.content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('workflowId:'));
+
+  if (!workflowIdLine) {
+    return null;
+  }
+
+  const workflowId = workflowIdLine.slice('workflowId:'.length).trim();
+  return workflowId.length > 0 ? workflowId : null;
+}
+
+function buildWorkflowGoalFromTodo(memory: MemoryRecord, items: WorkflowTodoItem[]): string {
+  const taskSummary = items
+    .slice(0, 5)
+    .map((item) => item.title)
+    .join('; ');
+  const goal = taskSummary.length > 0
+    ? `Resume the pending workflow tasks from \"${memory.title}\": ${taskSummary}`
+    : `Resume the pending workflow tasks from \"${memory.title}\".`;
+
+  return goal.length <= 320 ? goal : `${goal.slice(0, 317)}...`;
 }
 
 function parseTodoMemoryItems(memory: MemoryRecord | null): WorkflowTodoItem[] {

@@ -50,6 +50,12 @@ export const sessionMessageSchema = z.object({
   toolName: z.string().min(1).nullable(),
 });
 
+export const contextCountBreakdownSchema = z.object({
+  systemPromptTokens: z.number().int().nonnegative(),
+  userInputTokens: z.number().int().nonnegative(),
+  toolResultTokens: z.number().int().nonnegative(),
+});
+
 export const contextCountSchema = z.object({
   estimatedTokens: z.number().int().nonnegative(),
   contextWindowLimit: z.number().int().positive().nullable(),
@@ -58,6 +64,7 @@ export const contextCountSchema = z.object({
   selectedPromptCount: z.number().int().nonnegative(),
   selectedMemoryCount: z.number().int().nonnegative(),
   derivedMemoryCount: z.number().int().nonnegative(),
+  breakdown: contextCountBreakdownSchema.optional(),
 });
 
 export const backgroundSummaryStateSchema = z.enum(['idle', 'running', 'failed', 'cooldown']);
@@ -304,6 +311,85 @@ export const workflowInstanceSchema = z.object({
   cancelledAt: z.string().datetime().nullable(),
 });
 
+// ── Agent Collaboration ──────────────────────────────────────────
+
+export const collaborationNodeSchema = z.object({
+  nodeId: z.string().min(1),
+  agentProfileId: z.string().min(1),
+  providerId: z.string().min(1),
+  modelId: z.string().min(1),
+  role: z.string().min(1),
+});
+
+export const collaborationEdgeSchema = z.object({
+  sourceNodeId: z.string().min(1),
+  targetNodeId: z.string().min(1),
+});
+
+export const collaborationGraphSchema = z.object({
+  nodes: z.array(collaborationNodeSchema).min(1),
+  edges: z.array(collaborationEdgeSchema),
+});
+
+export const collaborationCompletionTypeSchema = z.enum([
+  'maxRounds',
+  'agentApproval',
+  'noChanges',
+  'fixedOutput',
+]);
+
+export const collaborationCompletionCriteriaSchema = z.object({
+  type: collaborationCompletionTypeSchema,
+  maxRounds: z.number().int().positive().optional(),
+  approvalNodeId: z.string().min(1).optional(),
+  noChangesRounds: z.number().int().positive().optional(),
+  fixedOutputPath: z.string().min(1).optional(),
+});
+
+export const nodeRoundResultStatusSchema = z.enum(['running', 'succeeded', 'failed']);
+
+export const nodeRoundResultSchema = z.object({
+  nodeId: z.string().min(1),
+  agentProfileId: z.string().min(1),
+  status: nodeRoundResultStatusSchema,
+  outputSummary: z.string().min(1).nullable(),
+  taskId: z.string().min(1).nullable(),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+});
+
+export const collaborationRoundStatusSchema = z.enum(['in-progress', 'completed', 'failed']);
+
+export const collaborationRoundSchema = z.object({
+  roundNumber: z.number().int().positive(),
+  nodeResults: z.array(nodeRoundResultSchema),
+  status: collaborationRoundStatusSchema,
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+});
+
+export const collaborationStatusSchema = z.enum([
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
+export const collaborationInstanceSchema = z.object({
+  id: z.string().min(1),
+  graph: collaborationGraphSchema,
+  goal: z.string().min(1),
+  completionCriteria: collaborationCompletionCriteriaSchema,
+  status: collaborationStatusSchema,
+  rounds: z.array(collaborationRoundSchema),
+  currentNodeId: z.string().min(1).nullable(),
+  sessionId: z.string().min(1).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  failedAt: z.string().datetime().nullable(),
+});
+
 export const commandTargetTypeSchema = z.enum(['session', 'model', 'prompt', 'memory', 'system']);
 export const commandResultStatusSchema = z.enum(['succeeded', 'failed', 'no-op']);
 
@@ -360,6 +446,96 @@ export const rendererFileChangeSchema = z.object({
   currentContent: z.string(),
 });
 
+export const attachmentKindSchema = z.enum(['document', 'spreadsheet']);
+
+export const attachmentSourceSchema = z.object({
+  fileName: z.string().min(1),
+  originalPath: z.string().min(1),
+  extension: z.string().min(1),
+  mimeType: z.string().min(1),
+});
+
+export const attachmentAssetSchema = z.object({
+  jsonPath: z.string().min(1),
+  createdAt: z.string().datetime(),
+  sizeBytes: z.number().int().nonnegative(),
+  editable: z.boolean().default(true),
+  schemaVersion: z.number().int().positive().default(1),
+});
+
+export const documentAttachmentChunkSchema = z.object({
+  index: z.number().int().nonnegative(),
+  text: z.string(),
+  heading: z.string().min(1).nullable().default(null),
+});
+
+export const documentAttachmentContentSchema = z.object({
+  chunks: z.array(documentAttachmentChunkSchema),
+});
+
+export const spreadsheetAttachmentCellValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+]);
+
+export const spreadsheetAttachmentCellSchema = z.object({
+  column: z.string().min(1),
+  address: z.string().min(1),
+  value: spreadsheetAttachmentCellValueSchema,
+});
+
+export const spreadsheetAttachmentRowSchema = z.object({
+  rowIndex: z.number().int().positive(),
+  cells: z.array(spreadsheetAttachmentCellSchema),
+});
+
+export const spreadsheetAttachmentSheetSchema = z.object({
+  name: z.string().min(1),
+  rows: z.array(spreadsheetAttachmentRowSchema),
+});
+
+export const spreadsheetAttachmentContentSchema = z.object({
+  sheets: z.array(spreadsheetAttachmentSheetSchema),
+});
+
+export const attachmentManifestSummarySchema = z.object({
+  isLarge: z.boolean(),
+  chunkCount: z.number().int().nonnegative().nullable().default(null),
+  sheetCount: z.number().int().nonnegative().nullable().default(null),
+  rowCount: z.number().int().nonnegative().nullable().default(null),
+  cellCount: z.number().int().nonnegative().nullable().default(null),
+  previewText: z.string().nullable().default(null),
+});
+
+export const inputAttachmentManifestSchema = z.object({
+  attachmentId: z.string().min(1),
+  kind: attachmentKindSchema,
+  source: attachmentSourceSchema,
+  asset: attachmentAssetSchema,
+  summary: attachmentManifestSummarySchema,
+  inlineJsonExcerpt: z.string().nullable().default(null),
+});
+
+export const documentAttachmentAssetSchema = z.object({
+  attachmentId: z.string().min(1),
+  kind: z.literal('document'),
+  source: attachmentSourceSchema,
+  asset: attachmentAssetSchema,
+  summary: attachmentManifestSummarySchema,
+  content: documentAttachmentContentSchema,
+});
+
+export const spreadsheetAttachmentAssetSchema = z.object({
+  attachmentId: z.string().min(1),
+  kind: z.literal('spreadsheet'),
+  source: attachmentSourceSchema,
+  asset: attachmentAssetSchema,
+  summary: attachmentManifestSummarySchema,
+  content: spreadsheetAttachmentContentSchema,
+});
+
 export const rendererOutputBlockSchema = z.object({
   id: z.string().min(1),
   type: rendererOutputBlockTypeSchema,
@@ -388,6 +564,7 @@ export const ipcInputEnvelopeSchema = z.object({
   windowId: z.string().min(1),
   sessionId: z.string().min(1).nullable(),
   inputText: z.string().min(1),
+  attachments: z.array(inputAttachmentManifestSchema).default([]),
   submittedAt: z.string().datetime(),
 });
 
@@ -401,6 +578,7 @@ export type SessionKind = z.infer<typeof sessionKindSchema>;
 export type SessionTriggerReason = z.infer<typeof sessionTriggerReasonSchema>;
 export type SessionMessageRole = z.infer<typeof sessionMessageRoleSchema>;
 export type SessionMessage = z.infer<typeof sessionMessageSchema>;
+export type ContextCountBreakdown = z.infer<typeof contextCountBreakdownSchema>;
 export type ContextCount = z.infer<typeof contextCountSchema>;
 export type BackgroundSummaryState = z.infer<typeof backgroundSummaryStateSchema>;
 export type BackgroundSummaryStatus = z.infer<typeof backgroundSummaryStatusSchema>;
@@ -426,6 +604,17 @@ export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export type RuntimePlanMetadata = z.infer<typeof runtimePlanMetadataSchema>;
 export type WorkflowContext = z.infer<typeof workflowContextSchema>;
 export type WorkflowInstance = z.infer<typeof workflowInstanceSchema>;
+export type CollaborationNode = z.infer<typeof collaborationNodeSchema>;
+export type CollaborationEdge = z.infer<typeof collaborationEdgeSchema>;
+export type CollaborationGraph = z.infer<typeof collaborationGraphSchema>;
+export type CollaborationCompletionType = z.infer<typeof collaborationCompletionTypeSchema>;
+export type CollaborationCompletionCriteria = z.infer<typeof collaborationCompletionCriteriaSchema>;
+export type NodeRoundResultStatus = z.infer<typeof nodeRoundResultStatusSchema>;
+export type NodeRoundResult = z.infer<typeof nodeRoundResultSchema>;
+export type CollaborationRoundStatus = z.infer<typeof collaborationRoundStatusSchema>;
+export type CollaborationRound = z.infer<typeof collaborationRoundSchema>;
+export type CollaborationStatus = z.infer<typeof collaborationStatusSchema>;
+export type CollaborationInstance = z.infer<typeof collaborationInstanceSchema>;
 export type CommandTargetType = z.infer<typeof commandTargetTypeSchema>;
 export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
 export type CommandAction = z.infer<typeof commandActionSchema>;
@@ -438,6 +627,20 @@ export type RendererMessageTraceMessage = z.infer<typeof rendererMessageTraceMes
 export type RendererMessageTraceStep = z.infer<typeof rendererMessageTraceStepSchema>;
 export type RendererFileChangeType = z.infer<typeof rendererFileChangeTypeSchema>;
 export type RendererFileChange = z.infer<typeof rendererFileChangeSchema>;
+export type AttachmentKind = z.infer<typeof attachmentKindSchema>;
+export type AttachmentSource = z.infer<typeof attachmentSourceSchema>;
+export type AttachmentAsset = z.infer<typeof attachmentAssetSchema>;
+export type DocumentAttachmentChunk = z.infer<typeof documentAttachmentChunkSchema>;
+export type DocumentAttachmentContent = z.infer<typeof documentAttachmentContentSchema>;
+export type SpreadsheetAttachmentCellValue = z.infer<typeof spreadsheetAttachmentCellValueSchema>;
+export type SpreadsheetAttachmentCell = z.infer<typeof spreadsheetAttachmentCellSchema>;
+export type SpreadsheetAttachmentRow = z.infer<typeof spreadsheetAttachmentRowSchema>;
+export type SpreadsheetAttachmentSheet = z.infer<typeof spreadsheetAttachmentSheetSchema>;
+export type SpreadsheetAttachmentContent = z.infer<typeof spreadsheetAttachmentContentSchema>;
+export type AttachmentManifestSummary = z.infer<typeof attachmentManifestSummarySchema>;
+export type InputAttachmentManifest = z.infer<typeof inputAttachmentManifestSchema>;
+export type DocumentAttachmentAsset = z.infer<typeof documentAttachmentAssetSchema>;
+export type SpreadsheetAttachmentAsset = z.infer<typeof spreadsheetAttachmentAssetSchema>;
 export type RendererOutputBlock = z.infer<typeof rendererOutputBlockSchema>;
 export type DesktopWindowSession = z.infer<typeof desktopWindowSessionSchema>;
 export type IpcInputEnvelope = z.infer<typeof ipcInputEnvelopeSchema>;

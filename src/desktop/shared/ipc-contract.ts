@@ -4,12 +4,14 @@ import type {
   BackgroundSummaryStatus,
   ContextCount,
   DesktopWindowSession,
+  InputAttachmentManifest,
   IpcInputEnvelope,
   MemoryRecord,
   ProviderUsageStats,
   ProviderProfile,
   RendererOutputBlock,
   Session,
+  WorkflowInstance,
 } from '../../shared/schema';
 
 export interface DesktopSubmitResponse {
@@ -63,6 +65,14 @@ export interface DesktopProviderStatuses {
   readonly deepseek: DesktopProviderStatus;
 }
 
+export interface DesktopWorkflowStatus {
+  readonly hasActiveWorkflow: boolean;
+  readonly workflowId: string | null;
+  readonly workflowType: string | null;
+  readonly status: WorkflowInstance['status'] | null;
+  readonly activeRoundNumber: number | null;
+}
+
 export interface DesktopRuntimeStatus {
   readonly providerId: string | null;
   readonly providerName: string | null;
@@ -71,6 +81,7 @@ export interface DesktopRuntimeStatus {
   readonly agentInstanceId: string | null;
   readonly modelId: string | null;
   readonly modelName: string | null;
+  readonly workspace?: string | null;
   readonly activeSessionId: string | null;
   readonly contextCount: ContextCount;
   readonly modelMessageCount: number;
@@ -81,6 +92,7 @@ export interface DesktopRuntimeStatus {
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
   readonly availableProviders?: ProviderProfile[];
   readonly providerStatuses?: DesktopProviderStatuses;
+  readonly workflow?: DesktopWorkflowStatus;
 }
 
 export interface DesktopSessionSelectionResponse {
@@ -90,6 +102,7 @@ export interface DesktopSessionSelectionResponse {
 
 export interface DesktopBridge {
   submitInput(envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse>;
+  selectInputFiles(sessionId: string | null): Promise<InputAttachmentManifest[]>;
   getRuntimeStatus(): Promise<DesktopRuntimeStatus>;
   getToolApprovalState(): Promise<DesktopToolApprovalState>;
   respondToolApproval(response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState>;

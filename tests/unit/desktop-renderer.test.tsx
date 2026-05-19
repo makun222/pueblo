@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/desktop/renderer/App';
-import type { MemoryRecord, ProviderProfile, RendererOutputBlock, Session } from '../../src/shared/schema';
+import type { InputAttachmentManifest, MemoryRecord, ProviderProfile, RendererOutputBlock, Session } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
 let submitInputMock: ReturnType<typeof vi.fn>;
@@ -11,6 +11,7 @@ let listSessionMemoriesMock: ReturnType<typeof vi.fn>;
 let selectSessionMock: ReturnType<typeof vi.fn>;
 let getToolApprovalStateMock: ReturnType<typeof vi.fn>;
 let respondToolApprovalMock: ReturnType<typeof vi.fn>;
+let selectInputFilesMock: ReturnType<typeof vi.fn>;
 
 const availableProviders: ProviderProfile[] = [
   {
@@ -36,6 +37,22 @@ const emptyProviderUsageStats = {
   cacheHitRatio: 0,
 };
 
+const inactiveWorkflowStatus = {
+  hasActiveWorkflow: false,
+  workflowId: null,
+  workflowType: null,
+  status: null,
+  activeRoundNumber: null,
+};
+
+const activeWorkflowStatus = {
+  hasActiveWorkflow: true,
+  workflowId: 'workflow-1',
+  workflowType: 'pueblo-plan',
+  status: 'round-active' as const,
+  activeRoundNumber: 2,
+};
+
 beforeEach(() => {
   vi.useRealTimers();
   outputListener = null;
@@ -59,6 +76,11 @@ beforeEach(() => {
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
         derivedMemoryCount: 0,
+        breakdown: {
+          systemPromptTokens: 9,
+          userInputTokens: 2,
+          toolResultTokens: 1,
+        },
       },
       modelMessageCount: 0,
       modelMessageCharCount: 0,
@@ -71,12 +93,14 @@ beforeEach(() => {
         lastSummaryAt: null,
         lastSummaryMemoryId: null,
       },
+      workflow: inactiveWorkflowStatus,
     },
   });
   listAgentSessionsMock = vi.fn().mockResolvedValue([]);
   listSessionMemoriesMock = vi.fn().mockResolvedValue([]);
   getToolApprovalStateMock = vi.fn().mockResolvedValue({ activeBatch: null });
   respondToolApprovalMock = vi.fn().mockResolvedValue({ activeBatch: null });
+  selectInputFilesMock = vi.fn().mockResolvedValue([]);
   selectSessionMock = vi.fn().mockResolvedValue({
     runtimeStatus: {
       providerId: 'github-copilot',
@@ -95,6 +119,11 @@ beforeEach(() => {
         selectedPromptCount: 0,
         selectedMemoryCount: 0,
         derivedMemoryCount: 0,
+        breakdown: {
+          systemPromptTokens: 9,
+          userInputTokens: 2,
+          toolResultTokens: 1,
+        },
       },
       modelMessageCount: 0,
       modelMessageCharCount: 0,
@@ -107,6 +136,7 @@ beforeEach(() => {
         lastSummaryAt: null,
         lastSummaryMemoryId: null,
       },
+      workflow: inactiveWorkflowStatus,
     },
     session: null,
   });
@@ -114,6 +144,7 @@ beforeEach(() => {
     configurable: true,
     value: {
       submitInput: submitInputMock,
+      selectInputFiles: selectInputFilesMock,
       getRuntimeStatus: vi.fn().mockResolvedValue({
         providerId: 'github-copilot',
         providerName: 'GitHub Copilot',
@@ -131,6 +162,11 @@ beforeEach(() => {
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
           derivedMemoryCount: 0,
+          breakdown: {
+            systemPromptTokens: 9,
+            userInputTokens: 2,
+            toolResultTokens: 1,
+          },
         },
         modelMessageCount: 0,
         modelMessageCharCount: 0,
@@ -143,6 +179,7 @@ beforeEach(() => {
           lastSummaryAt: null,
           lastSummaryMemoryId: null,
         },
+        workflow: inactiveWorkflowStatus,
       }),
       getToolApprovalState: getToolApprovalStateMock,
       respondToolApproval: respondToolApprovalMock,
@@ -164,6 +201,11 @@ beforeEach(() => {
           selectedPromptCount: 0,
           selectedMemoryCount: 0,
           derivedMemoryCount: 0,
+          breakdown: {
+            systemPromptTokens: 9,
+            userInputTokens: 2,
+            toolResultTokens: 1,
+          },
         },
         modelMessageCount: 0,
         modelMessageCharCount: 0,
@@ -176,6 +218,7 @@ beforeEach(() => {
           lastSummaryAt: null,
           lastSummaryMemoryId: null,
         },
+        workflow: inactiveWorkflowStatus,
       }),
       listAgentSessions: listAgentSessionsMock,
       listSessionMemories: listSessionMemoriesMock,
@@ -196,6 +239,28 @@ afterEach(() => {
 });
 
 describe('Desktop Renderer', () => {
+  it('shows the context window progress and breakdown popover', async () => {
+    render(createElement(App));
+
+    expect(await screen.findByText('12 / 32K')).toBeTruthy();
+    expect(screen.getByText('0.0%')).toBeTruthy();
+    expect(screen.queryByText('Message Length')).toBeNull();
+    expect(screen.queryByText('Total Tokens')).toBeNull();
+    expect(screen.queryByText('Cache Hit')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show context window breakdown' }));
+
+    expect(await screen.findByLabelText('context-breakdown')).toBeTruthy();
+    expect(screen.getByText('System Prompt')).toBeTruthy();
+    expect(screen.getByText('Runtime Stats')).toBeTruthy();
+    expect(screen.getByText('Message Length')).toBeTruthy();
+    expect(screen.getByText('Total Tokens')).toBeTruthy();
+    expect(screen.getByText('Cache Hit')).toBeTruthy();
+    expect(screen.getByText('75.0%')).toBeTruthy();
+    expect(screen.getByText('16.7%')).toBeTruthy();
+    expect(screen.getByText('8.3%')).toBeTruthy();
+  });
+
   it('toggles the session sidebar from the toolbar without affecting the other sidebars', async () => {
     render(createElement(App));
 
@@ -241,6 +306,43 @@ describe('Desktop Renderer', () => {
   });
 
   it('shows the latest todo memory in the lower sidebar section', async () => {
+    window.electronAPI.getRuntimeStatus = vi.fn().mockResolvedValue({
+      providerId: 'github-copilot',
+      providerName: 'GitHub Copilot',
+      agentProfileId: 'code-master',
+      agentProfileName: 'Code Master',
+      agentInstanceId: 'agent-1',
+      modelId: 'copilot-chat',
+      modelName: 'GPT-5.4',
+      activeSessionId: 'session-1',
+      contextCount: {
+        estimatedTokens: 12,
+        contextWindowLimit: 32000,
+        utilizationRatio: 0.0004,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+        breakdown: {
+          systemPromptTokens: 9,
+          userInputTokens: 2,
+          toolResultTokens: 1,
+        },
+      },
+      modelMessageCount: 0,
+      modelMessageCharCount: 0,
+      selectedPromptCount: 0,
+      selectedMemoryCount: 0,
+      availableProviders,
+      backgroundSummaryStatus: {
+        state: 'idle',
+        activeSummarySessionId: null,
+        lastSummaryAt: null,
+        lastSummaryMemoryId: null,
+      },
+      workflow: activeWorkflowStatus,
+    });
+
     const memories: MemoryRecord[] = [
       {
         id: 'memory-todo-older',
@@ -283,6 +385,57 @@ describe('Desktop Renderer', () => {
     expect(screen.queryByText('Older task')).toBeNull();
   });
 
+  it('treats stale todo memory as historical and offers recovery actions', async () => {
+    const createdAt = new Date().toISOString();
+    const todoMemory: MemoryRecord = {
+      id: 'memory-todo-stale',
+      type: 'short-term',
+      title: 'Todo Round 2: Refresh sidebar UX',
+      content: [
+        'workflowId: workflow-1',
+        'workflowType: pueblo-plan',
+        'roundNumber: 2',
+        'tasks:',
+        '- T1: Merge tool approvals into sidebar',
+        '- T2: Show todo items below approval list',
+      ].join('\n'),
+      scope: 'session',
+      status: 'active',
+      tags: ['workflow', 'todo', 'workflow:pueblo-plan'],
+      parentId: null,
+      derivationType: 'manual',
+      summaryDepth: 0,
+      sourceSessionId: 'session-1',
+      createdAt,
+      updatedAt: createdAt,
+    };
+
+    listSessionMemoriesMock.mockResolvedValue([todoMemory]);
+
+    render(createElement(App));
+
+    expect(await screen.findByText('No active workflow is running. These tasks come from a historical workflow todo memory and are not currently scheduled.')).toBeTruthy();
+    expect(screen.getByText('Merge tool approvals into sidebar')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Re-dispatch Tasks' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Clear Stale Workflow' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Re-dispatch Tasks' }));
+
+    await waitFor(() => {
+      expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({
+        inputText: expect.stringMatching(/^\/workflow /),
+      }));
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Stale Workflow' }));
+
+    await waitFor(() => {
+      expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({
+        inputText: '/workflow-clear-stale workflow-1',
+      }));
+    });
+  });
+
   it('should render distinct input and output regions with a pueblo prompt label', async () => {
     render(createElement(App));
 
@@ -293,6 +446,59 @@ describe('Desktop Renderer', () => {
     expect(screen.getByLabelText('input-region')).toBeTruthy();
     expect(screen.getByLabelText('output-region')).toBeTruthy();
     expect(screen.getByText('pueblo>')).toBeTruthy();
+  });
+
+  it('selects files from the pueblo label and submits them with the input envelope', async () => {
+    const uploadedAttachment: InputAttachmentManifest = {
+      attachmentId: 'att-1',
+      kind: 'document',
+      source: {
+        fileName: 'notes.docx',
+        originalPath: 'D:/docs/notes.docx',
+        extension: '.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      asset: {
+        jsonPath: 'D:/workspace/trends/pueblo/.pueblo/attachments/session-1/att-1.json',
+        createdAt: new Date().toISOString(),
+        sizeBytes: 128,
+        editable: true,
+        schemaVersion: 1,
+      },
+      summary: {
+        isLarge: false,
+        chunkCount: 2,
+        sheetCount: null,
+        rowCount: null,
+        cellCount: null,
+        previewText: 'First paragraph of the uploaded file.',
+      },
+      inlineJsonExcerpt: '{"kind":"document"}',
+    };
+    selectInputFilesMock.mockResolvedValue([uploadedAttachment]);
+
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Enter command or task...')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'pueblo>' }));
+
+    await waitFor(() => {
+      expect(selectInputFilesMock).toHaveBeenCalledWith('session-1');
+      expect(screen.getByText('notes.docx')).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Enter command or task...'), { target: { value: 'Summarize the uploaded file' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({
+        inputText: 'Summarize the uploaded file',
+        attachments: [expect.objectContaining({ attachmentId: 'att-1' })],
+      }));
+    });
   });
 
   it('should hide system output blocks from the transcript', async () => {
@@ -321,6 +527,43 @@ describe('Desktop Renderer', () => {
   });
 
   it('renders the sidebar approval queue and current todo list', async () => {
+    window.electronAPI.getRuntimeStatus = vi.fn().mockResolvedValue({
+      providerId: 'github-copilot',
+      providerName: 'GitHub Copilot',
+      agentProfileId: 'code-master',
+      agentProfileName: 'Code Master',
+      agentInstanceId: 'agent-1',
+      modelId: 'copilot-chat',
+      modelName: 'GPT-5.4',
+      activeSessionId: 'session-1',
+      contextCount: {
+        estimatedTokens: 12,
+        contextWindowLimit: 32000,
+        utilizationRatio: 0.0004,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+        breakdown: {
+          systemPromptTokens: 9,
+          userInputTokens: 2,
+          toolResultTokens: 1,
+        },
+      },
+      modelMessageCount: 0,
+      modelMessageCharCount: 0,
+      selectedPromptCount: 0,
+      selectedMemoryCount: 0,
+      availableProviders,
+      backgroundSummaryStatus: {
+        state: 'idle',
+        activeSummarySessionId: null,
+        lastSummaryAt: null,
+        lastSummaryMemoryId: null,
+      },
+      workflow: activeWorkflowStatus,
+    });
+
     const createdAt = new Date().toISOString();
     const todoMemory: MemoryRecord = {
       id: 'memory-todo-1',
@@ -686,6 +929,52 @@ describe('Desktop Renderer', () => {
     expect(screen.getByText('delta')).toBeTruthy();
     expect(document.querySelector('.file-change-line-added')).toBeTruthy();
     expect(document.querySelector('.file-change-line-removed')).toBeTruthy();
+  });
+
+  it('lists exported attachment source files in the changed-files panel', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Enter command or task...')).toBeTruthy();
+    });
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'task-result-exported-attachment',
+        type: 'task-result',
+        title: 'Output Summary',
+        content: 'Edited the canonical attachment JSON and rewrote the source file.',
+        collapsed: false,
+        messageTrace: [],
+        fileChanges: [
+          {
+            path: 'attachments/att-1.json',
+            absolutePath: 'd:/workspace/trends/pueblo/attachments/att-1.json',
+            changeType: 'modified',
+            previousContent: '{"text":"before"}',
+            currentContent: '{"text":"after"}',
+          },
+          {
+            path: 'D:/Users/example/Documents/notes.docx',
+            absolutePath: 'D:/Users/example/Documents/notes.docx',
+            changeType: 'modified',
+            previousContent: 'Document export: notes.docx\nBefore paragraph',
+            currentContent: 'Document export: notes.docx\nAfter paragraph',
+          },
+        ],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    fireEvent.click(screen.getByText('Changed Files'));
+
+    expect(screen.getByText('2')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'D:/Users/example/Documents/notes.docx' }));
+
+    expect(screen.getByLabelText('file-change-preview-dialog')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'D:/Users/example/Documents/notes.docx' })).toBeTruthy();
+    expect(screen.getByText('After paragraph')).toBeTruthy();
   });
 
   it('renders multi-turn handoff output as a collapsed continue-task card', async () => {
@@ -1206,7 +1495,9 @@ describe('Desktop Renderer', () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(submitInputMock).toHaveBeenCalledWith('/new fresh-session');
+      expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({
+        inputText: '/new fresh-session',
+      }));
       expect(screen.queryByText('Old message')).toBeNull();
       expect(screen.getByText('No output yet.')).toBeTruthy();
     });
@@ -1309,7 +1600,9 @@ describe('Desktop Renderer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => {
-      expect(submitInputMock).toHaveBeenCalledWith('/new Release review');
+      expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({
+        inputText: '/new Release review',
+      }));
       expect(screen.getByText('Untitled session')).toBeTruthy();
     });
   });

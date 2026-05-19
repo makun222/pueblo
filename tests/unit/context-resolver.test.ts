@@ -140,7 +140,7 @@ describe('context resolver', () => {
     expect(resolved.taskContext.selectedPromptIds).toEqual([prompt.id]);
     expect(resolved.taskContext.selectedMemoryIds).toEqual([memory.id]);
     expect(resolved.taskContext.resultSet?.sessionId).toBe(session.id);
-    expect(resolved.taskContext.targetDirectory).toBeNull();
+    expect(resolved.taskContext.targetDirectory).toBe(tempDir);
     expect(resolved.taskContext.resultItems).toHaveLength(1);
     expect(resolved.taskContext.resultItems[0]?.memoryId).toBe(memory.id);
     expect(resolved.taskContext.resultItems[0]?.summary).toContain('Cached result');

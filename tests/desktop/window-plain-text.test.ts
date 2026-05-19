@@ -52,6 +52,9 @@ describe('Desktop Plain-Text Routing and Exit', () => {
 
     await routeInput({ input: 'inspect repo', runtime });
 
-    expect(submitInput).toHaveBeenCalledWith('inspect repo');
+    expect(submitInput).toHaveBeenCalledWith(expect.objectContaining({
+      inputText: 'inspect repo',
+      attachments: [],
+    }), undefined);
   });
 });

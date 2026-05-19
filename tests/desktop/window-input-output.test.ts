@@ -302,7 +302,10 @@ describe('Desktop Window Input/Output', () => {
 
     await user.type(screen.getByPlaceholderText('Enter command or task...'), '/ping{enter}');
 
-    expect(window.electronAPI.submitInput).toHaveBeenCalledWith('/ping');
+    expect(window.electronAPI.submitInput).toHaveBeenCalledWith(expect.objectContaining({
+      inputText: '/ping',
+      attachments: [],
+    }));
   });
 
   it('should submit input on send button click', async () => {
@@ -316,7 +319,10 @@ describe('Desktop Window Input/Output', () => {
     await user.type(screen.getByPlaceholderText('Enter command or task...'), '/help');
     await user.click(screen.getByRole('button', { name: 'Send' }));
 
-    expect(window.electronAPI.submitInput).toHaveBeenCalledWith('/help');
+    expect(window.electronAPI.submitInput).toHaveBeenCalledWith(expect.objectContaining({
+      inputText: '/help',
+      attachments: [],
+    }));
     expect(screen.getByText('You')).toBeTruthy();
     expect(screen.getByText('/help')).toBeTruthy();
   });
@@ -333,7 +339,8 @@ describe('Desktop Window Input/Output', () => {
     await user.type(screen.getByPlaceholderText('Enter command or task...'), '/help');
     await user.click(screen.getByRole('button', { name: 'Send' }));
 
-    expect(screen.getByText('Pueblo')).toBeTruthy();
+    const errorEntry = screen.getByText('submit failed').closest('article');
+    expect(errorEntry?.textContent).toContain('Pueblo');
     expect(screen.getByText('submit failed')).toBeTruthy();
   });
 
@@ -365,11 +372,16 @@ describe('Desktop Window Input/Output', () => {
   });
 
   it('should show provider and model badges', async () => {
+    const user = userEvent.setup();
     render(createElement(App));
 
     expect(await screen.findByText('GitHub Copilot')).toBeTruthy();
     expect(await screen.findByText('GPT-5.4')).toBeTruthy();
-    expect(await screen.findByText('0 chars')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Show context window breakdown' }));
+
+    expect(await screen.findByLabelText('context-breakdown')).toBeTruthy();
+    expect(screen.getByText('0 chars')).toBeTruthy();
   });
 
   it('should render a collapsed message details block for output entries', async () => {
@@ -391,8 +403,10 @@ describe('Desktop Window Input/Output', () => {
     expect(details).toBeTruthy();
     expect(details?.hasAttribute('open')).toBe(false);
     expect(screen.getByText('Step 1')).toBeTruthy();
-    expect(screen.getByText('2 messages')).toBeTruthy();
-    expect(screen.getByText('18 chars')).toBeTruthy();
+    expect(details?.querySelector('.message-details-summary')?.textContent).toContain('2 messages');
+    expect(details?.querySelector('.message-details-summary')?.textContent).toContain('18 chars');
+    expect(details?.querySelector('.message-step-summary')?.textContent).toContain('2 messages');
+    expect(details?.querySelector('.message-step-summary')?.textContent).toContain('18 chars');
     expect(screen.getByText('system')).toBeTruthy();
     expect(screen.getByText('user')).toBeTruthy();
     expect(screen.getByText('tool=grep')).toBeTruthy();
@@ -531,9 +545,10 @@ describe('Desktop Window Input/Output', () => {
     await user.click(screen.getByRole('button', { name: 'Save DeepSeek Configuration' }));
 
     await waitFor(() => {
-      expect(window.electronAPI.submitInput).toHaveBeenCalledWith(
-        '/provider-config deepseek set-key deepseek-secret deepseek-v4-pro https://api.deepseek.com',
-      );
+      expect(window.electronAPI.submitInput).toHaveBeenCalledWith(expect.objectContaining({
+        inputText: '/provider-config deepseek set-key deepseek-secret deepseek-v4-pro https://api.deepseek.com',
+        attachments: [],
+      }));
       expect(screen.getByText('DeepSeek')).toBeTruthy();
       expect(screen.getByText('DeepSeek V4 Pro')).toBeTruthy();
     });
@@ -683,7 +698,10 @@ describe('Desktop Window Input/Output', () => {
     await user.selectOptions(screen.getByDisplayValue('GitHub Copilot'), 'deepseek');
 
     await waitFor(() => {
-      expect(window.electronAPI.submitInput).toHaveBeenNthCalledWith(1, '/model deepseek');
+      expect(window.electronAPI.submitInput).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        inputText: '/model deepseek',
+        attachments: [],
+      }));
       expect(screen.getByDisplayValue('DeepSeek')).toBeTruthy();
       expect(screen.getByDisplayValue('DeepSeek V4 Pro')).toBeTruthy();
     });
@@ -691,7 +709,10 @@ describe('Desktop Window Input/Output', () => {
     await user.selectOptions(screen.getByDisplayValue('DeepSeek V4 Pro'), 'deepseek-v4-flash');
 
     await waitFor(() => {
-      expect(window.electronAPI.submitInput).toHaveBeenNthCalledWith(2, '/model deepseek deepseek-v4-flash');
+      expect(window.electronAPI.submitInput).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        inputText: '/model deepseek deepseek-v4-flash',
+        attachments: [],
+      }));
       expect(screen.getByDisplayValue('DeepSeek V4 Flash')).toBeTruthy();
     });
   });

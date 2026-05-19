@@ -19,6 +19,10 @@ describe('GitHub Copilot Provider Contract', () => {
     expect(adapter).toBeInstanceOf(GitHubCopilotAdapter);
     expect(profile.id).toBe('github-copilot');
     expect(profile.defaultModelId).toBe('copilot-chat');
+    expect(profile.models).toContainEqual(expect.objectContaining({
+      id: 'copilot-chat',
+      contextWindow: 32000,
+    }));
   });
 
   it('should handle task execution requests', async () => {

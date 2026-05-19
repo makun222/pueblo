@@ -40,6 +40,9 @@ describe('input router', () => {
     });
 
     expect(result.code).toBe('TASK_COMPLETED');
-    expect(submitInput).toHaveBeenCalledWith('inspect repo');
+    expect(submitInput).toHaveBeenCalledWith(expect.objectContaining({
+      inputText: 'inspect repo',
+      attachments: [],
+    }), undefined);
   });
 });

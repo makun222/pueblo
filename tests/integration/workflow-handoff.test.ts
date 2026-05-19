@@ -220,4 +220,52 @@ describeIfNodeSqlite('workflow handoff integration', () => {
       cli.databaseClose();
     }
   });
+
+  it('clears historical workflow memories for a specific workflow id', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-workflow-clear-stale-'));
+    tempDirs.push(tempDir);
+    process.chdir(tempDir);
+
+    const config = createTestAppConfig({
+      databasePath: path.join(tempDir, 'pueblo.db'),
+      defaultProviderId: 'openai',
+      defaultSessionId: null,
+      pepe: { enabled: false },
+      workflow: {
+        runtimeDirectory: path.join(tempDir, '.plans'),
+      },
+      providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
+    });
+
+    const cli = createCliDependencies(config);
+
+    try {
+      const start = await cli.dispatcher.dispatch({ input: '/workflow build a staged migration plan' });
+      expect(start.ok).toBe(true);
+
+      const startData = start.data as {
+        sessionId: string;
+        workflowId: string;
+        planMemoryId: string;
+        todoMemoryId: string | null;
+      };
+
+      const cancelled = await cli.submitInput('/workflow-cancel no longer needed');
+      expect(cancelled.ok).toBe(true);
+
+      const beforeClear = cli.listSessionMemories(startData.sessionId);
+      expect(beforeClear.some((memory) => memory.id === startData.planMemoryId)).toBe(true);
+      expect(beforeClear.some((memory) => memory.id === startData.todoMemoryId)).toBe(true);
+
+      const cleared = await cli.submitInput(`/workflow-clear-stale ${startData.workflowId}`);
+      expect(cleared.ok).toBe(true);
+      expect(cleared.code).toBe('WORKFLOW_STALE_CLEARED');
+
+      const afterClear = cli.listSessionMemories(startData.sessionId);
+      expect(afterClear.some((memory) => memory.id === startData.planMemoryId)).toBe(false);
+      expect(afterClear.some((memory) => memory.id === startData.todoMemoryId)).toBe(false);
+    } finally {
+      cli.databaseClose();
+    }
+  });
 });
