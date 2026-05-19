@@ -3,14 +3,19 @@ import { dialog, ipcMain, BrowserWindow } from 'electron';
 import { createRuntimeCoordinator, RuntimeMessage } from '../../app/runtime';
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../agent/task-runner';
 import { createCliDependencies } from '../../cli/index';
+import { tokenizeCommandInput } from '../../commands/dispatcher';
 import { routeInput } from '../../commands/input-router';
 import { loadAppConfig } from '../../shared/config';
 import { createOutputBlock, createResultBlocks } from '../../shared/result';
 import { ipcInputEnvelopeSchema, type IpcInputEnvelope } from '../../shared/schema';
 import { createTaskCancellationError, isTaskCancellationError } from '../../shared/task-cancellation';
 import { ATTACHMENT_FILE_DIALOG_FILTERS, ingestInputFiles } from './attachment-ingestion';
+import { DesktopTalkService } from './talk-service';
 import type {
   DesktopRuntimeStatus,
+  DesktopTalkContinuationResponse,
+  DesktopTalkRequestResponse,
+  DesktopTalkState,
   DesktopToolApprovalBatch,
   DesktopToolApprovalRequest,
   DesktopToolApprovalResponse,
@@ -18,10 +23,14 @@ import type {
 } from '../shared/ipc-contract';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
+const TALK_STATE_CHANNEL = 'talk-state';
 const DESKTOP_IPC_CHANNELS = [
   'get-runtime-status',
   'get-tool-approval-state',
+  'get-talk-state',
   'respond-tool-approval',
+  'respond-talk-request',
+  'respond-talk-continuation',
   'list-agent-profiles',
   'start-agent-session',
   'list-agent-sessions',
@@ -47,6 +56,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   const publishToolApprovalState = (state: DesktopToolApprovalState = resolveToolApprovalState(activeToolApprovalBatch)) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send(TOOL_APPROVAL_STATE_CHANNEL, state);
+    }
+  };
+
+  let talkService: DesktopTalkService | null = null;
+
+  const publishTalkState = (state: DesktopTalkState) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(TALK_STATE_CHANNEL, state);
     }
   };
 
@@ -79,6 +96,39 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   const runtime = createRuntimeCoordinator({
     config,
     submitInput: cli.submitInput,
+  });
+
+  const executeInput = async (
+    envelope: IpcInputEnvelope,
+    signal?: AbortSignal,
+  ): Promise<{
+    readonly result: ReturnType<typeof createResultBlocks> extends never ? never : Awaited<ReturnType<typeof routeInput>>;
+    readonly blocks: ReturnType<typeof createResultBlocks>;
+    readonly runtimeStatus: DesktopRuntimeStatus;
+  }> => {
+    const result = await routeInput({ input: envelope, runtime, signal });
+    const blocks = createResultBlocks(result);
+
+    for (const block of blocks) {
+      runtime.publish({ block });
+    }
+
+    return {
+      result,
+      blocks,
+      runtimeStatus: resolveRuntimeStatus(cli),
+    };
+  };
+
+  talkService = new DesktopTalkService({
+    getRuntimeStatus: () => resolveRuntimeStatus(cli),
+    executeInput: (envelope) => executeInput(envelope),
+    publishOutput: (block) => {
+      runtime.publish({ block });
+    },
+  });
+  const disposeTalkStateListener = talkService.onStateChange((state) => {
+    publishTalkState(state);
   });
 
   cli.setProgressReporter((update) => {
@@ -119,6 +169,9 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
     cli.setProgressReporter(null);
     cli.setToolApprovalBatchHandler(null);
     cli.setToolApprovalHandler(null);
+    disposeTalkStateListener();
+    void talkService?.dispose();
+    talkService = null;
     disposeRuntimeListener();
     runtime.dispose();
     removeDesktopIpcHandlers();
@@ -129,6 +182,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   ipcMain.handle('get-runtime-status', async () => resolveRuntimeStatus(cli));
 
   ipcMain.handle('get-tool-approval-state', async () => resolveToolApprovalState(activeToolApprovalBatch));
+
+  ipcMain.handle('get-talk-state', async () => talkService?.getState() ?? {
+    localPid: process.pid,
+    incomingRequest: null,
+    activeConversation: null,
+  } satisfies DesktopTalkState);
 
   ipcMain.handle('respond-tool-approval', async (_event, response: DesktopToolApprovalResponse) => {
     if (!activeToolApprovalBatch?.state.activeBatch) {
@@ -147,6 +206,22 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
 
     activeToolApprovalBatch.resolve(decisions);
     return { activeBatch: null } satisfies DesktopToolApprovalState;
+  });
+
+  ipcMain.handle('respond-talk-request', async (_event, response: DesktopTalkRequestResponse) => {
+    if (!talkService) {
+      throw new Error('Talk service is unavailable.');
+    }
+
+    return talkService.respondToIncomingRequest(response);
+  });
+
+  ipcMain.handle('respond-talk-continuation', async (_event, response: DesktopTalkContinuationResponse) => {
+    if (!talkService) {
+      throw new Error('Talk service is unavailable.');
+    }
+
+    return talkService.respondToContinuation(response);
   });
 
   ipcMain.handle('list-agent-profiles', async () => cli.listAgentProfiles());
@@ -185,17 +260,40 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
         ...inputEnvelope,
         attachments: inputEnvelope.attachments ?? [],
       });
-      const result = await routeInput({ input: envelope, runtime, signal: submitController.signal });
-      const blocks = createResultBlocks(result);
+      const talkCommandResult = await talkService?.handleTalkCommand(envelope.inputText.trim());
+      if (talkCommandResult) {
+        const blocks = createResultBlocks(talkCommandResult);
+        for (const block of blocks) {
+          runtime.publish({ block });
+        }
 
-      for (const block of blocks) {
-        runtime.publish({ block });
+        return {
+          result: talkCommandResult,
+          blocks,
+          runtimeStatus: resolveRuntimeStatus(cli),
+        };
       }
+
+      if (talkService && !talkService.canAcceptUserInput()) {
+        const result = talkService.createLockedResult();
+        const blocks = createResultBlocks(result);
+        for (const block of blocks) {
+          runtime.publish({ block });
+        }
+
+        return {
+          result,
+          blocks,
+          runtimeStatus: resolveRuntimeStatus(cli),
+        };
+      }
+
+      const { result, blocks, runtimeStatus } = await executeInput(envelope, submitController.signal);
 
       return {
         result,
         blocks,
-        runtimeStatus: resolveRuntimeStatus(cli),
+        runtimeStatus,
       };
     } catch (error) {
       if (isTaskCancellationError(error)) {
@@ -230,7 +328,10 @@ function removeDesktopIpcHandlers(): void {
 function resolveRuntimeStatus(
   cli: ReturnType<typeof createCliDependencies>,
 ): DesktopRuntimeStatus {
-  return cli.getRuntimeStatus();
+  return {
+    ...cli.getRuntimeStatus(),
+    desktopProcessId: process.pid,
+  };
 }
 
 function resolveToolApprovalState(activeToolApprovalBatch: PendingToolApprovalBatch | null): DesktopToolApprovalState {

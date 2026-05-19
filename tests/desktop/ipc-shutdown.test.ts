@@ -179,6 +179,11 @@ describe('Desktop IPC shutdown', () => {
 
   it('aborts in-flight submit-input work during cleanup', async () => {
     routeInputMock.mockImplementationOnce(({ signal }: { signal?: AbortSignal }) => new Promise((_, reject) => {
+      if (signal?.aborted) {
+        reject(signal.reason ?? createTaskCancellationError('Task cancelled because the desktop window closed.'));
+        return;
+      }
+
       signal?.addEventListener('abort', () => {
         reject(signal.reason ?? createTaskCancellationError('Task cancelled because the desktop window closed.'));
       }, { once: true });
@@ -186,12 +191,26 @@ describe('Desktop IPC shutdown', () => {
 
     const cleanup = setupIpcHandlers(mainWindow as never);
     const submitHandler = ipcMainMock.handle.mock.calls.find((call) => call[0] === 'submit-input')?.[1] as
-      | ((event: unknown, input: string) => Promise<unknown>)
+      | ((event: unknown, input: {
+        requestId: string;
+        windowId: string;
+        sessionId: string | null;
+        inputText: string;
+        submittedAt: string;
+        attachments?: [];
+      }) => Promise<unknown>)
       | undefined;
 
     expect(submitHandler).toBeTypeOf('function');
 
-    const pendingSubmit = submitHandler?.({}, 'Long running task');
+    const pendingSubmit = submitHandler?.({}, {
+      requestId: 'req-1',
+      windowId: 'desktop-window',
+      sessionId: null,
+      inputText: 'Long running task',
+      attachments: [],
+      submittedAt: new Date().toISOString(),
+    });
     cleanup();
 
     await expect(pendingSubmit).rejects.toThrow('Task cancelled because the desktop window closed.');

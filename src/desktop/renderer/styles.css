@@ -179,6 +179,13 @@ select {
   min-width: 0;
 }
 
+.app-toolbar-copy-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .app-toolbar-actions {
   display: flex;
   align-items: center;
@@ -203,6 +210,76 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.app-toolbar-pid {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--line-base);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  color: var(--ink-base);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.talk-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(10, 124, 255, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(10, 124, 255, 0.1), rgba(31, 199, 178, 0.08));
+}
+
+.talk-banner-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.talk-banner-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.talk-banner-copy h2,
+.talk-banner-meta,
+.talk-banner-copyline,
+.talk-modal-body p {
+  margin: 0;
+}
+
+.talk-banner-copy h2 {
+  font-size: 18px;
+}
+
+.talk-banner-meta {
+  color: var(--ink-base);
+  font-size: 12px;
+}
+
+.talk-banner-copyline {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.talk-modal {
+  max-width: 560px;
+}
+
+.talk-modal-body {
+  display: grid;
+  gap: 10px;
 }
 
 .app-toolbar-icon {
@@ -1462,8 +1539,15 @@ select {
 .status-strip-context {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   margin-left: auto;
   flex: 0 0 auto;
+}
+
+.status-strip-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .context-window-chip {

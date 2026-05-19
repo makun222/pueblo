@@ -73,6 +73,48 @@ export interface DesktopWorkflowStatus {
   readonly activeRoundNumber: number | null;
 }
 
+export interface DesktopTalkIncomingRequest {
+  readonly conversationId: string;
+  readonly fromPid: number;
+  readonly fromAgentProfileName: string | null;
+  readonly message: string;
+  readonly createdAt: string;
+}
+
+export interface DesktopTalkContinuationPrompt {
+  readonly roundCount: number;
+  readonly turnLimit: number;
+  readonly localDecision: 'pending' | 'approved' | 'rejected';
+  readonly remoteDecision: 'pending' | 'approved' | 'rejected';
+}
+
+export interface DesktopTalkActiveConversation {
+  readonly conversationId: string;
+  readonly peerPid: number;
+  readonly peerAgentProfileName: string | null;
+  readonly initiatedBy: 'local' | 'remote';
+  readonly status: 'requesting' | 'active';
+  readonly turnCount: number;
+  readonly turnLimit: number;
+  readonly continuationPrompt: DesktopTalkContinuationPrompt | null;
+}
+
+export interface DesktopTalkState {
+  readonly localPid: number | null;
+  readonly incomingRequest: DesktopTalkIncomingRequest | null;
+  readonly activeConversation: DesktopTalkActiveConversation | null;
+}
+
+export interface DesktopTalkRequestResponse {
+  readonly conversationId: string;
+  readonly decision: 'accept' | 'reject';
+}
+
+export interface DesktopTalkContinuationResponse {
+  readonly conversationId: string;
+  readonly decision: 'continue' | 'end';
+}
+
 export interface DesktopRuntimeStatus {
   readonly providerId: string | null;
   readonly providerName: string | null;
@@ -81,6 +123,7 @@ export interface DesktopRuntimeStatus {
   readonly agentInstanceId: string | null;
   readonly modelId: string | null;
   readonly modelName: string | null;
+  readonly desktopProcessId?: number | null;
   readonly workspace?: string | null;
   readonly activeSessionId: string | null;
   readonly contextCount: ContextCount;
@@ -105,7 +148,10 @@ export interface DesktopBridge {
   selectInputFiles(sessionId: string | null): Promise<InputAttachmentManifest[]>;
   getRuntimeStatus(): Promise<DesktopRuntimeStatus>;
   getToolApprovalState(): Promise<DesktopToolApprovalState>;
+  getTalkState(): Promise<DesktopTalkState>;
   respondToolApproval(response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState>;
+  respondTalkRequest(response: DesktopTalkRequestResponse): Promise<DesktopTalkState>;
+  respondTalkContinuation(response: DesktopTalkContinuationResponse): Promise<DesktopTalkState>;
   listAgentProfiles(): Promise<AgentProfileTemplate[]>;
   startAgentSession(profileId: string): Promise<DesktopRuntimeStatus>;
   listAgentSessions(agentInstanceId: string): Promise<Session[]>;
@@ -113,6 +159,7 @@ export interface DesktopBridge {
   selectSession(sessionId: string): Promise<DesktopSessionSelectionResponse>;
   onMenuAction(listener: (action: DesktopMenuAction) => void): () => void;
   onToolApprovalState(listener: (state: DesktopToolApprovalState) => void): () => void;
+  onTalkState(listener: (state: DesktopTalkState) => void): () => void;
   getSessionSnapshot(): Promise<DesktopWindowSession | null>;
   subscribeSession(listener: (session: DesktopWindowSession) => void): () => void;
 }

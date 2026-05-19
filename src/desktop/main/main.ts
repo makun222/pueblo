@@ -130,8 +130,17 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
   ipcMain.removeHandler('get-tool-approval-state');
   ipcMain.handle('get-tool-approval-state', async () => ({ activeBatch: null }));
 
+  ipcMain.removeHandler('get-talk-state');
+  ipcMain.handle('get-talk-state', async () => ({ localPid: process.pid, incomingRequest: null, activeConversation: null }));
+
   ipcMain.removeHandler('respond-tool-approval');
   ipcMain.handle('respond-tool-approval', async () => ({ activeBatch: null }));
+
+  ipcMain.removeHandler('respond-talk-request');
+  ipcMain.handle('respond-talk-request', failWithStartupError);
+
+  ipcMain.removeHandler('respond-talk-continuation');
+  ipcMain.handle('respond-talk-continuation', failWithStartupError);
 
   ipcMain.removeHandler('list-agent-profiles');
   ipcMain.handle('list-agent-profiles', async () => {

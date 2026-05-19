@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopMenuAction,
+  DesktopTalkActiveConversation,
+  DesktopTalkContinuationPrompt,
+  DesktopTalkContinuationResponse,
+  DesktopTalkRequestResponse,
+  DesktopTalkState,
   DesktopProviderStatus,
   DesktopRuntimeStatus,
   DesktopSessionSelectionResponse,
@@ -20,6 +25,11 @@ const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
 const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
 const EMPTY_TOOL_APPROVAL_STATE: DesktopToolApprovalState = {
   activeBatch: null,
+};
+const EMPTY_TALK_STATE: DesktopTalkState = {
+  localPid: null,
+  incomingRequest: null,
+  activeConversation: null,
 };
 
 interface WorkflowTodoItem {
@@ -137,7 +147,10 @@ declare global {
       selectInputFiles: (sessionId: string | null) => Promise<InputAttachmentManifest[]>;
       getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
       getToolApprovalState: () => Promise<DesktopToolApprovalState>;
+      getTalkState: () => Promise<DesktopTalkState>;
       respondToolApproval: (response: { batchId: string; decision: 'allow' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
+      respondTalkRequest: (response: DesktopTalkRequestResponse) => Promise<DesktopTalkState>;
+      respondTalkContinuation: (response: DesktopTalkContinuationResponse) => Promise<DesktopTalkState>;
       listAgentProfiles: () => Promise<AgentProfileTemplate[]>;
       startAgentSession: (profileId: string) => Promise<DesktopRuntimeStatus>;
       listAgentSessions: (agentInstanceId: string) => Promise<Session[]>;
@@ -145,6 +158,7 @@ declare global {
       selectSession: (sessionId: string) => Promise<DesktopSessionSelectionResponse>;
       onMenuAction: (callback: (action: DesktopMenuAction) => void) => (() => void);
       onToolApprovalState: (callback: (state: DesktopToolApprovalState) => void) => (() => void);
+      onTalkState: (callback: (state: DesktopTalkState) => void) => (() => void);
       onOutput: (callback: (event: unknown, data: RendererOutputBlock) => void) => void;
       removeAllListeners: (event: string) => void;
     };
@@ -183,9 +197,12 @@ export function App() {
   const [sessionInspectorMemories, setSessionInspectorMemories] = useState<MemoryRecord[]>([]);
   const [activeSessionMemories, setActiveSessionMemories] = useState<MemoryRecord[]>([]);
   const [toolApprovalState, setToolApprovalState] = useState<DesktopToolApprovalState>(EMPTY_TOOL_APPROVAL_STATE);
+  const [talkState, setTalkState] = useState<DesktopTalkState>(EMPTY_TALK_STATE);
   const [selectedToolApprovalIds, setSelectedToolApprovalIds] = useState<string[]>([]);
   const [hasEditedToolApprovalSelection, setHasEditedToolApprovalSelection] = useState(false);
   const [isResolvingToolApproval, setIsResolvingToolApproval] = useState(false);
+  const [isRespondingTalkRequest, setIsRespondingTalkRequest] = useState(false);
+  const [isRespondingTalkContinuation, setIsRespondingTalkContinuation] = useState(false);
   const [sessionInspectorError, setSessionInspectorError] = useState<string | null>(null);
   const [isSessionInspectorLoading, setIsSessionInspectorLoading] = useState(false);
   const [isSessionSelecting, setIsSessionSelecting] = useState(false);
@@ -232,12 +249,22 @@ export function App() {
     void window.electronAPI.getToolApprovalState().then(setToolApprovalState).catch(() => {
       setToolApprovalState(EMPTY_TOOL_APPROVAL_STATE);
     });
+    if (typeof window.electronAPI.getTalkState === 'function') {
+      void window.electronAPI.getTalkState().then(setTalkState).catch(() => {
+        setTalkState(EMPTY_TALK_STATE);
+      });
+    }
     void window.electronAPI.listAgentProfiles().then(setAgentProfiles).catch((error) => {
       setStartupError(error instanceof Error ? error.message : 'Failed to load agent profiles.');
     });
     const disposeToolApprovalListener = window.electronAPI.onToolApprovalState((state) => {
       setToolApprovalState(state);
     });
+    const disposeTalkStateListener = typeof window.electronAPI.onTalkState === 'function'
+      ? window.electronAPI.onTalkState((state) => {
+        setTalkState(state);
+      })
+      : () => {};
 
     window.electronAPI.onOutput((event, data) => {
       if (data.type === 'system' && data.title === 'Assistant Draft') {
@@ -268,6 +295,7 @@ export function App() {
         streamTimerRef.current = null;
       }
       disposeToolApprovalListener();
+      disposeTalkStateListener();
       window.electronAPI.removeAllListeners('output');
     };
   }, []);
@@ -290,6 +318,18 @@ export function App() {
     setIsToolApprovalSidebarOpen(true);
     setIsResolvingToolApproval(false);
   }, [toolApprovalState.activeBatch?.id]);
+
+  useEffect(() => {
+    if (!talkState.incomingRequest) {
+      setIsRespondingTalkRequest(false);
+    }
+  }, [talkState.incomingRequest?.conversationId]);
+
+  useEffect(() => {
+    if (!talkState.activeConversation?.continuationPrompt) {
+      setIsRespondingTalkContinuation(false);
+    }
+  }, [talkState.activeConversation?.conversationId, talkState.activeConversation?.continuationPrompt?.roundCount]);
 
   useEffect(() => {
     runtimeStatusRef.current = runtimeStatus;
@@ -881,6 +921,8 @@ export function App() {
   const selectedProviderProfile = findProviderProfile(availableProviders, runtimeStatus.providerId);
   const availableModels = selectedProviderProfile?.models ?? [];
   const activeToolApprovalBatch = toolApprovalState.activeBatch;
+  const activeTalkConversation = talkState.activeConversation;
+  const activeTalkContinuationPrompt = activeTalkConversation?.continuationPrompt ?? null;
   const activeSession = agentSessions.find((session) => session.id === runtimeStatus.activeSessionId) ?? null;
   const hasActiveWorkflow = runtimeStatus.workflow?.hasActiveWorkflow ?? false;
   const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSession?.selectedMemoryIds ?? [], hasActiveWorkflow);
@@ -901,6 +943,8 @@ export function App() {
     runtimeStatus.providerUsageStats,
     activeSession?.providerUsageStats,
   );
+  const promptTokens = displayedProviderUsageStats.promptTokens;
+  const completionTokens = displayedProviderUsageStats.completionTokens;
   const totalTokens = displayedProviderUsageStats.totalTokens;
   const cacheHitRatio = displayedProviderUsageStats.cacheHitRatio;
   const contextWindowSummary = formatContextWindowSummary(
@@ -922,6 +966,12 @@ export function App() {
   const effectiveSelectedToolApprovalIds = activeToolApprovalBatch && !hasEditedToolApprovalSelection
     ? activeToolApprovalBatch.requests.map((request) => request.id)
     : selectedToolApprovalIds;
+  const desktopProcessId = runtimeStatus.desktopProcessId ?? talkState.localPid;
+  const inputPlaceholder = needsAgentSelection
+    ? 'Select an agent profile to begin...'
+    : activeTalkConversation
+      ? `Talking to pid ${activeTalkConversation.peerPid}. Only /talkto ${activeTalkConversation.peerPid} end is accepted.`
+      : 'Enter command or task...';
 
   const handleToggleToolApprovalSelection = (requestId: string) => {
     const currentSelection = hasEditedToolApprovalSelection
@@ -952,6 +1002,52 @@ export function App() {
       setToolApprovalState(nextState);
     } finally {
       setIsResolvingToolApproval(false);
+    }
+  };
+
+  const handleRespondTalkRequest = async (decision: 'accept' | 'reject') => {
+    const incomingRequest = talkState.incomingRequest;
+    if (!incomingRequest || isRespondingTalkRequest) {
+      return;
+    }
+
+    setIsRespondingTalkRequest(true);
+
+    try {
+      if (typeof window.electronAPI.respondTalkRequest !== 'function') {
+        return;
+      }
+
+      const nextState = await window.electronAPI.respondTalkRequest({
+        conversationId: incomingRequest.conversationId,
+        decision,
+      });
+      setTalkState(nextState);
+    } finally {
+      setIsRespondingTalkRequest(false);
+    }
+  };
+
+  const handleRespondTalkContinuation = async (decision: 'continue' | 'end') => {
+    const activeConversation = talkState.activeConversation;
+    if (!activeConversation?.continuationPrompt || isRespondingTalkContinuation) {
+      return;
+    }
+
+    setIsRespondingTalkContinuation(true);
+
+    try {
+      if (typeof window.electronAPI.respondTalkContinuation !== 'function') {
+        return;
+      }
+
+      const nextState = await window.electronAPI.respondTalkContinuation({
+        conversationId: activeConversation.conversationId,
+        decision,
+      });
+      setTalkState(nextState);
+    } finally {
+      setIsRespondingTalkContinuation(false);
     }
   };
 
@@ -1018,7 +1114,10 @@ export function App() {
       <header className="app-toolbar" aria-label="window-toolbar">
         <div className="app-toolbar-copy">
           <span className="app-toolbar-title">Pueblo</span>
-          <span className="app-toolbar-subtitle">{runtimeStatus.agentProfileName ?? 'No agent selected'}</span>
+          <div className="app-toolbar-copy-meta">
+            <span className="app-toolbar-subtitle">{runtimeStatus.agentProfileName ?? 'No agent selected'}</span>
+            <span className="app-toolbar-pid">PID {desktopProcessId ?? 'n/a'}</span>
+          </div>
         </div>
         <div className="app-toolbar-actions">
           <button
@@ -1061,6 +1160,7 @@ export function App() {
       </header>
       <div className="workspace-shell" style={{ ['--workspace-columns' as string]: workspaceColumns }}>
         <section ref={outputPaneRef} className="output-pane" aria-label="output-region">
+          {activeTalkConversation ? renderTalkBanner({ conversation: activeTalkConversation }) : null}
           {showAgentPicker ? renderAgentPicker(
             agentProfiles,
             startingProfileId,
@@ -1294,6 +1394,24 @@ export function App() {
           </span>
         </div>
         <div className="status-strip-context">
+          <div className="status-strip-metrics" aria-label="provider-usage-summary">
+            <span className="status-chip">
+              <span className="status-chip-label">Prompt Tokens</span>
+              <span className="status-chip-value">{formatCompactInteger(promptTokens)} tokens</span>
+            </span>
+            <span className="status-chip">
+              <span className="status-chip-label">Completion Tokens</span>
+              <span className="status-chip-value">{formatCompactInteger(completionTokens)} tokens</span>
+            </span>
+            <span className="status-chip">
+              <span className="status-chip-label">Total Tokens</span>
+              <span className="status-chip-value">{formatCompactInteger(totalTokens)} tokens</span>
+            </span>
+            <span className="status-chip">
+              <span className="status-chip-label">Cache Hit</span>
+              <span className="status-chip-value">{formatCacheHitRatio(cacheHitRatio)}</span>
+            </span>
+          </div>
           <div
             ref={contextBreakdownRef}
             className={`context-window-chip ${isContextBreakdownOpen ? 'context-window-chip-open' : ''}`}
@@ -1396,12 +1514,33 @@ export function App() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={needsAgentSelection ? 'Select an agent profile to begin...' : 'Enter command or task...'}
+          placeholder={inputPlaceholder}
           disabled={needsAgentSelection || isSubmitting}
           autoFocus
         />
         <button type="submit" disabled={needsAgentSelection || isSubmitting}>Send</button>
       </form>
+      {talkState.incomingRequest ? renderTalkRequestModal({
+        request: talkState.incomingRequest,
+        isPending: isRespondingTalkRequest,
+        onAccept: () => {
+          void handleRespondTalkRequest('accept');
+        },
+        onReject: () => {
+          void handleRespondTalkRequest('reject');
+        },
+      }) : null}
+      {activeTalkConversation && activeTalkContinuationPrompt ? renderTalkContinuationModal({
+        conversation: activeTalkConversation,
+        prompt: activeTalkContinuationPrompt,
+        isPending: isRespondingTalkContinuation,
+        onContinue: () => {
+          void handleRespondTalkContinuation('continue');
+        },
+        onEnd: () => {
+          void handleRespondTalkContinuation('end');
+        },
+      }) : null}
       {sessionInspectorSession ? renderSessionInspectorModal({
         session: sessionInspectorSession,
         memories: sessionInspectorMemories,
@@ -1960,6 +2099,121 @@ function renderProviderConfigPanel(args: {
       )}
     </section>
   );
+}
+
+function renderTalkBanner(args: {
+  conversation: DesktopTalkActiveConversation;
+}) {
+  const continuationPrompt = args.conversation.continuationPrompt;
+
+  return (
+    <section className="talk-banner" aria-label="talk-banner">
+      <div className="talk-banner-copy">
+        <p className="talk-banner-eyebrow">Agent Talk</p>
+        <h2>
+          {args.conversation.status === 'requesting'
+            ? `Requesting pid ${args.conversation.peerPid}`
+            : `Talking to pid ${args.conversation.peerPid}`}
+        </h2>
+        <p className="talk-banner-meta">
+          Turns {args.conversation.turnCount}
+          {' · '}
+          Limit {args.conversation.turnLimit}
+          {' · '}
+          {args.conversation.initiatedBy === 'local' ? 'Started here' : 'Accepted here'}
+        </p>
+        <p className="talk-banner-copyline">
+          {continuationPrompt
+            ? `Waiting for both sides to continue after ${continuationPrompt.roundCount} turns.`
+            : `Only /talkto ${args.conversation.peerPid} end is accepted while this talk session is active.`}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function renderTalkRequestModal(args: {
+  request: DesktopTalkState['incomingRequest'];
+  isPending: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  if (!args.request) {
+    return null;
+  }
+
+  return (
+    <div className="session-modal-overlay" role="dialog" aria-modal="true" aria-label="talk-request-dialog">
+      <section className="session-modal talk-modal">
+        <header className="session-modal-header">
+          <div>
+            <p className="session-panel-eyebrow">Agent Talk Request</p>
+            <h2>来自 pid {args.request.fromPid} 的对话请求</h2>
+            <p className="session-panel-copy">{args.request.fromAgentProfileName ?? 'Unknown agent'}</p>
+          </div>
+        </header>
+        <div className="talk-modal-body">
+          <p>{args.request.message}</p>
+        </div>
+        <footer className="session-modal-actions">
+          <button type="button" className="provider-config-primary" onClick={args.onAccept} disabled={args.isPending}>
+            {args.isPending ? '处理中...' : '接受'}
+          </button>
+          <button type="button" className="provider-config-secondary" onClick={args.onReject} disabled={args.isPending}>
+            拒绝
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function renderTalkContinuationModal(args: {
+  conversation: DesktopTalkActiveConversation;
+  prompt: DesktopTalkContinuationPrompt;
+  isPending: boolean;
+  onContinue: () => void;
+  onEnd: () => void;
+}) {
+  const canDecide = args.prompt.localDecision === 'pending';
+
+  return (
+    <div className="session-modal-overlay" role="dialog" aria-modal="true" aria-label="talk-continuation-dialog">
+      <section className="session-modal talk-modal">
+        <header className="session-modal-header">
+          <div>
+            <p className="session-panel-eyebrow">Talk Turn Limit</p>
+            <h2>继续与 pid {args.conversation.peerPid} 对话？</h2>
+            <p className="session-panel-copy">已达到 {args.prompt.roundCount} 轮，对话需双方确认后继续。</p>
+          </div>
+        </header>
+        <div className="talk-modal-body">
+          <p>本地状态：{formatTalkDecision(args.prompt.localDecision)}</p>
+          <p>对端状态：{formatTalkDecision(args.prompt.remoteDecision)}</p>
+        </div>
+        <footer className="session-modal-actions">
+          <button type="button" className="provider-config-primary" onClick={args.onContinue} disabled={!canDecide || args.isPending}>
+            {args.isPending ? '处理中...' : canDecide ? '继续' : '已确认，等待对端'}
+          </button>
+          <button type="button" className="provider-config-secondary" onClick={args.onEnd} disabled={!canDecide || args.isPending}>
+            结束对话
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function formatTalkDecision(value: DesktopTalkContinuationPrompt['localDecision']): string {
+  switch (value) {
+    case 'approved':
+      return '已同意';
+    case 'rejected':
+      return '已拒绝';
+    case 'pending':
+    default:
+      return '等待中';
+  }
 }
 
 function formatProviderAuthState(value: DesktopProviderStatus['authState']): string {

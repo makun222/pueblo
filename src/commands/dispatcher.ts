@@ -24,7 +24,13 @@ export class CommandDispatcher {
       return failureResult('INVALID_COMMAND', 'Commands must start with /', ['Use a supported slash command.']);
     }
 
-    const [commandName, ...args] = trimmed.split(/\s+/);
+    const tokens = tokenizeCommandInput(trimmed);
+
+    if (tokens.length === 0) {
+      return failureResult('INVALID_COMMAND', 'Commands must start with /', ['Use a supported slash command.']);
+    }
+
+    const [commandName, ...args] = tokens;
     const handler = this.handlers.get(commandName);
 
     if (!handler) {
@@ -45,6 +51,64 @@ export class CommandDispatcher {
       ]);
     }
   }
+}
+
+export function tokenizeCommandInput(input: string): string[] {
+  const tokens: string[] = [];
+  let currentToken = '';
+  let quoteCharacter: '"' | "'" | null = null;
+  let escaping = false;
+
+  const pushCurrentToken = () => {
+    if (currentToken.length === 0) {
+      return;
+    }
+
+    tokens.push(currentToken);
+    currentToken = '';
+  };
+
+  for (const character of input.trim()) {
+    if (escaping) {
+      currentToken += character;
+      escaping = false;
+      continue;
+    }
+
+    if (character === '\\') {
+      escaping = true;
+      continue;
+    }
+
+    if (quoteCharacter) {
+      if (character === quoteCharacter) {
+        quoteCharacter = null;
+        continue;
+      }
+
+      currentToken += character;
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quoteCharacter = character;
+      continue;
+    }
+
+    if (/\s/.test(character)) {
+      pushCurrentToken();
+      continue;
+    }
+
+    currentToken += character;
+  }
+
+  if (escaping) {
+    currentToken += '\\';
+  }
+
+  pushCurrentToken();
+  return tokens;
 }
 
 export interface CommandSelectionState {

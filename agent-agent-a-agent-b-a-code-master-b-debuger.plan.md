@@ -22,6 +22,23 @@
 - The implementation is validated with the narrowest available check.
 - The runtime plan stays synchronized with execution status.
 
+## Talk Implementation Checklist
+- [x] Replace whitespace-only slash parsing so `/talkto <pid> -m "..."` preserves quoted messages.
+- [x] Add desktop talk IPC contracts for talk state, incoming request decisions, and turn-limit continuation decisions.
+- [x] Add a websocket-backed desktop talk service in `src/desktop/main/talk-service.ts`.
+- [x] Register per-process discovery by pid and keep a local talk state machine in the desktop main process.
+- [x] Intercept `/talkto <pid> -m "..."` and `/talkto <pid> end` inside desktop `submit-input` handling.
+- [x] Reject all non-`/talkto <peerPid> end` user input while a talk session is active.
+- [x] Keep agent/provider/workspace/session execution local to each process; only forward peer text over websocket.
+- [x] Surface the current desktop process pid in the renderer toolbar.
+- [x] Show incoming talk-request and turn-limit continuation dialogs in the renderer.
+- [x] Pause the conversation every `talk_turns_limit` turns (default 50) until both sides choose to continue; otherwise end implicitly.
+- [x] Validate the landed slices with focused tests.
+
+## Focused Validation
+- `npx vitest run tests/unit/dispatcher.test.ts`
+- `npm test tests/unit/dispatcher.test.ts tests/unit/desktop-renderer.test.tsx tests/desktop/ipc-shutdown.test.ts tests/desktop/window-input-output.test.ts`
+
 ## Task Tree
 - [x] Complete goal: 实现agent之间通信，选定Agent A与Agent B，按照各自职责共同协作完成一项任务。比如A（code master）与B（Debuger）协作完成代码测试。 (task-root)
   - [x] Inspect the current implementation surface and confirm the controlling code path. (task-inspect)

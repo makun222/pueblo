@@ -11,6 +11,9 @@ let listSessionMemoriesMock: ReturnType<typeof vi.fn>;
 let selectSessionMock: ReturnType<typeof vi.fn>;
 let getToolApprovalStateMock: ReturnType<typeof vi.fn>;
 let respondToolApprovalMock: ReturnType<typeof vi.fn>;
+let getTalkStateMock: ReturnType<typeof vi.fn>;
+let respondTalkRequestMock: ReturnType<typeof vi.fn>;
+let respondTalkContinuationMock: ReturnType<typeof vi.fn>;
 let selectInputFilesMock: ReturnType<typeof vi.fn>;
 
 const availableProviders: ProviderProfile[] = [
@@ -100,6 +103,21 @@ beforeEach(() => {
   listSessionMemoriesMock = vi.fn().mockResolvedValue([]);
   getToolApprovalStateMock = vi.fn().mockResolvedValue({ activeBatch: null });
   respondToolApprovalMock = vi.fn().mockResolvedValue({ activeBatch: null });
+  getTalkStateMock = vi.fn().mockResolvedValue({
+    localPid: 41234,
+    incomingRequest: null,
+    activeConversation: null,
+  });
+  respondTalkRequestMock = vi.fn().mockResolvedValue({
+    localPid: 41234,
+    incomingRequest: null,
+    activeConversation: null,
+  });
+  respondTalkContinuationMock = vi.fn().mockResolvedValue({
+    localPid: 41234,
+    incomingRequest: null,
+    activeConversation: null,
+  });
   selectInputFilesMock = vi.fn().mockResolvedValue([]);
   selectSessionMock = vi.fn().mockResolvedValue({
     runtimeStatus: {
@@ -182,7 +200,10 @@ beforeEach(() => {
         workflow: inactiveWorkflowStatus,
       }),
       getToolApprovalState: getToolApprovalStateMock,
+      getTalkState: getTalkStateMock,
       respondToolApproval: respondToolApprovalMock,
+      respondTalkRequest: respondTalkRequestMock,
+      respondTalkContinuation: respondTalkContinuationMock,
       listAgentProfiles: vi.fn().mockResolvedValue([]),
       startAgentSession: vi.fn().mockResolvedValue({
         providerId: 'github-copilot',
@@ -225,6 +246,7 @@ beforeEach(() => {
       selectSession: selectSessionMock,
       onMenuAction: vi.fn(() => () => {}),
       onToolApprovalState: vi.fn(() => () => {}),
+      onTalkState: vi.fn(() => () => {}),
       onOutput: vi.fn((callback: (event: unknown, data: RendererOutputBlock) => void) => {
         outputListener = callback;
       }),
@@ -239,6 +261,27 @@ afterEach(() => {
 });
 
 describe('Desktop Renderer', () => {
+  it('shows the desktop pid and incoming talk request modal', async () => {
+    getTalkStateMock.mockResolvedValueOnce({
+      localPid: 41234,
+      incomingRequest: {
+        conversationId: 'talk-1',
+        fromPid: 52310,
+        fromAgentProfileName: 'Debugger',
+        message: 'Review the latest failure before continuing.',
+        createdAt: '2026-05-19T00:00:00.000Z',
+      },
+      activeConversation: null,
+    });
+
+    render(createElement(App));
+
+    expect(await screen.findByText('PID 41234')).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'talk-request-dialog' })).toBeTruthy();
+    expect(screen.getByText('来自 pid 52310 的对话请求')).toBeTruthy();
+    expect(screen.getByText('Review the latest failure before continuing.')).toBeTruthy();
+  });
+
   it('shows the context window progress and breakdown popover', async () => {
     render(createElement(App));
 
