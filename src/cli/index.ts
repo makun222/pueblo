@@ -39,6 +39,7 @@ import {
   createPromptListCommand,
   createPromptSelectCommand,
 } from '../commands/prompt-command';
+import { createSkillListCommand, createSkillOpenCommand } from '../commands/skill-command';
 import {
   createNewSessionCommand,
   createSessionListCommand,
@@ -170,6 +171,7 @@ export interface CliDependencies {
 export interface CreateCliDependenciesOptions {
   readonly startNewSession?: boolean;
   readonly deferAgentSelection?: boolean;
+  readonly puebloWorkingDirectory?: string;
   readonly credentialStore?: CredentialStore;
   readonly pepeWorkerFactory?: PepeWorkerFactory;
 }
@@ -359,12 +361,15 @@ export function createCliDependencies(
   const providerRegistry = createConfiguredProviderRegistry(currentConfig, { credentialStore });
   const inputAbortSignalContext = new AsyncLocalStorage<AbortSignal | undefined>();
 
+  verifyPersistence(database, currentConfig.databasePath);
+
   const modelService = new ModelService(providerRegistry);
   const taskRepository = new AgentTaskRepository({ connection: database.connection });
   const promptRepository = new PromptRepository({ connection: database.connection });
   const memoryRepository = new MemoryRepository({ connection: database.connection });
   const agentInstanceRepository = new AgentInstanceRepository({ connection: database.connection });
   const cliProjectRoot = resolveProjectRoot(__dirname);
+  const puebloWorkingDirectory = path.resolve(options.puebloWorkingDirectory ?? process.cwd());
   const promptService = new PromptService(promptRepository);
   const memoryService = new MemoryService(memoryRepository);
   let currentWorkspace = initializeWorkspacePath(memoryService, process.cwd());
@@ -458,6 +463,7 @@ export function createCliDependencies(
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
       uploadedAttachments,
+      puebloWorkingDirectory,
       cwd: currentWorkspace,
       workspace: currentWorkspace,
     });
@@ -483,6 +489,7 @@ export function createCliDependencies(
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
       uploadedAttachments,
+      puebloWorkingDirectory,
       cwd: currentWorkspace,
       workspace: currentWorkspace,
     });
@@ -1066,6 +1073,7 @@ export function createCliDependencies(
       activeSessionId: sessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
+      puebloWorkingDirectory,
       cwd: currentWorkspace,
       workspace: currentWorkspace,
     });
@@ -1112,6 +1120,16 @@ export function createCliDependencies(
     promptService,
     sessionService,
     getCurrentSessionId: () => selectionState.sessionId,
+  }));
+  dispatcher.register('/skill-list', createSkillListCommand({
+    puebloWorkingDirectory,
+    config: currentConfig.pepe,
+    ensureCurrentAgentInstanceId: ensureAgentInstance,
+  }));
+  dispatcher.register('/skill-open', createSkillOpenCommand({
+    puebloWorkingDirectory,
+    config: currentConfig.pepe,
+    ensureCurrentAgentInstanceId: ensureAgentInstance,
   }));
   dispatcher.register('/memory-list', createMemoryListCommand({
     memoryService,
@@ -1201,7 +1219,6 @@ export function createCliDependencies(
     return runTask(args.join(' '), 'CLI task execution');
   });
 
-  verifyPersistence(database, currentConfig.databasePath);
   const currentSession = options.startNewSession && !options.deferAgentSelection
     ? sessionService.createSession('Desktop session', null, ensureAgentInstance())
     : sessionService.getCurrentSession();
@@ -1223,6 +1240,7 @@ export function createCliDependencies(
         activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
         explicitProviderId: selectionState.providerId,
         explicitModelId: selectionState.modelId,
+        puebloWorkingDirectory,
         cwd: currentWorkspace,
         workspace: currentWorkspace,
       }).runtimeStatus;

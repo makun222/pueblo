@@ -943,8 +943,6 @@ export function App() {
     runtimeStatus.providerUsageStats,
     activeSession?.providerUsageStats,
   );
-  const promptTokens = displayedProviderUsageStats.promptTokens;
-  const completionTokens = displayedProviderUsageStats.completionTokens;
   const totalTokens = displayedProviderUsageStats.totalTokens;
   const cacheHitRatio = displayedProviderUsageStats.cacheHitRatio;
   const contextWindowSummary = formatContextWindowSummary(
@@ -1394,24 +1392,6 @@ export function App() {
           </span>
         </div>
         <div className="status-strip-context">
-          <div className="status-strip-metrics" aria-label="provider-usage-summary">
-            <span className="status-chip">
-              <span className="status-chip-label">Prompt Tokens</span>
-              <span className="status-chip-value">{formatCompactInteger(promptTokens)} tokens</span>
-            </span>
-            <span className="status-chip">
-              <span className="status-chip-label">Completion Tokens</span>
-              <span className="status-chip-value">{formatCompactInteger(completionTokens)} tokens</span>
-            </span>
-            <span className="status-chip">
-              <span className="status-chip-label">Total Tokens</span>
-              <span className="status-chip-value">{formatCompactInteger(totalTokens)} tokens</span>
-            </span>
-            <span className="status-chip">
-              <span className="status-chip-label">Cache Hit</span>
-              <span className="status-chip-value">{formatCacheHitRatio(cacheHitRatio)}</span>
-            </span>
-          </div>
           <div
             ref={contextBreakdownRef}
             className={`context-window-chip ${isContextBreakdownOpen ? 'context-window-chip-open' : ''}`}
@@ -2554,7 +2534,7 @@ function renderTranscriptEntry(
           <header className="chat-entry-label">Pueblo</header>
           {renderAnswerContent(entry.content, handoff)}
           {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
-          {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
+          {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: entry.blockType === 'task-result' })}
         </article>
       );
     }
@@ -2563,7 +2543,7 @@ function renderTranscriptEntry(
       <article key={entry.id} className="chat-entry chat-entry-user">
         <header className="chat-entry-label">You</header>
         <p className="chat-entry-body">{entry.content}</p>
-        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
+        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: false })}
       </article>
     );
   }
@@ -2575,7 +2555,7 @@ function renderTranscriptEntry(
           <summary>{entry.title}</summary>
           <pre>{entry.content}</pre>
         </details>
-        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
+        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: false })}
       </div>
     );
   }
@@ -2589,7 +2569,7 @@ function renderTranscriptEntry(
         <header className="chat-entry-label">Pueblo</header>
         {renderAnswerContent(entry.content, handoff)}
         {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
-        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
+        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: entry.type === 'task-result' })}
       </article>
     );
   }
@@ -2600,7 +2580,7 @@ function renderTranscriptEntry(
         <header className="output-block-title">{entry.title}</header>
         <pre className="output-block-content">{entry.content}</pre>
       </article>
-      {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace)}
+      {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: false })}
     </div>
   );
 }
@@ -3146,7 +3126,11 @@ function formatFileChangeType(changeType: RendererFileChange['changeType']): str
   }
 }
 
-function renderMessageTrace(id: string, messageTrace: RendererMessageTraceStep[] | null | undefined) {
+function renderMessageTrace(
+  id: string,
+  messageTrace: RendererMessageTraceStep[] | null | undefined,
+  options: { scrollable: boolean },
+) {
   if (!messageTrace || messageTrace.length === 0) {
     return null;
   }
@@ -3156,7 +3140,7 @@ function renderMessageTrace(id: string, messageTrace: RendererMessageTraceStep[]
   const totalToolCalls = messageTrace.reduce((sum, step) => sum + step.messages.filter((message) => message.toolName || message.toolCallId).length, 0);
 
   return (
-    <details key={id} className="message-details">
+    <details key={id} className={`message-details ${options.scrollable ? 'message-details-scrollable' : ''}`}>
       <summary className="message-details-summary">
         <span className="message-details-title">Process Info</span>
         <span className="message-details-meta">{totalMessages} messages</span>

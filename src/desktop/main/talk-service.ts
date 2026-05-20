@@ -94,7 +94,7 @@ interface InternalContinuationState {
 interface InternalConversationState {
   readonly conversationId: string;
   readonly peerPid: number;
-  readonly peerAgentProfileName: string | null;
+  peerAgentProfileName: string | null;
   readonly initiatedBy: 'local' | 'remote';
   status: 'requesting' | 'active';
   turnCount: number;
@@ -743,11 +743,11 @@ export class DesktopTalkService {
     return new Promise<WebSocket>((resolve, reject) => {
       const socket = new WebSocket(`ws://${this.host}:${port}`);
       const handleError = (error: Error) => {
-        socket.removeEventListener('open', handleOpen);
+        socket.off('open', handleOpen);
         reject(error);
       };
       const handleOpen = () => {
-        socket.removeEventListener('error', handleError);
+        socket.off('error', handleError);
         resolve(socket);
       };
 

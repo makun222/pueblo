@@ -1,4 +1,5 @@
 import type { AppConfig } from '../shared/config';
+import type { SkillContextSnapshot } from './skill-context';
 import type {
   BackgroundSummaryStatus,
   ContextCount,
@@ -26,6 +27,7 @@ export interface TaskContext {
   readonly resultSet: PepeResultSet | null;
   readonly resultItems: PepeResultItem[];
   readonly workflowContext?: WorkflowContext | null;
+  readonly skillContext?: SkillContextSnapshot | null;
   readonly sessionMessages: SessionMessage[];
   readonly recentMessages: string[];
   readonly puebloProfile: PuebloProfile;
@@ -42,6 +44,7 @@ export interface TaskContextInput {
   readonly resultSet?: PepeResultSet | null;
   readonly resultItems?: PepeResultItem[];
   readonly workflowContext?: WorkflowContext | null;
+  readonly skillContext?: SkillContextSnapshot | null;
   readonly selectedModelId?: string | null;
   readonly providerId?: string | null;
   readonly providerName?: string | null;
@@ -78,6 +81,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     resultSet,
     resultItems,
     workflowContext: input.workflowContext ?? null,
+    skillContext: input.skillContext ?? null,
     sessionMessages,
     recentMessages: input.recentMessages ?? sessionMessages.map(formatSessionMessageForContext),
     puebloProfile: input.puebloProfile,

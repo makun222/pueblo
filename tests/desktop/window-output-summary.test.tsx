@@ -381,20 +381,20 @@ describe('Desktop Output Summary Rendering', () => {
     expect(screen.getByRole('button', { name: 'Clear' })).toBeTruthy();
   });
 
-  it('renders prompt, completion, total token counts and cache hit ratio in the right-side status area', async () => {
+  it('does not render the removed provider usage chips in the status area', async () => {
     render(createElement(App));
 
     await waitFor(() => {
-      expect(screen.getByText('Prompt Tokens')).toBeTruthy();
+      expect(screen.getByText('Context Window')).toBeTruthy();
     });
 
-    expect(screen.getByText('1.5K tokens')).toBeTruthy();
-    expect(screen.getByText('24.6K tokens')).toBeTruthy();
-    expect(screen.getByText('1.2M tokens')).toBeTruthy();
-    expect(screen.getByText('42.9%')).toBeTruthy();
+    expect(screen.queryByText('Prompt Tokens')).toBeNull();
+    expect(screen.queryByText('Completion Tokens')).toBeNull();
+    expect(screen.queryByText('Total Tokens')).toBeNull();
+    expect(screen.queryByText('Cache Hit')).toBeNull();
   });
 
-  it('falls back to active session usage stats when runtime status usage is empty', async () => {
+  it('keeps provider usage chips hidden even when session usage stats are available', async () => {
     const sessionWithUsage: Session = {
       id: 'session-1',
       title: 'Usage session',
@@ -567,12 +567,13 @@ describe('Desktop Output Summary Rendering', () => {
     render(createElement(App));
 
     await waitFor(() => {
-      expect(screen.getByText('1.5K tokens')).toBeTruthy();
+      expect(screen.getByText('Context Window')).toBeTruthy();
     });
 
-    expect(screen.getByText('24.6K tokens')).toBeTruthy();
-    expect(screen.getByText('1.2M tokens')).toBeTruthy();
-    expect(screen.getByText('42.9%')).toBeTruthy();
+    expect(screen.queryByText('Prompt Tokens')).toBeNull();
+    expect(screen.queryByText('Completion Tokens')).toBeNull();
+    expect(screen.queryByText('Total Tokens')).toBeNull();
+    expect(screen.queryByText('Cache Hit')).toBeNull();
   });
 
   it('keeps file approval rows concise and preserves the highlighted allow button class', async () => {

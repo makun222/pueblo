@@ -1,4 +1,5 @@
 import type { ProviderMessage } from '../providers/provider-adapter';
+import { buildSkillSystemMessage } from './skill-context';
 import type { TaskContext } from './task-context';
 
 export const RECENT_CONTEXT_MESSAGE_LIMIT = 6;
@@ -8,6 +9,7 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
   const messages: ProviderMessage[] = [];
   const puebloMessage = buildPuebloSystemMessage(taskContext);
   const targetDirectoryMessage = buildTargetDirectoryMessage(taskContext.targetDirectory);
+  const skillContextMessage = buildSkillSystemMessage(taskContext.skillContext);
   const attachmentContextMessage = buildAttachmentContextMessage(taskContext);
   const recentConversationMessage = buildRecentConversationMessage(taskContext.recentMessages);
 
@@ -17,6 +19,10 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
 
   if (targetDirectoryMessage) {
     messages.push({ role: 'system', content: targetDirectoryMessage });
+  }
+
+  if (skillContextMessage) {
+    messages.push({ role: 'system', content: skillContextMessage });
   }
 
   if (taskContext.prompts.length > 0) {
