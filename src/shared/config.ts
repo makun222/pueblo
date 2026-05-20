@@ -57,6 +57,7 @@ const pepeSchema = z.object({
   resultTopK: z.number().int().positive().default(8),
   similarityThreshold: z.number().min(0).max(1).default(0.2),
   workingDirectoryPattern: z.string().min(1).default('agent-{agentInstanceId}'),
+  skillDirectoryName: z.string().trim().min(1).default('skills'),
 });
 
 const workflowSchema = z.object({
@@ -97,6 +98,7 @@ const appConfigSchema = z.object({
     resultTopK: 50,
     similarityThreshold: 0.8,
     workingDirectoryPattern: 'agent-{agentInstanceId}',
+    skillDirectoryName: 'skills',
   }),
   workflow: workflowSchema.default({
     enabled: true,

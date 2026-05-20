@@ -161,6 +161,44 @@ describe('task message builder', () => {
     expect(messages[0]?.content.match(/Do not guess\./g) ?? []).toHaveLength(1);
   });
 
+  it('adds a dedicated skill workspace block that guides skill creation and reuse', () => {
+    const context = createTaskContext({
+      config: createTestAppConfig(),
+      puebloProfile: createEmptyPuebloProfile(null),
+      skillContext: {
+        puebloWorkingDirectory: 'D:/workspace/pueblo',
+        agentWorkingDirectory: 'D:/workspace/pueblo/agent-agent-1',
+        skillDirectory: 'D:/workspace/pueblo/agent-agent-1/skills',
+        skills: [
+          {
+            id: 'release-windows',
+            instructionPath: 'agent-agent-1/skills/release-windows/SKILL.md',
+            description: 'Build and validate the Windows desktop release.',
+          },
+        ],
+      },
+      sessionMessages: [],
+      contextCount: {
+        estimatedTokens: 0,
+        contextWindowLimit: null,
+        utilizationRatio: null,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+      },
+    });
+
+    const messages = buildProviderMessages(context, 'Ship the release');
+
+    expect(messages[0]?.content).toContain('Pueblo skill workspace:');
+    expect(messages[0]?.content).toContain('Pueblo startup directory: D:/workspace/pueblo');
+    expect(messages[0]?.content).toContain('Before creating, updating, or overwriting a skill');
+    expect(messages[0]?.content).toContain('the data they process and the files they create should still come from the active target repository or workspace');
+    expect(messages[0]?.content).toContain('release-windows');
+    expect(messages[0]?.content).toContain('agent-agent-1/skills/release-windows/SKILL.md');
+  });
+
   it('dedupes identical system blocks but preserves recent conversation blocks', () => {
     const deduped = dedupeSafeSystemBlocks([
       { role: 'system', content: 'Selected prompts:\n1. Root cause: Inspect root cause first.' },

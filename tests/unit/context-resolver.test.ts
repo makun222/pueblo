@@ -203,6 +203,85 @@ describe('context resolver', () => {
     expect(resolved.taskContext.targetDirectory).toBe(externalRepoDir);
   });
 
+  it('resolves the Pueblo skill directory from the agent working directory and lists installed skills', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-skills-'));
+    const startupDir = path.join(tempDir, 'pueblo-home');
+    const workspaceDir = path.join(tempDir, 'workspace');
+    tempDirs.push(tempDir);
+    fs.mkdirSync(startupDir, { recursive: true });
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.writeFileSync(path.join(workspaceDir, 'package.json'), '{"name":"test"}');
+    fs.mkdirSync(path.join(workspaceDir, 'puebl-profile', 'code-master'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceDir, 'puebl-profile', 'code-master', 'agent.md'),
+      [
+        '# Profile',
+        '- id: code-master',
+        '- name: Code Master',
+        '- description: Focused on shipping correct code changes with strong validation discipline.',
+        '',
+        '# Role',
+        '- Act as a pragmatic senior software engineer.',
+      ].join('\n'),
+    );
+
+    const config = createTestAppConfig({ defaultProviderId: 'openai' });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(workspaceDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const agentInstance = agentInstanceService.getOrCreateDefaultAgentInstance('code-master', workspaceDir);
+    const skillFilePath = path.join(
+      startupDir,
+      `agent-${agentInstance.id}`,
+      config.pepe.skillDirectoryName,
+      'release-windows',
+      'SKILL.md',
+    );
+    fs.mkdirSync(path.dirname(skillFilePath), { recursive: true });
+    fs.writeFileSync(skillFilePath, '# Release Windows\nBuild and validate the Windows desktop release.\n');
+
+    const session = sessionService.createSession('Resolver session', 'gpt-4.1-mini', agentInstance.id);
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, config.pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Inspect reusable release flow',
+      puebloWorkingDirectory: startupDir,
+      cwd: workspaceDir,
+      workspace: workspaceDir,
+    });
+
+    expect(resolved.taskContext.skillContext?.puebloWorkingDirectory).toBe(startupDir);
+    expect(resolved.taskContext.skillContext?.skillDirectory).toBe(path.join(startupDir, `agent-${agentInstance.id}`, 'skills'));
+    expect(resolved.taskContext.skillContext?.skills).toEqual([
+      {
+        id: 'release-windows',
+        instructionPath: `agent-${agentInstance.id}/skills/release-windows/SKILL.md`,
+        description: 'Build and validate the Windows desktop release.',
+      },
+    ]);
+  });
+
   it('projects active workflow plan and todo context into the resolved task context', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-workflow-'));
     tempDirs.push(tempDir);

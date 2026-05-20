@@ -48,6 +48,7 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       resultTopK: overrides.pepe?.resultTopK ?? 8,
       similarityThreshold: overrides.pepe?.similarityThreshold ?? 0.2,
       workingDirectoryPattern: overrides.pepe?.workingDirectoryPattern ?? 'agent-{agentInstanceId}',
+      skillDirectoryName: overrides.pepe?.skillDirectoryName ?? 'skills',
     },
     workflow: {
       enabled: overrides.workflow?.enabled ?? true,

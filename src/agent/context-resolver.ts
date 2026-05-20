@@ -19,6 +19,7 @@ import {
   type Session,
   type SessionMessage,
 } from '../shared/schema';
+import { buildSkillSystemMessage, resolveSkillContext } from './skill-context';
 import { compactRecentMessageForPrompt, RECENT_CONTEXT_MESSAGE_LIMIT, selectRecentMessagesForPrompt } from './task-message-builder';
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
@@ -29,6 +30,7 @@ export interface ResolveContextInput {
   readonly explicitModelId?: string | null;
   readonly pendingUserInput?: string;
   readonly uploadedAttachments?: InputAttachmentManifest[];
+  readonly puebloWorkingDirectory?: string | null;
   readonly cwd?: string;
   readonly workspace?: string | null;
 }
@@ -130,6 +132,12 @@ export class ContextResolver {
       selectedTemplate,
       this.profileLoader.load(input.cwd ?? process.cwd()),
     );
+    const skillContext = resolveSkillContext({
+      puebloWorkingDirectory: input.puebloWorkingDirectory ?? input.cwd ?? process.cwd(),
+      agentInstanceId: agentInstance?.id ?? null,
+      config: this.dependencies.config.pepe,
+    });
+    const skillContextText = buildSkillSystemMessage(skillContext);
     const sessionMessages = session?.messageHistory ?? [];
     const recentMessages = sessionMessages.map(formatSessionMessageForContext);
     const promptRecentMessages = selectRecentMessagesForPrompt(recentMessages);
@@ -167,6 +175,7 @@ export class ContextResolver {
         ...puebloProfile.contextPolicy.priorityHints,
         ...puebloProfile.contextPolicy.truncationHints,
         puebloProfile.summaryPolicy.lineageHint ?? '',
+        skillContextText ?? '',
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
       memoryTexts: [
@@ -189,6 +198,7 @@ export class ContextResolver {
         ...puebloProfile.contextPolicy.priorityHints,
         ...puebloProfile.contextPolicy.truncationHints,
         puebloProfile.summaryPolicy.lineageHint ?? '',
+        skillContextText ?? '',
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
       memoryTexts: [
@@ -222,6 +232,7 @@ export class ContextResolver {
       resultSet: filteredResultSet,
       resultItems: filteredResultItems,
       workflowContext,
+      skillContext,
       sessionMessages,
       recentMessages,
       puebloProfile,
