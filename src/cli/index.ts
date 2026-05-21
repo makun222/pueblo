@@ -1056,6 +1056,12 @@ export function createCliDependencies(
   });
 
   const syncSelectionFromSession = (sessionId: string | null): void => {
+    const previousSessionId = selectionState.sessionId;
+
+    if (previousSessionId && previousSessionId !== sessionId) {
+      pepeSupervisor.stopSession(previousSessionId);
+    }
+
     selectionState.sessionId = sessionId;
 
     if (!sessionId) {
@@ -1067,7 +1073,9 @@ export function createCliDependencies(
     const session = sessionService.getSession(sessionId);
     activeAgentInstanceId = session?.agentInstanceId ?? null;
     activeAgentProfileId = agentInstanceService.getAgentInstance(activeAgentInstanceId)?.profileId ?? activeAgentProfileId;
-    pepeSupervisor.startSession(sessionId);
+    if (previousSessionId !== sessionId) {
+      pepeSupervisor.startSession(sessionId);
+    }
 
     const resolved = contextResolver.resolve({
       activeSessionId: sessionId,
@@ -1222,10 +1230,9 @@ export function createCliDependencies(
   const currentSession = options.startNewSession && !options.deferAgentSelection
     ? sessionService.createSession('Desktop session', null, ensureAgentInstance())
     : sessionService.getCurrentSession();
-  selectionState.sessionId = currentSession?.id ?? currentConfig.defaultSessionId;
   selectionState.providerId = currentConfig.defaultProviderId;
   selectionState.modelId = currentSession?.currentModelId ?? null;
-  syncSelectionFromSession(selectionState.sessionId);
+  syncSelectionFromSession(currentSession?.id ?? currentConfig.defaultSessionId);
 
   return {
     dispatcher,

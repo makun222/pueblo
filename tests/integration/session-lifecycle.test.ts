@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { PepeWorkerRequest, PepeWorkerResponse } from '../../src/agent/pepe-worker-protocol';
 import { createCliDependencies } from '../../src/cli/index';
 import { SessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
@@ -252,4 +253,87 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       cli.databaseClose();
     }
   });
+
+  it('stops the previous Pepe monitor when the active session changes', async () => {
+    vi.useFakeTimers();
+
+    const processCounts = new Map<string, number>();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-pepe-session-switch-'));
+    tempDirs.push(tempDir);
+    const cli = createCliDependencies(createTestAppConfig({
+      databasePath: path.join(tempDir, 'pueblo.db'),
+      defaultProviderId: 'openai',
+      defaultSessionId: null,
+      pepe: {
+        enabled: true,
+        embeddingBackend: 'local-hash',
+        flushIntervalMs: 2_000,
+      },
+      providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
+    }), {
+      deferAgentSelection: true,
+      pepeWorkerFactory: () => createCountingPepeWorker(processCounts),
+    });
+
+    try {
+      const firstRuntime = cli.startAgentSession('code-master');
+      const firstSessionId = firstRuntime.activeSessionId;
+
+      expect(firstSessionId).toBeTruthy();
+      expect(processCounts.get(firstSessionId!)).toBe(1);
+
+      const newSessionResult = await cli.dispatcher.dispatch({ input: '/new isolate next task' });
+      expect(newSessionResult.ok).toBe(true);
+
+      const secondSessionId = cli.getRuntimeStatus().activeSessionId;
+      expect(secondSessionId).toBeTruthy();
+      expect(secondSessionId).not.toBe(firstSessionId);
+
+      const firstCountAfterSwitch = processCounts.get(firstSessionId!) ?? 0;
+      const secondCountAfterSwitch = processCounts.get(secondSessionId!) ?? 0;
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(processCounts.get(firstSessionId!) ?? 0).toBe(firstCountAfterSwitch);
+      expect(processCounts.get(secondSessionId!) ?? 0).toBeGreaterThan(secondCountAfterSwitch);
+    } finally {
+      cli.databaseClose();
+      vi.useRealTimers();
+    }
+  });
 });
+
+function createCountingPepeWorker(processCounts: Map<string, number>) {
+  let messageHandler: ((message: PepeWorkerResponse) => void) | null = null;
+
+  return {
+    postMessage(message: PepeWorkerRequest) {
+      if (message.type === 'shutdown') {
+        return;
+      }
+
+      processCounts.set(message.snapshot.sessionId, (processCounts.get(message.snapshot.sessionId) ?? 0) + 1);
+      messageHandler?.({
+        type: 'process-result',
+        requestId: message.requestId,
+        result: {
+          sessionId: message.snapshot.sessionId,
+          summaries: [],
+          resultCandidates: [],
+          lastSummaryAt: null,
+          lastSummaryMemoryId: null,
+        },
+      });
+    },
+    on(event: 'message' | 'error', listener: ((message: PepeWorkerResponse) => void) | ((error: Error) => void)) {
+      if (event === 'message') {
+        messageHandler = listener as (message: PepeWorkerResponse) => void;
+      }
+
+      return this;
+    },
+    async terminate() {
+      return 0;
+    },
+  };
+}
