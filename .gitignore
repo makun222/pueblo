@@ -21,3 +21,4 @@ Thumbs.db
 .specify/
 agent-*/
 logs/
+.pueblo/test.db-wal
