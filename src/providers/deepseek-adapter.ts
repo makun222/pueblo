@@ -15,7 +15,7 @@ import {
   type ProviderUsage,
 } from './provider-adapter';
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
-import { ProviderAuthError, ProviderError } from './provider-errors';
+import { ProviderAuthError, ProviderError, ProviderUnknownToolError } from './provider-errors';
 import { consumeServerSentEventStream } from './server-sent-events';
 import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
 
@@ -388,7 +388,7 @@ function parseDeepSeekToolCall(
   const rawToolName = toolCall.function?.name?.trim();
   const toolName = normalizeProviderToolName(rawToolName);
   if (!toolName) {
-    throw new ProviderError(`DeepSeek returned unsupported tool call: ${rawToolName ?? 'unknown'}`);
+    throw new ProviderUnknownToolError('deepseek', rawToolName ?? 'unknown');
   }
 
   const rawArguments = toolCall.function?.arguments?.trim();

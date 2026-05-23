@@ -13,7 +13,7 @@ import {
   type ProviderToolDefinition,
   type ProviderToolName,
 } from './provider-adapter';
-import { ProviderAuthError, ProviderError } from './provider-errors';
+import { ProviderAuthError, ProviderError, ProviderUnknownToolError } from './provider-errors';
 import type { GitHubCopilotTokenType } from './github-copilot-auth';
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
 import { consumeServerSentEventStream } from './server-sent-events';
@@ -540,7 +540,7 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
   const rawToolName = toolCall.function?.name?.trim();
   const toolName = normalizeProviderToolName(rawToolName);
   if (!toolName) {
-    throw new ProviderError(`GitHub Copilot returned unsupported tool call: ${rawToolName ?? 'unknown'}`);
+    throw new ProviderUnknownToolError('github-copilot', rawToolName ?? 'unknown');
   }
 
   const rawArguments = toolCall.function?.arguments?.trim();

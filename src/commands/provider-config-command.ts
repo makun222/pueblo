@@ -1,6 +1,5 @@
 import type { AppConfig } from '../shared/config';
 import { failureResult, successResult, type CommandResult } from '../shared/result';
-import { loadAppConfig } from '../shared/config';
 import type { CliStartupSetupResult } from '../cli/index';
 import type { CredentialStore } from '../providers/credential-store';
 import { persistDeepSeekConfiguration } from '../providers/deepseek-auth';
@@ -103,12 +102,10 @@ function configureDeepSeek(
   dependencies.setCurrentConfig(nextConfig);
   dependencies.onConfigured?.('deepseek', nextConfig);
 
-  const resolvedConfig = loadAppConfig();
-
   return successResult('DEEPSEEK_AUTH_COMPLETED', 'DeepSeek configuration saved', {
     providerId: 'deepseek',
     defaultModelId: resolveDeepSeekModelId(requestedModelId),
-    baseUrl: resolvedConfig.deepseek.baseUrl,
-    credentialTarget: resolvedConfig.deepseek.credentialTarget ?? null,
+    baseUrl: nextConfig.deepseek.baseUrl,
+    credentialTarget: nextConfig.deepseek.credentialTarget ?? null,
   });
 }

@@ -7,10 +7,12 @@ import {
   ProviderMessage,
   ProviderRunResult,
   ProviderStepResult,
+  type ProviderToolDefinition,
   ProviderToolName,
   ProviderToolCall,
   type ProviderUsage,
 } from '../providers/provider-adapter';
+import { ProviderUnknownToolError } from '../providers/provider-errors';
 import { ProviderRegistry } from '../providers/provider-registry';
 import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
@@ -248,15 +250,29 @@ export class AgentTaskRunner {
         })),
       });
 
-      const result = await args.adapter.runStep({
-        modelId: args.modelId,
-        messages: stepMessages,
-        availableTools: args.availableTools,
-        signal: args.signal,
-        onTextDelta: (text) => {
-          this.reportAssistantDelta?.(text);
-        },
-      });
+      let result: ProviderStepResult;
+      try {
+        result = await args.adapter.runStep({
+          modelId: args.modelId,
+          messages: stepMessages,
+          availableTools: args.availableTools,
+          signal: args.signal,
+          onTextDelta: (text) => {
+            this.reportAssistantDelta?.(text);
+          },
+        });
+      } catch (error) {
+        if (error instanceof ProviderUnknownToolError) {
+          this.emitProgress(`Step ${stepIndex + 1}: unavailable tool requested - ${error.requestedToolName}`);
+          messages.push({
+            role: 'user',
+            content: this.createUnknownToolRetryPrompt(error, args.availableTools),
+          });
+          continue;
+        }
+
+        throw error;
+      }
 
       throwIfTaskCancelled(args.signal, 'Task cancelled during agent execution.');
 
@@ -524,6 +540,38 @@ export class AgentTaskRunner {
 
   private emitProgress(message: string): void {
     this.reportProgress?.(message);
+  }
+
+  private createUnknownToolRetryPrompt(
+    error: ProviderUnknownToolError,
+    availableTools: readonly ProviderToolDefinition[],
+  ): string {
+    const toolCatalog = availableTools.length > 0
+      ? availableTools.map((tool) => this.describeAvailableTool(tool)).join('\n')
+      : 'No tools are available in this runtime. Continue without tool calls and answer directly.';
+
+    return [
+      `The tool "${error.requestedToolName}" is not available in this runtime. Do not call it again.`,
+      'Use only the exact tool names listed below, or reply with a final answer if no tool is needed.',
+      'Available tools:',
+      toolCatalog,
+    ].join('\n');
+  }
+
+  private describeAvailableTool(tool: ProviderToolDefinition): string {
+    const requiredFieldsList = tool.inputSchema.required ?? [];
+    const executionPolicy = tool.executionPolicy ?? 'free';
+    const requiredFields = requiredFieldsList.length > 0
+      ? requiredFieldsList.join(', ')
+      : 'none';
+    const optionalFields = Object.keys(tool.inputSchema.properties ?? {}).filter((propertyName) => !requiredFieldsList.includes(propertyName));
+
+    return [
+      `- ${tool.name} (${executionPolicy})`,
+      `  ${tool.description}`,
+      `  Required fields: ${requiredFields}`,
+      `  Optional fields: ${optionalFields.length > 0 ? optionalFields.join(', ') : 'none'}`,
+    ].join('\n');
   }
 
   private executeToolCall(

@@ -11,6 +11,7 @@ let listSessionMemoriesMock: ReturnType<typeof vi.fn>;
 let selectSessionMock: ReturnType<typeof vi.fn>;
 let getToolApprovalStateMock: ReturnType<typeof vi.fn>;
 let respondToolApprovalMock: ReturnType<typeof vi.fn>;
+let respondFileReviewMock: ReturnType<typeof vi.fn>;
 let getTalkStateMock: ReturnType<typeof vi.fn>;
 let respondTalkRequestMock: ReturnType<typeof vi.fn>;
 let respondTalkContinuationMock: ReturnType<typeof vi.fn>;
@@ -101,8 +102,9 @@ beforeEach(() => {
   });
   listAgentSessionsMock = vi.fn().mockResolvedValue([]);
   listSessionMemoriesMock = vi.fn().mockResolvedValue([]);
-  getToolApprovalStateMock = vi.fn().mockResolvedValue({ activeBatch: null });
-  respondToolApprovalMock = vi.fn().mockResolvedValue({ activeBatch: null });
+  getToolApprovalStateMock = vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null });
+  respondToolApprovalMock = vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null });
+  respondFileReviewMock = vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null });
   getTalkStateMock = vi.fn().mockResolvedValue({
     localPid: 41234,
     incomingRequest: null,
@@ -202,6 +204,7 @@ beforeEach(() => {
       getToolApprovalState: getToolApprovalStateMock,
       getTalkState: getTalkStateMock,
       respondToolApproval: respondToolApprovalMock,
+      respondFileReview: respondFileReviewMock,
       respondTalkRequest: respondTalkRequestMock,
       respondTalkContinuation: respondTalkContinuationMock,
       listAgentProfiles: vi.fn().mockResolvedValue([]),
@@ -642,9 +645,11 @@ describe('Desktop Renderer', () => {
             id: 'call-edit-1',
             toolCallId: 'call-edit-1',
             toolName: 'edit',
+            kind: 'file-edit',
             title: 'Allow edit in src/desktop/renderer/App.tsx?',
             summary: 'Edit src/desktop/renderer/App.tsx',
             detail: 'Edit approval detail',
+            primaryText: 'src/desktop/renderer/App.tsx',
             targetLabel: 'src/desktop/renderer/App.tsx',
             operationLabel: 'edit',
           },
@@ -652,14 +657,17 @@ describe('Desktop Renderer', () => {
             id: 'call-exec-1',
             toolCallId: 'call-exec-1',
             toolName: 'exec',
+            kind: 'command',
             title: 'Allow command execution in the workspace?',
             summary: 'Command: npm test',
             detail: 'Exec approval detail',
+            primaryText: 'npm test',
             targetLabel: 'npm test',
             operationLabel: 'exec',
           },
         ],
       },
+      activeFileReview: null,
     });
 
     render(createElement(App));
@@ -667,10 +675,11 @@ describe('Desktop Renderer', () => {
     expect(await screen.findByLabelText('workspace-tool-approval-sidebar')).toBeTruthy();
     expect(screen.getByLabelText('workspace-todo-sidebar')).toBeTruthy();
     expect(await screen.findByText('Queued Calls')).toBeTruthy();
+    expect(screen.getByText('Commands')).toBeTruthy();
+    expect(screen.getByText('File Edits')).toBeTruthy();
     expect(screen.getByLabelText('Resize tool approval sidebar')).toBeTruthy();
     expect(screen.getByText('App.tsx')).toBeTruthy();
-    expect(screen.getByText('Merge tool approvals into sidebar')).toBeTruthy();
-    expect(screen.getByText('Show todo items below approval list')).toBeTruthy();
+    expect(screen.getByText('npm test')).toBeTruthy();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Deselect npm test' }));
 

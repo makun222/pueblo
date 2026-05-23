@@ -32,3 +32,15 @@ export class ProviderAuthError extends ProviderError {
     this.name = 'ProviderAuthError';
   }
 }
+
+export class ProviderUnknownToolError extends ProviderError {
+  readonly providerId: string;
+  readonly requestedToolName: string;
+
+  constructor(providerId: string, requestedToolName: string) {
+    super(`${providerId}: requested unavailable tool "${requestedToolName}"`);
+    this.name = 'ProviderUnknownToolError';
+    this.providerId = providerId;
+    this.requestedToolName = requestedToolName;
+  }
+}

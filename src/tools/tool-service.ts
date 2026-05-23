@@ -1,5 +1,5 @@
 import { ToolInvocationRepository } from './tool-invocation-repository';
-import { buildEditApprovalPreview, createEditTool } from './edit-tool';
+import { buildEditApprovalPreview, createEditTool, type EditReviewHandler } from './edit-tool';
 import { createExecTool } from './exec-tool';
 import { createGlobTool, type ToolExecutionResult } from './glob-tool';
 import { createGrepTool } from './grep-tool';
@@ -26,6 +26,8 @@ import { throwIfTaskCancelled } from '../shared/task-cancellation';
 export interface ToolServiceDependencies {
   readonly repository: ToolInvocationRepository;
   readonly cwd: string | (() => string);
+  readonly resolveEditReviewHandler?: () => EditReviewHandler | null;
+  readonly editShadowRoot?: string | (() => string);
 }
 
 export interface ExecuteToolInput {
@@ -64,13 +66,18 @@ export type ExecuteToolRequest =
     });
 
 export class ToolService {
-  private readonly editTool = createEditTool();
+  private readonly editTool: ReturnType<typeof createEditTool>;
   private readonly globTool = createGlobTool();
   private readonly grepTool = createGrepTool();
   private readonly execTool = createExecTool();
   private readonly readTool = createReadTool();
 
-  constructor(private readonly dependencies: ToolServiceDependencies) {}
+  constructor(private readonly dependencies: ToolServiceDependencies) {
+    this.editTool = createEditTool({
+      getReviewHandler: () => this.dependencies.resolveEditReviewHandler?.() ?? null,
+      shadowRoot: this.dependencies.editShadowRoot,
+    });
+  }
 
   getDefaultExecutionCwd(): string {
     return this.resolveDefaultExecutionCwd();
@@ -81,34 +88,36 @@ export class ToolService {
   }
 
   describeTools(): ProviderToolDefinition[] {
+    const taskRootExplanation = 'The task root is the task target directory when one is set; otherwise it is the workspace root.';
+
     return [
       {
         name: 'glob',
-        description: 'Match repository paths by glob pattern relative to the current task root. When a target directory is provided for the task, use that as the root; otherwise use the workspace root.',
+        description: `Match repository paths by glob pattern relative to the current task root. ${taskRootExplanation}`,
         inputSchema: providerGlobToolInputSchema,
         executionPolicy: getToolExecutionPolicy('glob'),
       },
       {
         name: 'grep',
-        description: 'Search repository files by regex pattern and optional include glob under the current task root. When a target directory is provided for the task, use that as the root; otherwise use the workspace root.',
+        description: `Search repository files by regex pattern and optional include glob under the current task root. ${taskRootExplanation}`,
         inputSchema: providerGrepToolInputSchema,
         executionPolicy: getToolExecutionPolicy('grep'),
       },
       {
         name: 'exec',
-        description: 'Run a local executable command without a shell using the current task root as cwd. When a target directory is provided for the task, use that as cwd; otherwise use the workspace root. Requires user approval before execution.',
+        description: `Run a local executable command without a shell using the current task root as cwd. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerExecToolInputSchema,
         executionPolicy: getToolExecutionPolicy('exec'),
       },
       {
         name: 'read',
-        description: 'Read a text file by relative path or absolute path within the current task root and return numbered lines with bounded output. Optionally provide startLine and endLine to read a specific range. When a target directory is provided for the task, use that as the root; otherwise use the workspace root.',
+        description: `Read a text file by relative path or absolute path within the current task root and return numbered lines with bounded output. Optionally provide startLine and endLine to read a specific range. ${taskRootExplanation}`,
         inputSchema: providerReadToolInputSchema,
         executionPolicy: getToolExecutionPolicy('read'),
       },
       {
         name: 'edit',
-        description: 'Edit a text file within the current task root by replacing one exact text match, optionally constrained to a line range. When a target directory is provided for the task, use that as the root; otherwise use the workspace root. Requires user approval before execution.',
+        description: `Edit a text file within the current task root by replacing one exact text match, optionally constrained to a line range. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerEditToolInputSchema,
         executionPolicy: getToolExecutionPolicy('edit'),
       },

@@ -162,8 +162,9 @@ beforeEach(() => {
         },
         providerStatuses: defaultProviderStatuses,
       }),
-      getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
-      respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
+      getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+      respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+      respondFileReview: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
       listAgentProfiles: vi.fn().mockResolvedValue([
         {
           id: 'code-master',

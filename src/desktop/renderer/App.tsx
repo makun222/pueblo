@@ -1,16 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
+  DesktopFileReviewRequest,
   DesktopMenuAction,
+  DesktopProviderStatus,
+  DesktopRuntimeStatus,
+  DesktopSessionSelectionResponse,
+  DesktopSubmitResponse,
   DesktopTalkActiveConversation,
   DesktopTalkContinuationPrompt,
   DesktopTalkContinuationResponse,
   DesktopTalkRequestResponse,
   DesktopTalkState,
-  DesktopProviderStatus,
-  DesktopRuntimeStatus,
-  DesktopSessionSelectionResponse,
-  DesktopSubmitResponse,
   DesktopToolApprovalBatch,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
@@ -25,6 +26,7 @@ const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
 const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
 const EMPTY_TOOL_APPROVAL_STATE: DesktopToolApprovalState = {
   activeBatch: null,
+  activeFileReview: null,
 };
 const EMPTY_TALK_STATE: DesktopTalkState = {
   localPid: null,
@@ -149,6 +151,7 @@ declare global {
       getToolApprovalState: () => Promise<DesktopToolApprovalState>;
       getTalkState: () => Promise<DesktopTalkState>;
       respondToolApproval: (response: { batchId: string; decision: 'allow' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
+      respondFileReview: (response: { reviewId: string; decision: 'keep' | 'discard' }) => Promise<DesktopToolApprovalState>;
       respondTalkRequest: (response: DesktopTalkRequestResponse) => Promise<DesktopTalkState>;
       respondTalkContinuation: (response: DesktopTalkContinuationResponse) => Promise<DesktopTalkState>;
       listAgentProfiles: () => Promise<AgentProfileTemplate[]>;
@@ -201,6 +204,7 @@ export function App() {
   const [selectedToolApprovalIds, setSelectedToolApprovalIds] = useState<string[]>([]);
   const [hasEditedToolApprovalSelection, setHasEditedToolApprovalSelection] = useState(false);
   const [isResolvingToolApproval, setIsResolvingToolApproval] = useState(false);
+  const [isResolvingFileReview, setIsResolvingFileReview] = useState(false);
   const [isRespondingTalkRequest, setIsRespondingTalkRequest] = useState(false);
   const [isRespondingTalkContinuation, setIsRespondingTalkContinuation] = useState(false);
   const [sessionInspectorError, setSessionInspectorError] = useState<string | null>(null);
@@ -318,6 +322,16 @@ export function App() {
     setIsToolApprovalSidebarOpen(true);
     setIsResolvingToolApproval(false);
   }, [toolApprovalState.activeBatch?.id]);
+
+  useEffect(() => {
+    if (!toolApprovalState.activeFileReview) {
+      setIsResolvingFileReview(false);
+      return;
+    }
+
+    setIsToolApprovalSidebarOpen(true);
+    setIsResolvingFileReview(false);
+  }, [toolApprovalState.activeFileReview?.id]);
 
   useEffect(() => {
     if (!talkState.incomingRequest) {
@@ -921,6 +935,7 @@ export function App() {
   const selectedProviderProfile = findProviderProfile(availableProviders, runtimeStatus.providerId);
   const availableModels = selectedProviderProfile?.models ?? [];
   const activeToolApprovalBatch = toolApprovalState.activeBatch;
+  const activeFileReview = toolApprovalState.activeFileReview;
   const activeTalkConversation = talkState.activeConversation;
   const activeTalkContinuationPrompt = activeTalkConversation?.continuationPrompt ?? null;
   const activeSession = agentSessions.find((session) => session.id === runtimeStatus.activeSessionId) ?? null;
@@ -1000,6 +1015,24 @@ export function App() {
       setToolApprovalState(nextState);
     } finally {
       setIsResolvingToolApproval(false);
+    }
+  };
+
+  const handleResolveFileReview = async (decision: 'keep' | 'discard') => {
+    if (!activeFileReview || isResolvingFileReview) {
+      return;
+    }
+
+    setIsResolvingFileReview(true);
+
+    try {
+      const nextState = await window.electronAPI.respondFileReview({
+        reviewId: activeFileReview.id,
+        decision,
+      });
+      setToolApprovalState(nextState);
+    } finally {
+      setIsResolvingFileReview(false);
     }
   };
 
@@ -1293,14 +1326,23 @@ export function App() {
             />
             {renderToolApprovalSidebar({
               toolApprovalBatch: activeToolApprovalBatch,
+              fileReviewRequest: activeFileReview,
               selectedRequestIds: effectiveSelectedToolApprovalIds,
               isResolvingToolApproval,
+              isResolvingFileReview,
               onToggleRequest: handleToggleToolApprovalSelection,
+              onOpenFileReviewPreview: setSelectedFileChange,
               onAllow: () => {
                 void handleResolveToolApproval('allow');
               },
               onDeny: () => {
                 void handleResolveToolApproval('deny');
+              },
+              onKeepFileReview: () => {
+                void handleResolveFileReview('keep');
+              },
+              onDiscardFileReview: () => {
+                void handleResolveFileReview('discard');
               },
             })}
           </aside>
@@ -1779,12 +1821,20 @@ function renderTranscriptGroup(
 
 function renderToolApprovalSidebar(args: {
   toolApprovalBatch: DesktopToolApprovalBatch | null;
+  fileReviewRequest: DesktopFileReviewRequest | null;
   selectedRequestIds: string[];
   isResolvingToolApproval: boolean;
+  isResolvingFileReview: boolean;
   onToggleRequest: (requestId: string) => void;
+  onOpenFileReviewPreview: (fileChange: RendererFileChange) => void;
   onAllow: () => void;
   onDeny: () => void;
+  onKeepFileReview: () => void;
+  onDiscardFileReview: () => void;
 }) {
+  const groupedRequests = groupToolApprovalRequests(args.toolApprovalBatch?.requests ?? []);
+  const hasQueuedApprovals = groupedRequests.command.length > 0 || groupedRequests.fileEdit.length > 0 || groupedRequests.other.length > 0;
+
   return (
     <section className="workflow-sidebar-panel">
       <header className="workflow-sidebar-header">
@@ -1794,46 +1844,91 @@ function renderToolApprovalSidebar(args: {
         </div>
         {args.toolApprovalBatch ? <span className="workflow-sidebar-badge">{args.toolApprovalBatch.requests.length}</span> : null}
       </header>
-      {args.toolApprovalBatch ? (
+      {args.fileReviewRequest ? (
+        <>
+          <div className="workflow-sidebar-section-header">
+            <p className="workflow-sidebar-eyebrow">Staged Review</p>
+            <h3>Edited Copy Ready</h3>
+          </div>
+          <p className="workflow-sidebar-copy">The file was edited in a shadow worktree copy. Keep applies it to the workspace; discard removes the staged copy.</p>
+          <article className="file-review-card">
+            <button
+              type="button"
+              className="file-review-path"
+              onClick={() => {
+                args.onOpenFileReviewPreview(args.fileReviewRequest!.fileChange);
+              }}
+            >
+              {args.fileReviewRequest.fileChange.path}
+            </button>
+            <p className="workflow-sidebar-meta">{formatFileChangeType(args.fileReviewRequest.fileChange.changeType)} staged in shadow copy</p>
+            <p className="workflow-sidebar-copy">{args.fileReviewRequest.summary}</p>
+          </article>
+          <div className="tool-approval-actions">
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-allow-button"
+              onClick={args.onKeepFileReview}
+              disabled={args.isResolvingFileReview}
+            >
+              {args.isResolvingFileReview ? 'Applying...' : 'Keep'}
+            </button>
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-deny-button"
+              onClick={args.onDiscardFileReview}
+              disabled={args.isResolvingFileReview}
+            >
+              Discard
+            </button>
+          </div>
+        </>
+      ) : null}
+      {hasQueuedApprovals ? (
         <>
           <p className="workflow-sidebar-copy">Predictable tool calls are grouped here. Use the X button on each row to keep or remove it from the current approval set.</p>
-          <div className="tool-approval-list" role="list" aria-label="tool-approval-list">
-            {args.toolApprovalBatch.requests.map((request) => {
-              const isSelected = args.selectedRequestIds.includes(request.id);
-              const displayTargetLabel = truncateToolApprovalText(getToolApprovalDisplayLabel(request.targetLabel), 52);
-              const displayOperationLabel = truncateToolApprovalText(request.operationLabel, 18);
-              const displaySummary = truncateToolApprovalText(
-                getToolApprovalDisplaySummary(request.summary, request.targetLabel, displayTargetLabel),
-                92,
-              );
-              return (
-                <article
-                  key={request.id}
-                  className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
-                  title={request.detail}
-                >
-                  <div className="tool-approval-row-main">
-                    <div className="tool-approval-row-line">
-                      <span className="tool-approval-target">{displayTargetLabel}</span>
-                      <span className="tool-approval-operation">{displayOperationLabel}</span>
-                      <button
-                        type="button"
-                        className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
-                        aria-pressed={isSelected}
-                        aria-label={isSelected ? `Deselect ${request.targetLabel}` : `Select ${request.targetLabel}`}
-                        onClick={() => args.onToggleRequest(request.id)}
-                        disabled={args.isResolvingToolApproval}
-                      >
-                        X
-                      </button>
-                    </div>
-                    {displaySummary ? <p className="tool-approval-summary">{displaySummary}</p> : null}
-                  </div>
-
-                </article>
-              );
-            })}
-          </div>
+          {groupedRequests.command.length > 0 ? (
+            <div className="tool-approval-group">
+              <div className="workflow-sidebar-section-header">
+                <p className="workflow-sidebar-eyebrow">Commands</p>
+                <h3>{groupedRequests.command.length}</h3>
+              </div>
+              <div className="tool-approval-list" role="list" aria-label="tool-approval-command-list">
+                {groupedRequests.command.map((request) => {
+                  const isSelected = args.selectedRequestIds.includes(request.id);
+                  return renderToolApprovalRow(request, isSelected, args.onToggleRequest, args.isResolvingToolApproval);
+                })}
+              </div>
+            </div>
+          ) : null}
+          {groupedRequests.fileEdit.length > 0 ? (
+            <div className="tool-approval-group">
+              <div className="workflow-sidebar-section-header">
+                <p className="workflow-sidebar-eyebrow">File Edits</p>
+                <h3>{groupedRequests.fileEdit.length}</h3>
+              </div>
+              <div className="tool-approval-list" role="list" aria-label="tool-approval-file-list">
+                {groupedRequests.fileEdit.map((request) => {
+                  const isSelected = args.selectedRequestIds.includes(request.id);
+                  return renderToolApprovalRow(request, isSelected, args.onToggleRequest, args.isResolvingToolApproval);
+                })}
+              </div>
+            </div>
+          ) : null}
+          {groupedRequests.other.length > 0 ? (
+            <div className="tool-approval-group">
+              <div className="workflow-sidebar-section-header">
+                <p className="workflow-sidebar-eyebrow">Other</p>
+                <h3>{groupedRequests.other.length}</h3>
+              </div>
+              <div className="tool-approval-list" role="list" aria-label="tool-approval-other-list">
+                {groupedRequests.other.map((request) => {
+                  const isSelected = args.selectedRequestIds.includes(request.id);
+                  return renderToolApprovalRow(request, isSelected, args.onToggleRequest, args.isResolvingToolApproval);
+                })}
+              </div>
+            </div>
+          ) : null}
           <div className="tool-approval-actions">
             <button
               type="button"
@@ -1853,11 +1948,61 @@ function renderToolApprovalSidebar(args: {
             </button>
           </div>
         </>
-      ) : (
+      ) : args.fileReviewRequest ? null : (
         <p className="session-panel-empty">No pending tool approvals.</p>
       )}
     </section>
   );
+}
+
+function renderToolApprovalRow(
+  request: DesktopToolApprovalBatch['requests'][number],
+  isSelected: boolean,
+  onToggleRequest: (requestId: string) => void,
+  isResolvingToolApproval: boolean,
+) {
+  const displayText = getToolApprovalPrimaryDisplayText(request);
+
+  return (
+    <article
+      key={request.id}
+      className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
+      title={request.detail}
+    >
+      <div className="tool-approval-row-main">
+        <div className="tool-approval-row-line">
+          <span className="tool-approval-primary">{displayText}</span>
+          <button
+            type="button"
+            className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
+            aria-pressed={isSelected}
+            aria-label={isSelected ? `Deselect ${request.primaryText}` : `Select ${request.primaryText}`}
+            onClick={() => onToggleRequest(request.id)}
+            disabled={isResolvingToolApproval}
+          >
+            X
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function groupToolApprovalRequests(requests: DesktopToolApprovalBatch['requests']) {
+  return {
+    command: requests.filter((request) => request.kind === 'command'),
+    fileEdit: requests.filter((request) => request.kind === 'file-edit'),
+    other: requests.filter((request) => request.kind === 'other'),
+  };
+}
+
+function getToolApprovalPrimaryDisplayText(request: DesktopToolApprovalBatch['requests'][number]): string {
+  if (request.kind === 'file-edit') {
+    return getToolApprovalDisplayLabel(request.primaryText);
+  }
+
+  const trimmed = request.primaryText.trim();
+  return trimmed.length > 0 ? trimmed : request.targetLabel;
 }
 
 function renderTodoSidebar(args: {

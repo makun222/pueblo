@@ -13,7 +13,6 @@ import { AgentInstanceService } from '../agent/agent-instance-service';
 import { AgentTemplateLoader } from '../agent/agent-template-loader';
 import { ContextResolver } from '../agent/context-resolver';
 import { PepeResultService } from '../agent/pepe-result-service';
-import { PepeSemanticClient } from '../agent/pepe-semantic-client';
 import { PepeSupervisor, type PepeWorkerFactory } from '../agent/pepe-supervisor';
 import { AgentTaskRepository } from '../agent/task-repository';
 import {
@@ -89,6 +88,7 @@ import { PromptRepository } from '../prompts/prompt-repository';
 import { PromptService } from '../prompts/prompt-service';
 import { SessionRepository } from '../sessions/session-repository';
 import { SessionService } from '../sessions/session-service';
+import type { EditReviewHandler } from '../tools/edit-tool';
 import { ToolInvocationRepository } from '../tools/tool-invocation-repository';
 import { ToolService } from '../tools/tool-service';
 import { PUEBLO_PLAN_WORKFLOW_TYPE } from '../workflow/pueblo-plan/pueblo-plan-workflow';
@@ -165,6 +165,7 @@ export interface CliDependencies {
   readonly setProgressReporter: (reporter: ((update: { title: string; message: string }) => void) | null) => void;
   readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
   readonly setToolApprovalBatchHandler: (handler: ToolApprovalBatchHandler | null) => void;
+  readonly setFileReviewHandler: (handler: EditReviewHandler | null) => void;
   readonly databaseClose: () => void;
 }
 
@@ -352,6 +353,7 @@ export function createCliDependencies(
   let progressReporter: ((update: { title: string; message: string }) => void) | null = null;
   let toolApprovalHandler: ToolApprovalHandler | null = null;
   let toolApprovalBatchHandler: ToolApprovalBatchHandler | null = null;
+  let fileReviewHandler: EditReviewHandler | null = null;
   const credentialStore = options.credentialStore ?? createDefaultCredentialStore();
   const database = createSqliteDatabase({ dbPath: config.databasePath });
   const dispatcher = new CommandDispatcher();
@@ -374,10 +376,14 @@ export function createCliDependencies(
   const memoryService = new MemoryService(memoryRepository);
   let currentWorkspace = initializeWorkspacePath(memoryService, process.cwd());
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
-  const pepeSemanticClient = new PepeSemanticClient(providerRegistry, currentConfig);
   const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
-  const toolService = new ToolService({ repository: toolInvocationRepository, cwd: () => currentWorkspace });
+  const toolService = new ToolService({
+    repository: toolInvocationRepository,
+    cwd: () => currentWorkspace,
+    resolveEditReviewHandler: () => fileReviewHandler,
+    editShadowRoot: () => path.resolve(currentWorkspace, '.pueblo', 'shadow-edits'),
+  });
   const workflowRepository = new WorkflowRepository({ connection: database.connection });
   const workflowRegistry = new WorkflowRegistry([
     {
@@ -418,17 +424,18 @@ export function createCliDependencies(
   });
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository, memoryService);
-  const pepeSupervisor = new PepeSupervisor({
-    appConfig: currentConfig,
-    config: currentConfig.pepe,
+  const createPepeSupervisor = (resolvedConfig: AppConfig) => new PepeSupervisor({
+    appConfig: resolvedConfig,
+    config: resolvedConfig.pepe,
     memoryService,
     sessionService,
     agentInstanceService,
     resultService: pepeResultService,
     workerFactory: options.pepeWorkerFactory,
   });
-  const contextResolver = new ContextResolver({
-    config: currentConfig,
+  let pepeSupervisor = createPepeSupervisor(currentConfig);
+  const createContextResolver = (resolvedConfig: AppConfig) => new ContextResolver({
+    config: resolvedConfig,
     sessionService,
     promptService,
     memoryService,
@@ -438,10 +445,18 @@ export function createCliDependencies(
     workflowService,
     resolveBackgroundSummaryStatus: (sessionId) => pepeSupervisor.getBackgroundSummaryStatus(sessionId),
   });
+  let contextResolver = createContextResolver(currentConfig);
   let lastModelMessageCount = 0;
   let lastModelMessageCharCount = 0;
   let activeAgentInstanceId: string | null = null;
   let activeAgentProfileId: string | null = options.deferAgentSelection ? null : (currentConfig.defaultAgentProfileId ?? 'code-master');
+
+  function refreshRuntimeConfig(nextConfig: AppConfig): void {
+    currentConfig = nextConfig;
+    pepeSupervisor.stopAll();
+    pepeSupervisor = createPepeSupervisor(nextConfig);
+    contextResolver = createContextResolver(nextConfig);
+  }
 
   const runTask = async (
     goal: string,
@@ -1180,9 +1195,7 @@ export function createCliDependencies(
   });
   const providerConfigCommand = createProviderConfigCommand({
     getCurrentConfig: () => currentConfig,
-    setCurrentConfig: (nextConfig) => {
-      currentConfig = nextConfig;
-    },
+    setCurrentConfig: refreshRuntimeConfig,
     credentialStore,
     runGitHubCopilotLogin: () => maybeRunCliStartupSetup(currentConfig, {
       credentialStore,
@@ -1319,6 +1332,9 @@ export function createCliDependencies(
     },
     setToolApprovalBatchHandler(handler: ToolApprovalBatchHandler | null): void {
       toolApprovalBatchHandler = handler;
+    },
+    setFileReviewHandler(handler: EditReviewHandler | null): void {
+      fileReviewHandler = handler;
     },
     databaseClose(): void {
       pepeSupervisor.stopAll();

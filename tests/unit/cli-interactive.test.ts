@@ -67,6 +67,7 @@ describe('interactive cli session', () => {
       setProgressReporter() {},
       setToolApprovalHandler() {},
       setToolApprovalBatchHandler() {},
+      setFileReviewHandler() {},
       databaseClose() {},
     };
 
@@ -161,6 +162,7 @@ describe('interactive cli session', () => {
         }
       },
       setToolApprovalBatchHandler() {},
+      setFileReviewHandler() {},
       databaseClose() {},
     };
 

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  DesktopFileReviewResponse,
   DesktopMenuAction,
   DesktopRuntimeStatus,
   DesktopSessionSelectionResponse,
@@ -25,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getToolApprovalState: (): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('get-tool-approval-state'),
   getTalkState: (): Promise<DesktopTalkState> => ipcRenderer.invoke('get-talk-state'),
   respondToolApproval: (response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('respond-tool-approval', response),
+  respondFileReview: (response: DesktopFileReviewResponse): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('respond-file-review', response),
   respondTalkRequest: (response: DesktopTalkRequestResponse): Promise<DesktopTalkState> => ipcRenderer.invoke('respond-talk-request', response),
   respondTalkContinuation: (response: DesktopTalkContinuationResponse): Promise<DesktopTalkState> => ipcRenderer.invoke('respond-talk-continuation', response),
   listAgentProfiles: (): Promise<AgentProfileTemplate[]> => ipcRenderer.invoke('list-agent-profiles'),
