@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubCopilotAdapter } from '../../src/providers/github-copilot-adapter';
 import { getToolExecutionPolicy } from '../../src/providers/provider-adapter';
-import { ProviderUnknownToolError } from '../../src/providers/provider-errors';
+import { ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../../src/providers/provider-errors';
 
 describe('github copilot adapter', () => {
   it('fails fast when token is missing', async () => {
@@ -324,7 +324,7 @@ describe('github copilot adapter', () => {
           },
         },
       ],
-    })).rejects.toThrow();
+    })).rejects.toBeInstanceOf(ProviderInvalidToolArgumentsError);
   });
 
   it('serializes assistant tool calls and tool results with explicit tool metadata', async () => {

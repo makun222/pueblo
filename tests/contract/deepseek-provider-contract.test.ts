@@ -113,6 +113,11 @@ describe('DeepSeek Provider Contract', () => {
     expect(result.outputSummary).toBe('DeepSeek output');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://api.deepseek.com/chat/completions');
+
+    const requestPayload = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as {
+      user_id?: string;
+    };
+    expect(requestPayload.user_id).toBe(String(process.pid));
   });
 
   it('should stream DeepSeek final text deltas through the step callback', async () => {
@@ -232,6 +237,46 @@ describe('DeepSeek Provider Contract', () => {
       goal: 'Inspect repository state',
       inputContextSummary: 'Task execution test',
     })).rejects.toThrow('DeepSeek network request failed to https://api.deepseek.com/chat/completions: fetch failed');
+  });
+
+  it('should retry one transient DeepSeek fetch failure before surfacing an error', async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'Recovered after retry',
+              },
+            },
+          ],
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const result = await adapter.runTask({
+      modelId: 'deepseek-v4-flash',
+      goal: 'Inspect repository state',
+      inputContextSummary: 'Task execution test',
+    });
+
+    expect(result.outputSummary).toBe('Recovered after retry');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
+      headers: expect.objectContaining({
+        Connection: 'close',
+      }),
+    });
   });
 
   it('should write failed DeepSeek response details to the response log directory', async () => {

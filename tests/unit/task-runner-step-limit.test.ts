@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AgentTaskRunner } from '../../src/agent/task-runner';
 import { ProviderRegistry } from '../../src/providers/provider-registry';
 import { getToolExecutionPolicy, type ProviderAdapter, type ProviderRunResult, type ProviderStepContext, type ProviderStepResult } from '../../src/providers/provider-adapter';
-import { ProviderUnknownToolError } from '../../src/providers/provider-errors';
+import { ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../../src/providers/provider-errors';
 import { createProviderProfile } from '../../src/providers/provider-profile';
 import { ToolService } from '../../src/tools/tool-service';
 import type { ExecuteToolRequest } from '../../src/tools/tool-service';
@@ -296,6 +296,33 @@ class UnknownToolThenFinalProviderAdapter implements ProviderAdapter {
     return {
       type: 'final',
       outputSummary: 'Recovered after unavailable tool guidance',
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class InvalidToolArgumentsThenFinalProviderAdapter implements ProviderAdapter {
+  seenRetryPrompt: string | null = null;
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('The arguments for tool "read" were invalid.'));
+
+    if (!retryPrompt) {
+      throw new ProviderInvalidToolArgumentsError('deepseek', 'read', [
+        {
+          path: 'path',
+          message: 'Invalid input: expected string, received undefined',
+        },
+      ]);
+    }
+
+    this.seenRetryPrompt = retryPrompt.content;
+    return {
+      type: 'final',
+      outputSummary: 'Recovered after invalid tool argument guidance',
     };
   }
 
@@ -789,6 +816,43 @@ describe('AgentTaskRunner step limit', () => {
     expect(progressMessages).toContain('Step 1: unavailable tool requested - search');
     expect(adapter.seenRetryPrompt).toContain('Do not call it again.');
     expect(adapter.seenRetryPrompt).toContain('Available tools:');
+    expect(adapter.seenRetryPrompt).toContain('- read (free)');
+    expect(adapter.seenRetryPrompt).toContain('Required fields: path');
+  });
+
+  it('reminds the model to repair invalid tool arguments and retries instead of failing the task', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    const adapter = new InvalidToolArgumentsThenFinalProviderAdapter();
+    registry.register(profile, adapter);
+
+    const { service, getInvocationCount } = createToolService();
+    const progressMessages: string[] = [];
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository(), service, {
+      reportProgress: (message) => {
+        progressMessages.push(message);
+      },
+    });
+
+    const result = await runner.run({
+      goal: 'Inspect repository state safely',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(getInvocationCount()).toBe(0);
+    expect(result.outputSummary).toContain('Recovered after invalid tool argument guidance');
+    expect(progressMessages).toContain('Step 1: invalid read arguments requested');
+    expect(adapter.seenRetryPrompt).toContain('Validation errors:');
+    expect(adapter.seenRetryPrompt).toContain('- path: Invalid input: expected string, received undefined');
     expect(adapter.seenRetryPrompt).toContain('- read (free)');
     expect(adapter.seenRetryPrompt).toContain('Required fields: path');
   });

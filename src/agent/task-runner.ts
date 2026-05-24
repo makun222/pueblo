@@ -12,7 +12,7 @@ import {
   ProviderToolCall,
   type ProviderUsage,
 } from '../providers/provider-adapter';
-import { ProviderUnknownToolError } from '../providers/provider-errors';
+import { ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../providers/provider-errors';
 import { ProviderRegistry } from '../providers/provider-registry';
 import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
@@ -267,6 +267,15 @@ export class AgentTaskRunner {
           messages.push({
             role: 'user',
             content: this.createUnknownToolRetryPrompt(error, args.availableTools),
+          });
+          continue;
+        }
+
+        if (error instanceof ProviderInvalidToolArgumentsError) {
+          this.emitProgress(`Step ${stepIndex + 1}: invalid ${error.toolName} arguments requested`);
+          messages.push({
+            role: 'user',
+            content: this.createInvalidToolArgumentsRetryPrompt(error, args.availableTools),
           });
           continue;
         }
@@ -553,6 +562,27 @@ export class AgentTaskRunner {
     return [
       `The tool "${error.requestedToolName}" is not available in this runtime. Do not call it again.`,
       'Use only the exact tool names listed below, or reply with a final answer if no tool is needed.',
+      'Available tools:',
+      toolCatalog,
+    ].join('\n');
+  }
+
+  private createInvalidToolArgumentsRetryPrompt(
+    error: ProviderInvalidToolArgumentsError,
+    availableTools: readonly ProviderToolDefinition[],
+  ): string {
+    const toolCatalog = availableTools.length > 0
+      ? availableTools.map((tool) => this.describeAvailableTool(tool)).join('\n')
+      : 'No tools are available in this runtime. Continue without tool calls and answer directly.';
+    const validationDetails = error.issues.length > 0
+      ? error.issues.map((issue) => `- ${issue.path}: ${issue.message}`).join('\n')
+      : '- Invalid tool arguments.';
+
+    return [
+      `The arguments for tool "${error.toolName}" were invalid. Do not repeat the same invalid call.`,
+      'Validation errors:',
+      validationDetails,
+      'Fix the arguments and use only the exact tool names and schemas listed below, or reply with a final answer if no tool is needed.',
       'Available tools:',
       toolCatalog,
     ].join('\n');

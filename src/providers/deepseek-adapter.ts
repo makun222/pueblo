@@ -15,9 +15,10 @@ import {
   type ProviderUsage,
 } from './provider-adapter';
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
-import { ProviderAuthError, ProviderError, ProviderUnknownToolError } from './provider-errors';
+import { ProviderAuthError, ProviderError, ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from './provider-errors';
 import { consumeServerSentEventStream } from './server-sent-events';
 import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
+import { ZodError } from 'zod';
 
 interface DeepSeekResponsePayload {
   readonly choices?: Array<{
@@ -76,6 +77,19 @@ interface DeepSeekUsagePayload {
   };
 }
 
+const DEEPSEEK_NETWORK_RETRY_LIMIT = 1;
+const RETRYABLE_NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ENETUNREACH',
+  'EAI_AGAIN',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
 export interface DeepSeekAdapterOptions {
   readonly apiKey: string;
   readonly baseUrl?: string;
@@ -107,9 +121,11 @@ export class DeepSeekAdapter implements ProviderAdapter {
         Authorization: `Bearer ${this.options.apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        Connection: 'close',
       },
       body: JSON.stringify({
         model: context.modelId,
+        user_id: String(process.pid),
         stream: streamingEnabled,
         stream_options: streamingEnabled ? { include_usage: true } : undefined,
         messages: context.messages.map(toDeepSeekMessage),
@@ -232,24 +248,68 @@ export class DeepSeekAdapter implements ProviderAdapter {
   }
 
   private async fetchWithProviderError(input: string, init: RequestInit): Promise<Response> {
-    try {
-      return await this.fetchImpl(input, init);
-    } catch (error) {
-      if (isTaskCancellationError(error)) {
-        throw toTaskCancellationError(error, 'DeepSeek request was cancelled.');
-      }
+    for (let attempt = 0; attempt <= DEEPSEEK_NETWORK_RETRY_LIMIT; attempt += 1) {
+      try {
+        return await this.fetchImpl(input, init);
+      } catch (error) {
+        if (isTaskCancellationError(error)) {
+          throw toTaskCancellationError(error, 'DeepSeek request was cancelled.');
+        }
 
-      this.responseLogger.log({
-        providerId: 'deepseek',
-        category: 'network-error',
-        message: 'DeepSeek network request failed',
-        requestUrl: input,
-        details: error,
-      });
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new ProviderError(`DeepSeek network request failed to ${input}: ${reason}`);
+        const canRetry = attempt < DEEPSEEK_NETWORK_RETRY_LIMIT && isRetryableNetworkError(error);
+        if (canRetry) {
+          this.responseLogger.log({
+            providerId: 'deepseek',
+            category: 'network-error-retry',
+            message: 'DeepSeek network request failed; retrying once',
+            requestUrl: input,
+            details: {
+              attempt: attempt + 1,
+              error,
+            },
+          });
+          continue;
+        }
+
+        this.responseLogger.log({
+          providerId: 'deepseek',
+          category: 'network-error',
+          message: 'DeepSeek network request failed',
+          requestUrl: input,
+          details: {
+            attempt: attempt + 1,
+            error,
+          },
+        });
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new ProviderError(`DeepSeek network request failed to ${input}: ${reason}`);
+      }
     }
+
+    throw new ProviderError(`DeepSeek network request failed to ${input}: exhausted retries`);
   }
+}
+
+function isRetryableNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (error.message.trim().toLowerCase() === 'fetch failed') {
+    return true;
+  }
+
+  const causeCode = resolveErrorCode(error.cause);
+  return causeCode ? RETRYABLE_NETWORK_ERROR_CODES.has(causeCode) : false;
+}
+
+function resolveErrorCode(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const code = 'code' in value ? value.code : undefined;
+  return typeof code === 'string' && code.trim().length > 0 ? code : null;
 }
 
 function parseDeepSeekResponsePayload(
@@ -413,33 +473,75 @@ function parseDeepSeekToolCall(
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('glob', parsedArguments),
+        args: parseProviderToolArgsOrThrow('deepseek', 'glob', parsedArguments),
       };
     case 'grep':
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('grep', parsedArguments),
+        args: parseProviderToolArgsOrThrow('deepseek', 'grep', parsedArguments),
       };
     case 'exec':
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('exec', parsedArguments),
+        args: parseProviderToolArgsOrThrow('deepseek', 'exec', parsedArguments),
       };
     case 'read':
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('read', parsedArguments),
+        args: parseProviderToolArgsOrThrow('deepseek', 'read', parsedArguments),
       };
     case 'edit':
       return {
         toolCallId,
         toolName,
-        args: parseProviderEditCompatibleToolArgs(parsedArguments),
+        args: parseProviderEditCompatibleToolArgsOrThrow('deepseek', parsedArguments),
       };
   }
+}
+
+function parseProviderToolArgsOrThrow<TToolName extends ProviderToolName>(
+  providerId: 'deepseek',
+  toolName: TToolName,
+  parsedArguments: unknown,
+) {
+  try {
+    return parseProviderToolArgs(toolName, parsedArguments);
+  } catch (error) {
+    throw wrapToolArgumentValidationError(providerId, toolName, error);
+  }
+}
+
+function parseProviderEditCompatibleToolArgsOrThrow(
+  providerId: 'deepseek',
+  parsedArguments: unknown,
+) {
+  try {
+    return parseProviderEditCompatibleToolArgs(parsedArguments);
+  } catch (error) {
+    throw wrapToolArgumentValidationError(providerId, 'edit', error);
+  }
+}
+
+function wrapToolArgumentValidationError(
+  providerId: 'deepseek',
+  toolName: ProviderToolName,
+  error: unknown,
+): Error {
+  if (error instanceof ZodError) {
+    return new ProviderInvalidToolArgumentsError(
+      providerId,
+      toolName,
+      error.issues.map((issue) => ({
+        path: issue.path.length > 0 ? issue.path.join('.') : '(root)',
+        message: issue.message,
+      })),
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function parseDeepSeekToolCalls(

@@ -52,6 +52,8 @@ interface AssistantTranscriptEntry {
   readonly role: 'assistant';
   readonly content: string;
   readonly createdAt: string;
+  readonly startedAtMs?: number;
+  readonly completedAtMs?: number | null;
   readonly messageTrace: RendererMessageTraceStep[];
   readonly fileChanges: RendererFileChange[];
   readonly status: 'pending' | 'streaming' | 'complete';
@@ -217,6 +219,8 @@ export function App() {
   const [isContextBreakdownOpen, setIsContextBreakdownOpen] = useState(false);
   const [toolApprovalSidebarWidth, setToolApprovalSidebarWidth] = useState(TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH);
   const [isResizingToolApprovalSidebar, setIsResizingToolApprovalSidebar] = useState(false);
+  const [activeAnswerTimer, setActiveAnswerTimer] = useState<{ entryId: string; startedAtMs: number } | null>(null);
+  const [answerTimerNowMs, setAnswerTimerNowMs] = useState(() => Date.now());
   const runtimeStatusRef = useRef(runtimeStatus);
   const selectedToolApprovalIdsRef = useRef<string[]>([]);
   const pendingAssistantEntryIdRef = useRef<string | null>(null);
@@ -348,6 +352,21 @@ export function App() {
   useEffect(() => {
     runtimeStatusRef.current = runtimeStatus;
   }, [runtimeStatus]);
+
+  useEffect(() => {
+    if (!activeAnswerTimer) {
+      return;
+    }
+
+    setAnswerTimerNowMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setAnswerTimerNowMs(Date.now());
+    }, 100);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeAnswerTimer]);
 
   useEffect(() => {
     setTranscriptSearchInput('');
@@ -494,8 +513,10 @@ export function App() {
 
   const appendPendingAssistantEntry = (createdAt: string): string => {
     const assistantEntryId = `${createdAt}-assistant-${Math.random().toString(16).slice(2)}`;
+    const startedAtMs = Date.now();
     pendingAssistantEntryIdRef.current = assistantEntryId;
     pendingAssistantDraftRef.current = '';
+    setActiveAnswerTimer({ entryId: assistantEntryId, startedAtMs });
     setTranscriptEntries((previous) => [
       ...previous,
       {
@@ -503,6 +524,8 @@ export function App() {
         role: 'assistant',
         content: THINKING_PLACEHOLDER,
         createdAt,
+        startedAtMs,
+        completedAtMs: null,
         messageTrace: [],
         fileChanges: [],
         status: 'pending',
@@ -600,6 +623,7 @@ export function App() {
           messageTrace: block.messageTrace,
           fileChanges: block.fileChanges,
           status: nextCursor >= block.content.length ? 'complete' : 'streaming',
+          completedAtMs: nextCursor >= block.content.length ? Date.now() : null,
           blockType: answerBlockType,
         };
       }));
@@ -607,6 +631,7 @@ export function App() {
       if (nextCursor >= block.content.length) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
+        setActiveAnswerTimer(null);
         streamTimerRef.current = null;
         return;
       }
@@ -628,11 +653,13 @@ export function App() {
           messageTrace: block.messageTrace,
           fileChanges: block.fileChanges,
           status: 'complete',
+          completedAtMs: Date.now(),
           blockType: answerBlockType,
         };
       }));
       pendingAssistantEntryIdRef.current = null;
       pendingAssistantDraftRef.current = '';
+      setActiveAnswerTimer(null);
       return;
     }
 
@@ -696,6 +723,7 @@ export function App() {
       if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
+        setActiveAnswerTimer(null);
         setTranscriptEntries((previous) => previous.filter((entry) => !('role' in entry) || entry.id !== assistantEntryId));
       }
 
@@ -713,6 +741,7 @@ export function App() {
       if (assistantEntryId) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
+        setActiveAnswerTimer(null);
         setTranscriptEntries((previous) => previous.map((entry) => {
           if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
             return entry;
@@ -722,6 +751,7 @@ export function App() {
             ...entry,
             content: message,
             status: 'complete',
+            completedAtMs: Date.now(),
             blockType: 'error',
           };
         }));
@@ -1267,8 +1297,12 @@ export function App() {
                       isOpen: isTranscriptHistoryExpanded,
                       onToggle: setIsTranscriptHistoryExpanded,
                       onOpenFileChange: setSelectedFileChange,
+                      answerTimerNowMs,
                     }) : null}
-                    {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, { onOpenFileChange: setSelectedFileChange }))}
+                    {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, {
+                      onOpenFileChange: setSelectedFileChange,
+                      answerTimerNowMs,
+                    }))}
                   </>
                 )}
                 <div ref={transcriptEndRef} className="output-pane-end" aria-hidden="true" />
@@ -1730,6 +1764,20 @@ function formatWorkspaceLabel(value: string | null | undefined): string {
   return value.length <= 40 ? value : `...${value.slice(-37)}`;
 }
 
+function formatThinkingDuration(startedAtMs: number, endedAtMs: number): string {
+  const elapsedMs = Math.max(endedAtMs - startedAtMs, 0);
+  const elapsedSeconds = elapsedMs / 1000;
+
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds.toFixed(1)}s`;
+  }
+
+  const totalSeconds = Math.floor(elapsedSeconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}min${seconds}sec`;
+}
+
 function createRendererInputEnvelope(args: {
   inputText: string;
   sessionId: string | null;
@@ -1780,6 +1828,7 @@ function renderCollapsedTranscriptHistory(args: {
   isOpen: boolean;
   onToggle: (isOpen: boolean) => void;
   onOpenFileChange: (fileChange: RendererFileChange) => void;
+  answerTimerNowMs: number;
 }) {
   const firstGroup = args.groups[0];
   const lastGroup = args.groups[args.groups.length - 1];
@@ -1801,7 +1850,10 @@ function renderCollapsedTranscriptHistory(args: {
       </summary>
       {args.isOpen ? (
         <div className="transcript-history-content">
-          {args.groups.map((group) => renderTranscriptGroup(group, { onOpenFileChange: args.onOpenFileChange }))}
+          {args.groups.map((group) => renderTranscriptGroup(group, {
+            onOpenFileChange: args.onOpenFileChange,
+            answerTimerNowMs: args.answerTimerNowMs,
+          }))}
         </div>
       ) : null}
     </details>
@@ -1810,7 +1862,10 @@ function renderCollapsedTranscriptHistory(args: {
 
 function renderTranscriptGroup(
   group: TranscriptGroup,
-  actions: { readonly onOpenFileChange: (fileChange: RendererFileChange) => void },
+  actions: {
+    readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
+    readonly answerTimerNowMs: number;
+  },
 ) {
   return (
     <div key={group.id} className="transcript-group">
@@ -1886,7 +1941,7 @@ function renderToolApprovalSidebar(args: {
       ) : null}
       {hasQueuedApprovals ? (
         <>
-          <p className="workflow-sidebar-copy">Predictable tool calls are grouped here. Use the X button on each row to keep or remove it from the current approval set.</p>
+          <p className="workflow-sidebar-copy">Use the + button to keep or remove it from the current approval set.</p>
           {groupedRequests.command.length > 0 ? (
             <div className="tool-approval-group">
               <div className="workflow-sidebar-section-header">
@@ -1962,12 +2017,12 @@ function renderToolApprovalRow(
   isResolvingToolApproval: boolean,
 ) {
   const displayText = getToolApprovalPrimaryDisplayText(request);
+  const actionLabel = truncateToolApprovalText(displayText || request.operationLabel || request.toolName, 80);
 
   return (
     <article
       key={request.id}
       className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
-      title={request.detail}
     >
       <div className="tool-approval-row-main">
         <div className="tool-approval-row-line">
@@ -1976,11 +2031,11 @@ function renderToolApprovalRow(
             type="button"
             className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
             aria-pressed={isSelected}
-            aria-label={isSelected ? `Deselect ${request.primaryText}` : `Select ${request.primaryText}`}
+            aria-label={isSelected ? `Deselect ${actionLabel}` : `Select ${actionLabel}`}
             onClick={() => onToggleRequest(request.id)}
             disabled={isResolvingToolApproval}
           >
-            X
+            +
           </button>
         </div>
       </div>
@@ -2669,14 +2724,23 @@ function renderSessionInspectorModal(args: {
 
 function renderTranscriptEntry(
   entry: TranscriptEntry,
-  actions: { readonly onOpenFileChange: (fileChange: RendererFileChange) => void },
+  actions: {
+    readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
+    readonly answerTimerNowMs: number;
+  },
 ) {
   if ('role' in entry) {
     if (entry.role === 'assistant') {
       const handoff = parseTaskHandoff(entry.content);
+      const thinkingDuration = entry.startedAtMs === undefined
+        ? null
+        : formatThinkingDuration(entry.startedAtMs, entry.completedAtMs ?? actions.answerTimerNowMs);
       return (
         <article key={entry.id} className={`chat-entry chat-entry-answer chat-entry-answer-${entry.blockType} ${entry.status === 'pending' ? 'chat-entry-answer-pending' : ''}`}>
-          <header className="chat-entry-label">Pueblo</header>
+          <div className="chat-entry-header">
+            <header className="chat-entry-label">Pueblo</header>
+            {thinkingDuration ? <span className="chat-entry-thinking-duration">{thinkingDuration}</span> : null}
+          </div>
           {renderAnswerContent(entry.content, handoff)}
           {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
           {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: entry.blockType === 'task-result' })}
@@ -2806,6 +2870,8 @@ function mapSessionMessageToTranscriptEntry(message: SessionMessage): Transcript
       role: 'assistant',
       content: message.content,
       createdAt: message.createdAt,
+      startedAtMs: undefined,
+      completedAtMs: undefined,
       messageTrace: [],
       fileChanges: [],
       status: 'complete',

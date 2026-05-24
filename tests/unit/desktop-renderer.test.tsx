@@ -870,6 +870,109 @@ describe('Desktop Renderer', () => {
     expect(screen.getByText('First line of the answer. Second line of the answer.')).toBeTruthy();
   });
 
+  it('shows and freezes the assistant thinking duration beside the answer entry', async () => {
+    let resolveSubmit: ((value: unknown) => void) | null = null;
+    submitInputMock.mockImplementation(() => new Promise((resolve) => {
+      resolveSubmit = resolve;
+    }));
+
+    render(createElement(App));
+
+    const input = await screen.findByPlaceholderText('Enter command or task...');
+    const form = screen.getByLabelText('input-region');
+
+    vi.useFakeTimers();
+
+    fireEvent.change(input, { target: { value: 'Measure the current answer time' } });
+
+    act(() => {
+      fireEvent.submit(form);
+    });
+
+    expect(screen.getByText('0.0s')).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(screen.getByText('0.1s')).toBeTruthy();
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'task-result-timer',
+        type: 'task-result',
+        title: 'Output Summary',
+        content: 'Done.',
+        collapsed: false,
+        messageTrace: [],
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+      resolveSubmit?.({
+        result: undefined,
+        blocks: [
+          {
+            id: 'task-result-timer',
+            type: 'task-result',
+            title: 'Output Summary',
+            content: 'Done.',
+            collapsed: false,
+            messageTrace: [],
+            fileChanges: [],
+            sourceRefs: [],
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+          workflow: inactiveWorkflowStatus,
+        },
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.runAllTimers();
+    });
+
+    expect(screen.getByText('Done.')).toBeTruthy();
+    expect(screen.getByText('0.1s')).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText('0.1s')).toBeTruthy();
+  });
+
   it('shows agent activity updates while the assistant response is still pending', async () => {
     let resolveSubmit: ((value: unknown) => void) | null = null;
     submitInputMock.mockImplementation(() => new Promise((resolve) => {

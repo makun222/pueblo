@@ -44,3 +44,22 @@ export class ProviderUnknownToolError extends ProviderError {
     this.requestedToolName = requestedToolName;
   }
 }
+
+export interface ProviderToolValidationIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+export class ProviderInvalidToolArgumentsError extends ProviderError {
+  readonly providerId: string;
+  readonly toolName: string;
+  readonly issues: readonly ProviderToolValidationIssue[];
+
+  constructor(providerId: string, toolName: string, issues: readonly ProviderToolValidationIssue[]) {
+    super(`${providerId}: invalid arguments for tool "${toolName}"`);
+    this.name = 'ProviderInvalidToolArgumentsError';
+    this.providerId = providerId;
+    this.toolName = toolName;
+    this.issues = issues;
+  }
+}

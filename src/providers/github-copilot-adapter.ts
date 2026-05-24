@@ -13,11 +13,12 @@ import {
   type ProviderToolDefinition,
   type ProviderToolName,
 } from './provider-adapter';
-import { ProviderAuthError, ProviderError, ProviderUnknownToolError } from './provider-errors';
+import { ProviderAuthError, ProviderError, ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from './provider-errors';
 import type { GitHubCopilotTokenType } from './github-copilot-auth';
 import { createLlmResponseLogger, type LlmResponseLogger } from './llm-response-logger';
 import { consumeServerSentEventStream } from './server-sent-events';
 import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
+import { ZodError } from 'zod';
 
 interface GitHubCopilotResponsePayload {
   readonly choices?: Array<{
@@ -565,33 +566,75 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('glob', parsedArguments),
+        args: parseProviderToolArgsOrThrow('github-copilot', 'glob', parsedArguments),
       };
     case 'grep':
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('grep', parsedArguments),
+        args: parseProviderToolArgsOrThrow('github-copilot', 'grep', parsedArguments),
       };
     case 'exec':
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('exec', parsedArguments),
+        args: parseProviderToolArgsOrThrow('github-copilot', 'exec', parsedArguments),
       };
     case 'read':
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgs('read', parsedArguments),
+        args: parseProviderToolArgsOrThrow('github-copilot', 'read', parsedArguments),
       };
     case 'edit':
       return {
         toolCallId,
         toolName,
-        args: parseProviderEditCompatibleToolArgs(parsedArguments),
+        args: parseProviderEditCompatibleToolArgsOrThrow('github-copilot', parsedArguments),
       };
   }
+}
+
+function parseProviderToolArgsOrThrow<TToolName extends ProviderToolName>(
+  providerId: 'github-copilot',
+  toolName: TToolName,
+  parsedArguments: unknown,
+) {
+  try {
+    return parseProviderToolArgs(toolName, parsedArguments);
+  } catch (error) {
+    throw wrapToolArgumentValidationError(providerId, toolName, error);
+  }
+}
+
+function parseProviderEditCompatibleToolArgsOrThrow(
+  providerId: 'github-copilot',
+  parsedArguments: unknown,
+) {
+  try {
+    return parseProviderEditCompatibleToolArgs(parsedArguments);
+  } catch (error) {
+    throw wrapToolArgumentValidationError(providerId, 'edit', error);
+  }
+}
+
+function wrapToolArgumentValidationError(
+  providerId: 'github-copilot',
+  toolName: ProviderToolName,
+  error: unknown,
+): Error {
+  if (error instanceof ZodError) {
+    return new ProviderInvalidToolArgumentsError(
+      providerId,
+      toolName,
+      error.issues.map((issue) => ({
+        path: issue.path.length > 0 ? issue.path.join('.') : '(root)',
+        message: issue.message,
+      })),
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function parseGitHubCopilotToolCalls(toolCalls: GitHubCopilotToolCall[]): ProviderStepResult {
