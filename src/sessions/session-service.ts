@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Session } from '../shared/schema';
+import type { AgentSessionSummary, Session } from '../shared/schema';
 import type { SessionMessage, SessionMessageRole } from '../shared/schema';
 import { SessionCommandError } from '../commands/command-errors';
 import type { MemoryService } from '../memory/memory-service';
@@ -34,6 +34,10 @@ export class SessionService {
 
   listSessions(): Session[] {
     return this.queries.listSessions();
+  }
+
+  listSessionSummaries(): AgentSessionSummary[] {
+    return this.queries.listSessionSummaries();
   }
 
   selectSession(sessionId: string): Session {
@@ -190,23 +194,47 @@ export class SessionService {
   }
 
   addSelectedMemory(sessionId: string, memoryId: string): Session {
+    return this.addPinnedMemory(sessionId, memoryId);
+  }
+
+  addPinnedMemory(sessionId: string, memoryId: string): Session {
     const session = this.requireSession(sessionId);
     return this.updateSession(session, {
-      selectedMemoryIds: uniqueValues([...session.selectedMemoryIds, memoryId]),
+      pinnedMemoryIds: uniqueValues([...session.pinnedMemoryIds, memoryId]),
+    });
+  }
+
+  addWorkingMemory(sessionId: string, memoryId: string): Session {
+    const session = this.requireSession(sessionId);
+    return this.updateSession(session, {
+      workingMemoryIds: uniqueValues([...session.workingMemoryIds, memoryId]),
     });
   }
 
   removeSelectedMemory(sessionId: string, memoryId: string): Session {
     const session = this.requireSession(sessionId);
     return this.updateSession(session, {
-      selectedMemoryIds: session.selectedMemoryIds.filter((id) => id !== memoryId),
+      pinnedMemoryIds: session.pinnedMemoryIds.filter((id) => id !== memoryId),
+      workingMemoryIds: session.workingMemoryIds.filter((id) => id !== memoryId),
     });
   }
 
   setSelectedMemoryIds(sessionId: string, memoryIds: string[]): Session {
+    return this.setPinnedMemoryIds(sessionId, memoryIds);
+  }
+
+  setPinnedMemoryIds(sessionId: string, memoryIds: string[]): Session {
     const session = this.requireSession(sessionId);
     return this.updateSession(session, {
-      selectedMemoryIds: uniqueValues(memoryIds),
+      pinnedMemoryIds: uniqueValues(memoryIds),
+      workingMemoryIds: [],
+    });
+  }
+
+  setWorkingMemoryIds(sessionId: string, memoryIds: string[]): Session {
+    const session = this.requireSession(sessionId);
+    return this.updateSession(session, {
+      workingMemoryIds: uniqueValues(memoryIds),
     });
   }
 
@@ -223,7 +251,7 @@ export class SessionService {
       .map((memory) => memory.id) ?? [];
 
     return this.updateSession(targetSession, {
-      selectedMemoryIds: uniqueValues([...targetSession.selectedMemoryIds, ...importedMemoryIds]),
+      pinnedMemoryIds: uniqueValues([...targetSession.pinnedMemoryIds, ...importedMemoryIds]),
     });
   }
 
@@ -252,14 +280,26 @@ export class SessionService {
   }
 
   private updateSession(session: Session, patch: Partial<Session>): Session {
-    const updated: Session = {
+    const updated = normalizeSessionSelection({
       ...session,
       ...patch,
       updatedAt: new Date().toISOString(),
-    };
+    });
 
     return this.repository.save(updated);
   }
+}
+
+function normalizeSessionSelection(session: Session): Session {
+  const pinnedMemoryIds = uniqueValues(session.pinnedMemoryIds ?? []);
+  const workingMemoryIds = uniqueValues(session.workingMemoryIds ?? []);
+
+  return {
+    ...session,
+    pinnedMemoryIds,
+    workingMemoryIds,
+    selectedMemoryIds: uniqueValues([...pinnedMemoryIds, ...workingMemoryIds]),
+  };
 }
 
 function uniqueValues(values: string[]): string[] {

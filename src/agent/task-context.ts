@@ -30,6 +30,7 @@ export interface TaskContext {
   readonly skillContext?: SkillContextSnapshot | null;
   readonly sessionMessages: SessionMessage[];
   readonly recentMessages: string[];
+  readonly activeTurnStepContext?: string | null;
   readonly puebloProfile: PuebloProfile;
   readonly contextCount: ContextCount;
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
@@ -52,6 +53,7 @@ export interface TaskContextInput {
   readonly currentSessionId?: string | null;
   readonly sessionMessages?: SessionMessage[];
   readonly recentMessages?: string[];
+  readonly activeTurnStepContext?: string | null;
   readonly puebloProfile: PuebloProfile;
   readonly contextCount: ContextCount;
   readonly backgroundSummaryStatus?: BackgroundSummaryStatus;
@@ -84,6 +86,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     skillContext: input.skillContext ?? null,
     sessionMessages,
     recentMessages: input.recentMessages ?? sessionMessages.map(formatSessionMessageForContext),
+    activeTurnStepContext: input.activeTurnStepContext ?? null,
     puebloProfile: input.puebloProfile,
     contextCount: input.contextCount,
     uploadedAttachments: input.uploadedAttachments ?? [],

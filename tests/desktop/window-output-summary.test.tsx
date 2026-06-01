@@ -127,8 +127,9 @@ beforeEach(() => {
           lastSummaryMemoryId: null,
         },
       }),
-      getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
-      respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
+      getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+      respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+      respondFileReview: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
       listAgentProfiles: vi.fn().mockResolvedValue([
         {
           id: 'code-master',
@@ -270,6 +271,10 @@ describe('Desktop Output Summary Rendering', () => {
     expect(screen.getByText('Short visible answer')).toBeTruthy();
     expect(screen.queryByText('grep: succeeded - found files')).toBeNull();
     expect(screen.getAllByText('Process Info')).toHaveLength(1);
+    expect(screen.queryByText('Step 1')).toBeNull();
+
+    fireEvent.click(screen.getByText('Process Info'));
+
     expect(screen.getAllByText('Step 1')).toHaveLength(1);
     expect(screen.queryByText('Model Output')).toBeNull();
   });
@@ -404,6 +409,8 @@ describe('Desktop Output Summary Rendering', () => {
       currentModelId: 'copilot-chat',
       messageHistory: [],
       selectedPromptIds: [],
+      pinnedMemoryIds: [],
+      workingMemoryIds: [],
       selectedMemoryIds: [],
       providerUsageStats,
       originSessionId: null,
@@ -485,8 +492,9 @@ describe('Desktop Output Summary Rendering', () => {
             lastSummaryMemoryId: null,
           },
         }),
-        getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
-        respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
+        getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+        respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+        respondFileReview: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
         listAgentProfiles: vi.fn().mockResolvedValue([]),
         startAgentSession: vi.fn().mockResolvedValue({
           providerId: 'github-copilot',
@@ -591,9 +599,11 @@ describe('Desktop Output Summary Rendering', () => {
                 id: 'call-edit-1',
                 toolCallId: 'call-edit-1',
                 toolName: 'edit',
+                kind: 'file-edit',
                 title: 'Allow edit in src/desktop/renderer/App.tsx?',
                 summary: 'Edit src/desktop/renderer/App.tsx by replacing renderToolApprovalSidebar with a compact approval row.',
                 detail: 'Edit approval detail',
+                primaryText: 'src/desktop/renderer/App.tsx',
                 targetLabel: 'src/desktop/renderer/App.tsx',
                 operationLabel: 'edit',
               },
@@ -601,14 +611,17 @@ describe('Desktop Output Summary Rendering', () => {
                 id: 'call-exec-1',
                 toolCallId: 'call-exec-1',
                 toolName: 'exec',
+                kind: 'command',
                 title: 'Allow command execution in the workspace?',
                 summary: 'Command: npm test',
                 detail: 'Exec approval detail',
+                primaryText: 'npm test',
                 targetLabel: 'npm test',
                 operationLabel: 'exec',
               },
             ],
           },
+          activeFileReview: null,
         }),
       },
     });
@@ -616,9 +629,11 @@ describe('Desktop Output Summary Rendering', () => {
     render(createElement(App));
 
     expect(await screen.findByText('Queued Calls')).toBeTruthy();
+    expect(screen.getByText('Commands')).toBeTruthy();
+    expect(screen.getByText('File Edits')).toBeTruthy();
     expect(screen.getByText('App.tsx')).toBeTruthy();
     expect(screen.queryByText(/compact approval row/i)).toBeNull();
-    expect(screen.getByText('Command: npm test')).toBeTruthy();
+    expect(screen.getByText('npm test')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Allow' }).className).toContain('tool-approval-allow-button');
   });
 
@@ -657,8 +672,9 @@ describe('Desktop Output Summary Rendering', () => {
             lastSummaryMemoryId: null,
           },
         }),
-        getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null }),
-        respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null }),
+        getToolApprovalState: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+        respondToolApproval: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
+        respondFileReview: vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null }),
         listAgentProfiles: vi.fn().mockResolvedValue([
           {
             id: 'architect',

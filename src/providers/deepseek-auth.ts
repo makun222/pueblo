@@ -87,6 +87,7 @@ export function persistDeepSeekConfiguration(
     : {};
   const defaultModelId = resolveDeepSeekModelId(options.defaultModelId);
   const baseUrl = normalizeDeepSeekBaseUrl(options.baseUrl ?? config.deepseek.baseUrl);
+  const defaultProviderId = resolveNextDefaultProviderId(config, 'deepseek');
 
   if (credentialStore.isSupported()) {
     const credentialTarget = config.deepseek.credentialTarget?.trim() || createDeepSeekCredentialTarget();
@@ -101,7 +102,7 @@ export function persistDeepSeekConfiguration(
     const nextConfig = {
       ...current,
       databasePath: config.databasePath,
-      defaultProviderId: config.defaultProviderId ?? 'deepseek',
+      defaultProviderId,
       defaultAgentProfileId: config.defaultAgentProfileId,
       defaultSessionId: config.defaultSessionId,
       providers: ensureDeepSeekProviderConfig(current.providers, 'windows-credential-manager', defaultModelId),
@@ -126,7 +127,7 @@ export function persistDeepSeekConfiguration(
   const nextConfig = {
     ...current,
     databasePath: config.databasePath,
-    defaultProviderId: config.defaultProviderId ?? 'deepseek',
+    defaultProviderId,
     defaultAgentProfileId: config.defaultAgentProfileId,
     defaultSessionId: config.defaultSessionId,
     providers: ensureDeepSeekProviderConfig(current.providers, 'config-file', defaultModelId),
@@ -177,6 +178,23 @@ function ensureDeepSeekProviderConfig(
 
 function createDeepSeekCredentialTarget(): string {
   return `Pueblo:DeepSeek:${Date.now()}`;
+}
+
+function resolveNextDefaultProviderId(
+  config: AppConfig,
+  configuredProviderId: 'deepseek',
+): string {
+  const currentDefaultProviderId = config.defaultProviderId?.trim();
+  if (!currentDefaultProviderId) {
+    return configuredProviderId;
+  }
+
+  const currentDefaultProvider = config.providers.find((provider) => provider.providerId === currentDefaultProviderId);
+  if (currentDefaultProvider?.enabled) {
+    return currentDefaultProviderId;
+  }
+
+  return configuredProviderId;
 }
 
 function normalizeDeepSeekBaseUrl(value: string | null | undefined): string {

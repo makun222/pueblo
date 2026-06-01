@@ -9,9 +9,12 @@ import { loadAppConfig } from '../../shared/config';
 import { createOutputBlock, createResultBlocks } from '../../shared/result';
 import { ipcInputEnvelopeSchema, type IpcInputEnvelope } from '../../shared/schema';
 import { createTaskCancellationError, isTaskCancellationError } from '../../shared/task-cancellation';
+import type { EditReviewRequest } from '../../tools/edit-tool';
 import { ATTACHMENT_FILE_DIALOG_FILTERS, ingestInputFiles } from './attachment-ingestion';
 import { DesktopTalkService } from './talk-service';
 import type {
+  DesktopFileReviewRequest,
+  DesktopFileReviewResponse,
   DesktopRuntimeStatus,
   DesktopTalkContinuationResponse,
   DesktopTalkRequestResponse,
@@ -29,11 +32,13 @@ const DESKTOP_IPC_CHANNELS = [
   'get-tool-approval-state',
   'get-talk-state',
   'respond-tool-approval',
+  'respond-file-review',
   'respond-talk-request',
   'respond-talk-continuation',
   'list-agent-profiles',
   'start-agent-session',
   'list-agent-sessions',
+  'get-session',
   'list-session-memories',
   'select-session',
   'select-input-files',
@@ -41,8 +46,14 @@ const DESKTOP_IPC_CHANNELS = [
 ] as const;
 
 interface PendingToolApprovalBatch {
-  readonly state: DesktopToolApprovalState;
+  readonly batch: DesktopToolApprovalBatch;
   readonly resolve: (decisions: readonly ToolApprovalDecision[]) => void;
+  readonly reject: (error: Error) => void;
+}
+
+interface PendingFileReview {
+  readonly request: DesktopFileReviewRequest;
+  readonly resolve: (decision: 'keep' | 'discard') => void;
   readonly reject: (error: Error) => void;
 }
 
@@ -50,10 +61,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
   let activeToolApprovalBatch: PendingToolApprovalBatch | null = null;
+  let activeFileReview: PendingFileReview | null = null;
   const activeSubmitControllers = new Set<AbortController>();
   let cleanedUp = false;
 
-  const publishToolApprovalState = (state: DesktopToolApprovalState = resolveToolApprovalState(activeToolApprovalBatch)) => {
+  const publishToolApprovalState = (state: DesktopToolApprovalState = resolveToolApprovalState(activeToolApprovalBatch, activeFileReview)) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send(TOOL_APPROVAL_STATE_CHANNEL, state);
     }
@@ -75,23 +87,46 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
 
     const batch = createToolApprovalBatch(requests);
     activeToolApprovalBatch = {
-      state: { activeBatch: batch },
+      batch,
       resolve: (decisions) => {
         activeToolApprovalBatch = null;
-        publishToolApprovalState({ activeBatch: null });
+        publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
         resolve(decisions);
       },
       reject: (error) => {
         activeToolApprovalBatch = null;
-        publishToolApprovalState({ activeBatch: null });
+        publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
         reject(error);
       },
     };
 
-    publishToolApprovalState(activeToolApprovalBatch.state);
+    publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
   }));
 
   cli.setToolApprovalHandler(null);
+  cli.setFileReviewHandler(async (request) => new Promise<'keep' | 'discard'>((resolve, reject) => {
+    if (activeFileReview) {
+      reject(new Error('A file review is already pending in the sidebar.'));
+      return;
+    }
+
+    const pendingReview: PendingFileReview = {
+      request: mapFileReviewRequest(request),
+      resolve: (decision) => {
+        activeFileReview = null;
+        publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
+        resolve(decision);
+      },
+      reject: (error) => {
+        activeFileReview = null;
+        publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
+        reject(error);
+      },
+    };
+
+    activeFileReview = pendingReview;
+    publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
+  }));
 
   const runtime = createRuntimeCoordinator({
     config,
@@ -166,9 +201,16 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
       pendingBatch.reject(createTaskCancellationError('Tool approval was cancelled because the desktop window closed.'));
     }
 
+    if (activeFileReview) {
+      const pendingReview = activeFileReview;
+      activeFileReview = null;
+      pendingReview.reject(createTaskCancellationError('File review was cancelled because the desktop window closed.'));
+    }
+
     cli.setProgressReporter(null);
     cli.setToolApprovalBatchHandler(null);
     cli.setToolApprovalHandler(null);
+    cli.setFileReviewHandler(null);
     disposeTalkStateListener();
     void talkService?.dispose();
     talkService = null;
@@ -181,7 +223,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   removeDesktopIpcHandlers();
   ipcMain.handle('get-runtime-status', async () => resolveRuntimeStatus(cli));
 
-  ipcMain.handle('get-tool-approval-state', async () => resolveToolApprovalState(activeToolApprovalBatch));
+  ipcMain.handle('get-tool-approval-state', async () => resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
 
   ipcMain.handle('get-talk-state', async () => talkService?.getState() ?? {
     localPid: process.pid,
@@ -190,11 +232,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   } satisfies DesktopTalkState);
 
   ipcMain.handle('respond-tool-approval', async (_event, response: DesktopToolApprovalResponse) => {
-    if (!activeToolApprovalBatch?.state.activeBatch) {
+    if (!activeToolApprovalBatch?.batch) {
       throw new Error('No tool approval batch is pending.');
     }
 
-    const batch = activeToolApprovalBatch.state.activeBatch;
+    const batch = activeToolApprovalBatch.batch;
 
     if (response.batchId !== batch.id) {
       throw new Error('Tool approval batch is stale.');
@@ -205,7 +247,20 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
       : buildApprovalDecisions(batch, response.selectedRequestIds);
 
     activeToolApprovalBatch.resolve(decisions);
-    return { activeBatch: null } satisfies DesktopToolApprovalState;
+    return resolveToolApprovalState(activeToolApprovalBatch, activeFileReview);
+  });
+
+  ipcMain.handle('respond-file-review', async (_event, response: DesktopFileReviewResponse) => {
+    if (!activeFileReview) {
+      throw new Error('No file review is pending.');
+    }
+
+    if (response.reviewId !== activeFileReview.request.id) {
+      throw new Error('File review request is stale.');
+    }
+
+    activeFileReview.resolve(response.decision);
+    return resolveToolApprovalState(activeToolApprovalBatch, activeFileReview);
   });
 
   ipcMain.handle('respond-talk-request', async (_event, response: DesktopTalkRequestResponse) => {
@@ -229,6 +284,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   ipcMain.handle('start-agent-session', async (_event, profileId: string) => cli.startAgentSession(profileId));
 
   ipcMain.handle('list-agent-sessions', async (_event, agentInstanceId: string) => cli.listAgentSessions(agentInstanceId));
+
+  ipcMain.handle('get-session', async (_event, sessionId: string) => cli.getSession(sessionId));
 
   ipcMain.handle('list-session-memories', async (_event, sessionId: string) => cli.listSessionMemories(sessionId));
 
@@ -334,8 +391,14 @@ function resolveRuntimeStatus(
   };
 }
 
-function resolveToolApprovalState(activeToolApprovalBatch: PendingToolApprovalBatch | null): DesktopToolApprovalState {
-  return activeToolApprovalBatch?.state ?? { activeBatch: null };
+function resolveToolApprovalState(
+  activeToolApprovalBatch: PendingToolApprovalBatch | null,
+  activeFileReview: PendingFileReview | null,
+): DesktopToolApprovalState {
+  return {
+    activeBatch: activeToolApprovalBatch?.batch ?? null,
+    activeFileReview: activeFileReview?.request ?? null,
+  };
 }
 
 function createToolApprovalBatch(requests: readonly ToolApprovalRequest[]): DesktopToolApprovalBatch {
@@ -352,27 +415,33 @@ function createToolApprovalBatch(requests: readonly ToolApprovalRequest[]): Desk
 function mapToolApprovalRequest(request: ToolApprovalRequest): DesktopToolApprovalRequest {
   if (request.toolName === 'edit') {
     const args = request.args as Extract<ToolApprovalRequest['args'], { path: string; oldText: string }>;
+    const primaryText = normalizeApprovalTarget(args.path);
     return {
       id: request.toolCallId,
       toolCallId: request.toolCallId,
       toolName: request.toolName,
+      kind: 'file-edit',
       title: request.title,
       summary: request.summary,
       detail: request.detail,
-      targetLabel: normalizeApprovalTarget(args.path),
+      primaryText,
+      targetLabel: primaryText,
       operationLabel: args.oldText.length === 0 ? 'create' : 'edit',
     };
   }
 
   if (request.toolName === 'exec') {
     const args = request.args as Extract<ToolApprovalRequest['args'], { command: string }>;
+    const primaryText = args.command.trim() || 'workspace command';
     return {
       id: request.toolCallId,
       toolCallId: request.toolCallId,
       toolName: request.toolName,
+      kind: 'command',
       title: request.title,
       summary: request.summary,
       detail: request.detail,
+      primaryText,
       targetLabel: normalizeApprovalTarget(args.command),
       operationLabel: 'exec',
     };
@@ -382,11 +451,25 @@ function mapToolApprovalRequest(request: ToolApprovalRequest): DesktopToolApprov
     id: request.toolCallId,
     toolCallId: request.toolCallId,
     toolName: request.toolName,
+    kind: 'other',
     title: request.title,
     summary: request.summary,
     detail: request.detail,
+    primaryText: request.summary,
     targetLabel: request.toolName,
     operationLabel: request.toolName,
+  };
+}
+
+function mapFileReviewRequest(request: EditReviewRequest): DesktopFileReviewRequest {
+  return {
+    id: request.id,
+    toolCallId: request.toolCallId,
+    title: request.title,
+    summary: request.summary,
+    detail: request.detail,
+    fileChange: request.fileChange,
+    shadowPath: request.shadowPath,
   };
 }
 

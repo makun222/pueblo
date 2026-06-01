@@ -45,35 +45,36 @@ describeIfNodeSqlite('tool service', () => {
       },
     } as unknown as ToolInvocationRepository;
     const service = new ToolService({ repository, cwd: process.cwd() });
+    const taskRootExplanation = 'The task root is the task target directory when one is set; otherwise it is the workspace root.';
 
     expect(service.describeTools()).toEqual([
       {
         name: 'glob',
-        description: 'Match repository paths by glob pattern relative to the workspace root.',
+        description: `Match repository paths by glob pattern relative to the current task root. ${taskRootExplanation}`,
         inputSchema: providerGlobToolInputSchema,
         executionPolicy: getToolExecutionPolicy('glob'),
       },
       {
         name: 'grep',
-        description: 'Search repository files by regex pattern and optional include glob.',
+        description: `Search repository files by regex pattern and optional include glob under the current task root. ${taskRootExplanation}`,
         inputSchema: providerGrepToolInputSchema,
         executionPolicy: getToolExecutionPolicy('grep'),
       },
       {
         name: 'exec',
-        description: 'Run a local executable command without a shell using the workspace as cwd. Requires user approval before execution.',
+        description: `Run a local executable command without a shell using the current task root as cwd. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerExecToolInputSchema,
         executionPolicy: getToolExecutionPolicy('exec'),
       },
       {
         name: 'read',
-        description: 'Read a workspace text file by relative path or absolute path within the workspace and return numbered lines with bounded output.',
+        description: `Read a text file by relative path or absolute path within the current task root and return numbered lines with bounded output. Optionally provide startLine and endLine to read a specific range. ${taskRootExplanation}`,
         inputSchema: providerReadToolInputSchema,
         executionPolicy: getToolExecutionPolicy('read'),
       },
       {
         name: 'edit',
-        description: 'Edit a workspace text file by replacing one exact text match, optionally constrained to a line range. Requires user approval before execution.',
+        description: `Edit a text file within the current task root by replacing one exact text match, optionally constrained to a line range. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerEditToolInputSchema,
         executionPolicy: getToolExecutionPolicy('edit'),
       },
@@ -83,7 +84,7 @@ describeIfNodeSqlite('tool service', () => {
   it('reads a workspace file with bounded numbered output', async () => {
     const repository = {
       create() {
-        throw new Error('not used');
+        return { id: 'tool-invocation-1' };
       },
       listByTask() {
         return [];

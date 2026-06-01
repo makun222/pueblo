@@ -54,26 +54,25 @@ export function buildSkillSystemMessage(skillContext: SkillContextSnapshot | nul
 
   const lines = [
     'Pueblo skill workspace:',
-    `- Pueblo startup directory: ${skillContext.puebloWorkingDirectory}`,
-    `- Pueblo working directory: ${skillContext.agentWorkingDirectory}`,
-    `- Skill directory: ${skillContext.skillDirectory}`,
-    `- Store each reusable skill as <skill-directory>/<skill-id>/${SKILL_INSTRUCTION_FILE_NAME}.`,
-    '- When a completed task yields a stable, reusable multi-step procedure, propose turning that procedure into a skill.',
-    '- Before creating, updating, or overwriting a skill, explain why it is reusable and wait for explicit user approval.',
-    '- After approval, write the skill only inside the Pueblo skill directory, never in the workspace root.',
-    '- Skills are installed in the Pueblo startup directory, but the data they process and the files they create should still come from the active target repository or workspace unless the user says otherwise.',
-    '- A useful skill should summarize purpose, when to use it, required inputs, concrete steps, validation, and limits.',
-    `- To reuse a skill, read its ${SKILL_INSTRUCTION_FILE_NAME} file and follow it as an internal procedure with your existing tools.`,
+    `- Pueblo启动目录: ${skillContext.puebloWorkingDirectory}`,
+    `- workspace目录: ${skillContext.agentWorkingDirectory}`,
+    `- Pueblo Skill目录: ${skillContext.skillDirectory}`,
+    '- 如果任务完成过程是一个稳定的、可重用的多步骤过程时，建议将该过程转化为Skill。',
+    '- 一个有用的Skill应总结其目的、使用时机、所需输入、具体步骤、验证和限制。',
+    `- Skill保存为： <Pueblo Skill>/<skill-id>/${SKILL_INSTRUCTION_FILE_NAME}.`,
+    '- 在创建、更新或覆盖Skill之前，需要用户的明确批准。',
+    '- 一般，Skill处理的数据和创建的文件存储在workspace目录，除非用户另有说明。',
+    `- 要重用Skill，请阅读其 ${SKILL_INSTRUCTION_FILE_NAME} 文件，并按照其中的说明作为内部流程使用现有工具。`,
   ];
 
   if (skillContext.skills.length === 0) {
-    lines.push('- No custom skills are currently installed in this Pueblo skill directory.');
+    lines.push('- 当前Pueblo Skill目录中没有安装自定义Skill。');
     return lines.join('\n');
   }
 
-  lines.push('Available custom skills:');
+  lines.push('可用的自定义Skill:');
   for (const skill of skillContext.skills) {
-    lines.push(`- ${skill.id}: ${skill.description ?? 'No description provided.'} (${skill.instructionPath})`);
+    lines.push(`- ${skill.id}: ${skill.description ?? '未提供描述。'} (${skill.instructionPath})`);
   }
 
   return lines.join('\n');

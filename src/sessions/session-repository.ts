@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { RepositoryBase, fromJson, toJson, type RepositoryContext } from '../persistence/repository-base';
-import { sessionMessageSchema, sessionSchema, type Session, type SessionMessage } from '../shared/schema';
+import { agentSessionSummarySchema, sessionMessageSchema, sessionSchema, type AgentSessionSummary, type Session, type SessionMessage } from '../shared/schema';
 import { createSessionModel } from './session-model';
 
 interface SessionRow {
@@ -12,6 +12,8 @@ interface SessionRow {
   current_model_id: string | null;
   message_history_json: string;
   selected_prompt_ids_json: string;
+  pinned_memory_ids_json: string | null;
+  working_memory_ids_json: string | null;
   selected_memory_ids_json: string;
   provider_usage_stats_json: string | null;
   origin_session_id: string | null;
@@ -24,9 +26,29 @@ interface SessionRow {
   archived_at: string | null;
 }
 
+interface SessionSummaryRow {
+  id: string;
+  title: string;
+  status: Session['status'];
+  session_kind: Session['sessionKind'];
+  agent_instance_id: string | null;
+  current_model_id: string | null;
+  message_count: number;
+  selected_memory_count: number;
+  preview_role: SessionMessage['role'] | null;
+  preview_content: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  archived_at: string | null;
+}
+
 export interface SessionStore {
   create(title: string, currentModelId?: string | null, agentInstanceId?: string | null): Session;
   list(): Session[];
+  listSummaries(): AgentSessionSummary[];
   getById(sessionId: string): Session | null;
   save(session: Session): Session;
   setCurrentSession(sessionId: string | null): void;
@@ -52,6 +74,10 @@ export class InMemorySessionRepository implements SessionStore {
 
   list(): Session[] {
     return [...this.sessions.values()].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+  }
+
+  listSummaries(): AgentSessionSummary[] {
+    return this.list().map((session) => summarizeSession(session));
   }
 
   getById(sessionId: string): Session | null {
@@ -109,6 +135,38 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
     return rows.map((row) => this.mapRow(row));
   }
 
+  listSummaries(): AgentSessionSummary[] {
+    const rows = this.all<SessionSummaryRow>(`
+      SELECT
+        id,
+        title,
+        status,
+        session_kind,
+        agent_instance_id,
+        current_model_id,
+        COALESCE(json_array_length(message_history_json), 0) AS message_count,
+        COALESCE(json_array_length(selected_memory_ids_json), 0) AS selected_memory_count,
+        CASE
+          WHEN COALESCE(json_array_length(message_history_json), 0) = 0 THEN NULL
+          ELSE json_extract(message_history_json, '$[' || (json_array_length(message_history_json) - 1) || '].role')
+        END AS preview_role,
+        CASE
+          WHEN COALESCE(json_array_length(message_history_json), 0) = 0 THEN NULL
+          ELSE json_extract(message_history_json, '$[' || (json_array_length(message_history_json) - 1) || '].content')
+        END AS preview_content,
+        created_at,
+        updated_at,
+        started_at,
+        completed_at,
+        failed_at,
+        archived_at
+      FROM sessions
+      ORDER BY updated_at DESC
+    `);
+
+    return rows.map((row) => this.mapSummaryRow(row));
+  }
+
   getById(sessionId: string): Session | null {
     const row = this.get<SessionRow>('SELECT * FROM sessions WHERE id = ?', [sessionId]);
     return row ? this.mapRow(row) : null;
@@ -128,6 +186,8 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
             current_model_id = @current_model_id,
             message_history_json = @message_history_json,
             selected_prompt_ids_json = @selected_prompt_ids_json,
+            pinned_memory_ids_json = @pinned_memory_ids_json,
+            working_memory_ids_json = @working_memory_ids_json,
             selected_memory_ids_json = @selected_memory_ids_json,
           provider_usage_stats_json = @provider_usage_stats_json,
           origin_session_id = @origin_session_id,
@@ -147,11 +207,13 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
         `
         INSERT INTO sessions (
           id, title, status, session_kind, agent_instance_id, current_model_id, message_history_json,
-          selected_prompt_ids_json, selected_memory_ids_json, provider_usage_stats_json, origin_session_id, trigger_reason,
+          selected_prompt_ids_json, pinned_memory_ids_json, working_memory_ids_json, selected_memory_ids_json,
+          provider_usage_stats_json, origin_session_id, trigger_reason,
           created_at, updated_at, started_at, completed_at, failed_at, archived_at
         ) VALUES (
           @id, @title, @status, @session_kind, @agent_instance_id, @current_model_id, @message_history_json,
-          @selected_prompt_ids_json, @selected_memory_ids_json, @provider_usage_stats_json, @origin_session_id, @trigger_reason,
+          @selected_prompt_ids_json, @pinned_memory_ids_json, @working_memory_ids_json, @selected_memory_ids_json,
+          @provider_usage_stats_json, @origin_session_id, @trigger_reason,
           @created_at, @updated_at, @started_at, @completed_at, @failed_at, @archived_at
         )
         `,
@@ -186,10 +248,32 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       currentModelId: row.current_model_id,
       messageHistory: deserializeMessageHistory(row.id, row.message_history_json, row.updated_at),
       selectedPromptIds: fromJson<string[]>(row.selected_prompt_ids_json),
+      pinnedMemoryIds: fromJson<string[]>(row.pinned_memory_ids_json ?? row.selected_memory_ids_json),
+      workingMemoryIds: fromJson<string[]>(row.working_memory_ids_json ?? '[]'),
       selectedMemoryIds: fromJson<string[]>(row.selected_memory_ids_json),
       providerUsageStats: fromJson<Record<string, unknown>>(row.provider_usage_stats_json ?? '{}'),
       originSessionId: row.origin_session_id,
       triggerReason: row.trigger_reason,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      failedAt: row.failed_at,
+      archivedAt: row.archived_at,
+    });
+  }
+
+  private mapSummaryRow(row: SessionSummaryRow): AgentSessionSummary {
+    return agentSessionSummarySchema.parse({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      sessionKind: row.session_kind,
+      agentInstanceId: row.agent_instance_id ?? null,
+      currentModelId: row.current_model_id,
+      messageCount: row.message_count,
+      selectedMemoryCount: row.selected_memory_count,
+      preview: buildSessionPreview(row.preview_role, row.preview_content),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       startedAt: row.started_at,
@@ -209,6 +293,8 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
       current_model_id: session.currentModelId,
       message_history_json: toJson(session.messageHistory),
       selected_prompt_ids_json: toJson(session.selectedPromptIds),
+      pinned_memory_ids_json: toJson(session.pinnedMemoryIds),
+      working_memory_ids_json: toJson(session.workingMemoryIds),
       selected_memory_ids_json: toJson(session.selectedMemoryIds),
       provider_usage_stats_json: toJson(session.providerUsageStats),
       origin_session_id: session.originSessionId,
@@ -250,4 +336,42 @@ function deserializeMessageHistory(sessionId: string, serializedHistory: string,
       toolName: null,
     })];
   });
+}
+
+function summarizeSession(session: Session): AgentSessionSummary {
+  const lastMessage = session.messageHistory.at(-1) ?? null;
+
+  return agentSessionSummarySchema.parse({
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    sessionKind: session.sessionKind,
+    agentInstanceId: session.agentInstanceId,
+    currentModelId: session.currentModelId,
+    messageCount: session.messageHistory.length,
+    selectedMemoryCount: session.selectedMemoryIds.length,
+    preview: buildSessionPreview(lastMessage?.role, lastMessage?.content),
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    startedAt: session.startedAt,
+    completedAt: session.completedAt,
+    failedAt: session.failedAt,
+    archivedAt: session.archivedAt,
+  });
+}
+
+function buildSessionPreview(role: SessionMessage['role'] | null | undefined, content: string | null | undefined): string {
+  const normalizedContent = content?.trim();
+
+  if (!normalizedContent) {
+    return 'No messages yet.';
+  }
+
+  const prefix = role === 'assistant'
+    ? 'Pueblo'
+    : role === 'user'
+      ? 'You'
+      : role ?? 'Message';
+
+  return `${prefix}: ${normalizedContent}`;
 }

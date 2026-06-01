@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AgentTaskRunner } from '../../src/agent/task-runner';
 import { ProviderRegistry } from '../../src/providers/provider-registry';
 import { getToolExecutionPolicy, type ProviderAdapter, type ProviderRunResult, type ProviderStepContext, type ProviderStepResult } from '../../src/providers/provider-adapter';
+import { ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../../src/providers/provider-errors';
 import { createProviderProfile } from '../../src/providers/provider-profile';
 import { ToolService } from '../../src/tools/tool-service';
 import type { ExecuteToolRequest } from '../../src/tools/tool-service';
@@ -274,6 +275,55 @@ class AbortableProviderAdapter implements ProviderAdapter {
         reject(context.signal?.reason ?? createTaskCancellationError('Task cancelled during provider execution.'));
       }, { once: true });
     });
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class UnknownToolThenFinalProviderAdapter implements ProviderAdapter {
+  seenRetryPrompt: string | null = null;
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('The tool "search" is not available in this runtime.'));
+
+    if (!retryPrompt) {
+      throw new ProviderUnknownToolError('deepseek', 'search');
+    }
+
+    this.seenRetryPrompt = retryPrompt.content;
+    return {
+      type: 'final',
+      outputSummary: 'Recovered after unavailable tool guidance',
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class InvalidToolArgumentsThenFinalProviderAdapter implements ProviderAdapter {
+  seenRetryPrompt: string | null = null;
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('The arguments for tool "read" were invalid.'));
+
+    if (!retryPrompt) {
+      throw new ProviderInvalidToolArgumentsError('deepseek', 'read', [
+        {
+          path: 'path',
+          message: 'Invalid input: expected string, received undefined',
+        },
+      ]);
+    }
+
+    this.seenRetryPrompt = retryPrompt.content;
+    return {
+      type: 'final',
+      outputSummary: 'Recovered after invalid tool argument guidance',
+    };
   }
 
   async runTask(): Promise<ProviderRunResult> {
@@ -731,6 +781,80 @@ describe('AgentTaskRunner step limit', () => {
     expect(progressMessages).toContain('Step 1: running grep alpha');
     expect(progressMessages).toContain('Step 1: grep succeeded - Executed grep');
     expect(progressMessages).toContain('Step 2: final response ready');
+  });
+
+  it('reminds the model about available tools and retries when an unavailable tool is requested', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    const adapter = new UnknownToolThenFinalProviderAdapter();
+    registry.register(profile, adapter);
+
+    const { service, getInvocationCount } = createToolService();
+    const progressMessages: string[] = [];
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository(), service, {
+      reportProgress: (message) => {
+        progressMessages.push(message);
+      },
+    });
+
+    const result = await runner.run({
+      goal: 'Inspect repository state safely',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(getInvocationCount()).toBe(0);
+    expect(result.outputSummary).toContain('Recovered after unavailable tool guidance');
+    expect(progressMessages).toContain('Step 1: unavailable tool requested - search');
+    expect(adapter.seenRetryPrompt).toContain('Do not call it again.');
+    expect(adapter.seenRetryPrompt).toContain('Available tools:');
+    expect(adapter.seenRetryPrompt).toContain('- read (free)');
+    expect(adapter.seenRetryPrompt).toContain('Required fields: path');
+  });
+
+  it('reminds the model to repair invalid tool arguments and retries instead of failing the task', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    const adapter = new InvalidToolArgumentsThenFinalProviderAdapter();
+    registry.register(profile, adapter);
+
+    const { service, getInvocationCount } = createToolService();
+    const progressMessages: string[] = [];
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository(), service, {
+      reportProgress: (message) => {
+        progressMessages.push(message);
+      },
+    });
+
+    const result = await runner.run({
+      goal: 'Inspect repository state safely',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(getInvocationCount()).toBe(0);
+    expect(result.outputSummary).toContain('Recovered after invalid tool argument guidance');
+    expect(progressMessages).toContain('Step 1: invalid read arguments requested');
+    expect(adapter.seenRetryPrompt).toContain('Validation errors:');
+    expect(adapter.seenRetryPrompt).toContain('- path: Invalid input: expected string, received undefined');
+    expect(adapter.seenRetryPrompt).toContain('- read (free)');
+    expect(adapter.seenRetryPrompt).toContain('Required fields: path');
   });
 
   it('forwards provider text deltas to the assistant draft reporter', async () => {

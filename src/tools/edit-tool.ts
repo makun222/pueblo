@@ -25,96 +25,78 @@ export interface EditApprovalPreview {
   readonly detail: string;
 }
 
-export function createEditTool() {
+export interface EditReviewRequest {
+  readonly id: string;
+  readonly toolCallId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly detail: string;
+  readonly shadowPath: string;
+  readonly fileChange: RendererFileChange;
+}
+
+export type EditReviewDecision = 'keep' | 'discard';
+
+export type EditReviewHandler = (request: EditReviewRequest) => Promise<EditReviewDecision>;
+
+interface EditToolOptions {
+  readonly getReviewHandler?: () => EditReviewHandler | null;
+  readonly shadowRoot?: string | (() => string);
+}
+
+interface PendingEditOutcome {
+  readonly workspaceRoot: string;
+  readonly absolutePath: string;
+  readonly relativePath: string;
+  readonly preferredLineEnding: '\n' | '\r\n';
+  readonly previousContent: string;
+  readonly nextContent: string;
+  readonly changeType: RendererFileChange['changeType'];
+  readonly scopeLabel: string;
+  readonly output: string[];
+  readonly successSummary: string;
+  readonly reviewDetail: string;
+  readonly fileExistedBefore: boolean;
+}
+
+export function createEditTool(options: EditToolOptions = {}) {
   return async (request: EditToolRequest): Promise<ToolExecutionResult> => {
     try {
-      if (isCreateFileEdit(request)) {
-        return executeCreateFileEdit(request);
+      const pendingEdit = isCreateFileEdit(request)
+        ? prepareCreateFileOutcome(request)
+        : prepareTextEditOutcome(request);
+
+      const reviewHandler = options.getReviewHandler?.() ?? null;
+      if (!reviewHandler) {
+        return applyPendingEditOutcome(pendingEdit);
       }
 
-      const preparedEdit = prepareEditRequest(request);
-
-      if (preparedEdit.matchCount === 0) {
-        return {
-          toolName: 'edit',
-          status: 'failed',
-          summary: `Exact text to replace was not found in ${preparedEdit.relativePath}${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`,
-          output: [],
-        };
-      }
-
-      if (preparedEdit.matchCount > 1) {
-        return {
-          toolName: 'edit',
-          status: 'failed',
-          summary: `Exact text to replace matched ${preparedEdit.matchCount} times in ${preparedEdit.relativePath}${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}; edit is ambiguous`,
-          output: [],
-        };
-      }
-
-      const nextScopedContent = preparedEdit.scopedContent.replace(preparedEdit.normalizedOldText, preparedEdit.normalizedNewText);
-      const nextNormalizedContent = `${preparedEdit.normalizedContent.slice(0, preparedEdit.scope.startOffset)}${nextScopedContent}${preparedEdit.normalizedContent.slice(preparedEdit.scope.endOffset)}`;
-      const nextContent = restoreLineEndings(nextNormalizedContent, preparedEdit.preferredLineEnding);
-      const previousAssetInspection = inspectAttachmentAssetContent(
-        restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
-      );
-      const nextAssetInspection = inspectAttachmentAssetContent(nextContent);
-      fs.writeFileSync(preparedEdit.absolutePath, nextContent, 'utf8');
-      let exportedAttachmentSummary: string | null = null;
-      let exportedSourceFileChange: RendererFileChange | null = null;
+      const reviewRequest = materializeEditReviewRequest(pendingEdit, request, options.shadowRoot);
 
       try {
-        const exportResult = await maybeExportAttachmentAssetFromContent({
-          assetPath: preparedEdit.absolutePath,
-          content: nextContent,
-        });
+        const decision = await reviewHandler(reviewRequest);
 
-        if (exportResult) {
-          exportedAttachmentSummary = `Exported ${exportResult.sourceFileName} from edited attachment JSON`;
-          if (
-            previousAssetInspection
-            && nextAssetInspection
-            && previousAssetInspection.sourcePath === exportResult.exportedPath
-            && nextAssetInspection.sourcePath === exportResult.exportedPath
-          ) {
-            exportedSourceFileChange = createAttachmentExportFileChange({
-              workspaceRoot: path.resolve(request.cwd),
-              absolutePath: exportResult.exportedPath,
-              previousContent: previousAssetInspection.previewContent,
-              currentContent: nextAssetInspection.previewContent,
-            });
-          }
+        if (decision === 'discard') {
+          return {
+            toolName: 'edit',
+            status: 'failed',
+            summary: `Discarded staged ${pendingEdit.changeType === 'created' ? 'file creation' : 'edit'} for ${pendingEdit.relativePath}; workspace unchanged`,
+            output: [
+              `path: ${pendingEdit.relativePath}`,
+              `scope: ${pendingEdit.scopeLabel}`,
+              'decision: discard',
+            ],
+          };
         }
-      } catch (error) {
-        fs.writeFileSync(
-          preparedEdit.absolutePath,
-          restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
-          'utf8',
-        );
-        throw error;
-      }
 
-      return {
-        toolName: 'edit',
-        status: 'succeeded',
-        summary: exportedAttachmentSummary
-          ? `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}; ${exportedAttachmentSummary}`
-          : `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`,
-        output: [
-          `path: ${preparedEdit.relativePath}`,
-          `scope: ${preparedEdit.scope.label}`,
-          `oldTextChars: ${request.oldText.length}`,
-          `newTextChars: ${request.newText.length}`,
-          ...(exportedAttachmentSummary ? [exportedAttachmentSummary] : []),
-        ],
-        fileChanges: [createRendererFileChange({
-          absolutePath: preparedEdit.absolutePath,
-          relativePath: preparedEdit.relativePath,
-          changeType: 'modified',
-          previousContent: restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
-          currentContent: nextContent,
-        }), ...(exportedSourceFileChange ? [exportedSourceFileChange] : [])],
-      };
+        const result = await applyPendingEditOutcome(pendingEdit);
+        return {
+          ...result,
+          output: [...result.output, 'decision: keep'],
+        };
+      } finally {
+        cleanupShadowReviewFile(reviewRequest.shadowPath);
+      }
     } catch (error) {
       return {
         toolName: 'edit',
@@ -269,12 +251,60 @@ function isCreateFileEdit(request: EditToolRequest): boolean {
   return request.oldText.length === 0;
 }
 
-function executeCreateFileEdit(request: EditToolRequest): ToolExecutionResult {
+function prepareTextEditOutcome(request: EditToolRequest): PendingEditOutcome {
+  const preparedEdit = prepareEditRequest(request);
+
+  if (preparedEdit.matchCount === 0) {
+    throw new Error(`Exact text to replace was not found in ${preparedEdit.relativePath}${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`);
+  }
+
+  if (preparedEdit.matchCount > 1) {
+    throw new Error(`Exact text to replace matched ${preparedEdit.matchCount} times in ${preparedEdit.relativePath}${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}; edit is ambiguous`);
+  }
+
+  const nextScopedContent = preparedEdit.scopedContent.replace(preparedEdit.normalizedOldText, preparedEdit.normalizedNewText);
+  const nextNormalizedContent = `${preparedEdit.normalizedContent.slice(0, preparedEdit.scope.startOffset)}${nextScopedContent}${preparedEdit.normalizedContent.slice(preparedEdit.scope.endOffset)}`;
+  const nextContent = restoreLineEndings(nextNormalizedContent, preparedEdit.preferredLineEnding);
+
+  return {
+    workspaceRoot: path.resolve(request.cwd),
+    absolutePath: preparedEdit.absolutePath,
+    relativePath: preparedEdit.relativePath,
+    preferredLineEnding: preparedEdit.preferredLineEnding,
+    previousContent: restoreLineEndings(preparedEdit.normalizedContent, preparedEdit.preferredLineEnding),
+    nextContent,
+    changeType: 'modified',
+    scopeLabel: preparedEdit.scope.label,
+    output: [
+      `path: ${preparedEdit.relativePath}`,
+      `scope: ${preparedEdit.scope.label}`,
+      `oldTextChars: ${request.oldText.length}`,
+      `newTextChars: ${request.newText.length}`,
+    ],
+    successSummary: `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`,
+    reviewDetail: [
+      `Path: ${preparedEdit.relativePath}`,
+      `Scope: ${preparedEdit.scope.label}`,
+      formatDiffPreview(preparedEdit.scope.label, request.oldText, request.newText, {
+        oldPrefix: '-',
+        newPrefix: '+',
+        maxLinesPerSide: 10,
+        headTail: false,
+      }),
+    ].join('\n\n'),
+    fileExistedBefore: true,
+  };
+}
+
+function prepareCreateFileOutcome(request: EditToolRequest): PendingEditOutcome {
   validateEditRequest(request);
 
   const workspaceRoot = path.resolve(request.cwd);
   const { absolutePath, relativePath } = resolveEditPath(workspaceRoot, request.path.trim());
   const fileExists = fs.existsSync(absolutePath);
+  let previousContent = '';
+  let changeType: RendererFileChange['changeType'] = 'created';
+  let successSummary = `Created ${relativePath}`;
 
   if (fileExists) {
     const stat = fs.statSync(absolutePath);
@@ -282,57 +312,168 @@ function executeCreateFileEdit(request: EditToolRequest): ToolExecutionResult {
       throw new Error('Path does not point to a file');
     }
 
-    const existingContent = fs.readFileSync(absolutePath, 'utf8');
-    if (existingContent.length > 0) {
+    previousContent = fs.readFileSync(absolutePath, 'utf8');
+    if (previousContent.length > 0) {
       throw new Error(`Cannot create ${relativePath} with empty oldText because the file already exists and is not empty`);
     }
 
-    fs.writeFileSync(absolutePath, request.newText, 'utf8');
-
-    return {
-      toolName: 'edit',
-      status: 'succeeded',
-      summary: `Initialized empty file ${relativePath}`,
-      output: [
-        `path: ${relativePath}`,
-        'scope: new file',
-        `oldTextChars: ${request.oldText.length}`,
-        `newTextChars: ${request.newText.length}`,
-      ],
-      fileChanges: [createRendererFileChange({
-        absolutePath,
-        relativePath,
-        changeType: 'modified',
-        previousContent: existingContent,
-        currentContent: request.newText,
-      })],
-    };
-  } else {
-    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+    changeType = 'modified';
+    successSummary = `Initialized empty file ${relativePath}`;
   }
 
-  fs.writeFileSync(absolutePath, request.newText, 'utf8');
-
   return {
-    toolName: 'edit',
-    status: 'succeeded',
-    summary: fileExists
-      ? `Initialized empty file ${relativePath}`
-      : `Created ${relativePath}`,
+    workspaceRoot,
+    absolutePath,
+    relativePath,
+    preferredLineEnding: detectPreferredLineEnding(previousContent),
+    previousContent,
+    nextContent: request.newText,
+    changeType,
+    scopeLabel: 'new file',
     output: [
       `path: ${relativePath}`,
       'scope: new file',
       `oldTextChars: ${request.oldText.length}`,
       `newTextChars: ${request.newText.length}`,
     ],
-    fileChanges: [createRendererFileChange({
-      absolutePath,
-      relativePath,
-      changeType: 'created',
-      previousContent: '',
-      currentContent: request.newText,
-    })],
+    successSummary,
+    reviewDetail: [
+      `Path: ${relativePath}`,
+      'Scope: new file',
+      formatDiffPreview('new file', request.oldText, request.newText, {
+        oldPrefix: '-',
+        newPrefix: '+',
+        maxLinesPerSide: 10,
+        headTail: false,
+      }),
+    ].join('\n\n'),
+    fileExistedBefore: fileExists,
   };
+}
+
+async function applyPendingEditOutcome(pendingEdit: PendingEditOutcome): Promise<ToolExecutionResult> {
+  const previousAssetInspection = inspectAttachmentAssetContent(pendingEdit.previousContent);
+  const nextAssetInspection = inspectAttachmentAssetContent(pendingEdit.nextContent);
+
+  try {
+    fs.mkdirSync(path.dirname(pendingEdit.absolutePath), { recursive: true });
+    fs.writeFileSync(pendingEdit.absolutePath, pendingEdit.nextContent, 'utf8');
+
+    let exportedAttachmentSummary: string | null = null;
+    let exportedSourceFileChange: RendererFileChange | null = null;
+
+    const exportResult = await maybeExportAttachmentAssetFromContent({
+      assetPath: pendingEdit.absolutePath,
+      content: pendingEdit.nextContent,
+    });
+
+    if (exportResult) {
+      exportedAttachmentSummary = `Exported ${exportResult.sourceFileName} from edited attachment JSON`;
+      if (
+        previousAssetInspection
+        && nextAssetInspection
+        && previousAssetInspection.sourcePath === exportResult.exportedPath
+        && nextAssetInspection.sourcePath === exportResult.exportedPath
+      ) {
+        exportedSourceFileChange = createAttachmentExportFileChange({
+          workspaceRoot: pendingEdit.workspaceRoot,
+          absolutePath: exportResult.exportedPath,
+          previousContent: previousAssetInspection.previewContent,
+          currentContent: nextAssetInspection.previewContent,
+        });
+      }
+    }
+
+    return {
+      toolName: 'edit',
+      status: 'succeeded',
+      summary: exportedAttachmentSummary
+        ? `${pendingEdit.successSummary}; ${exportedAttachmentSummary}`
+        : pendingEdit.successSummary,
+      output: [
+        ...pendingEdit.output,
+        ...(exportedAttachmentSummary ? [exportedAttachmentSummary] : []),
+      ],
+      fileChanges: [createRendererFileChange({
+        absolutePath: pendingEdit.absolutePath,
+        relativePath: pendingEdit.relativePath,
+        changeType: pendingEdit.changeType,
+        previousContent: pendingEdit.previousContent,
+        currentContent: pendingEdit.nextContent,
+      }), ...(exportedSourceFileChange ? [exportedSourceFileChange] : [])],
+    };
+  } catch (error) {
+    restorePendingEditTarget(pendingEdit);
+    throw error;
+  }
+}
+
+function materializeEditReviewRequest(
+  pendingEdit: PendingEditOutcome,
+  request: EditToolRequest,
+  shadowRoot: string | (() => string) | undefined,
+): EditReviewRequest {
+  const reviewId = `${Date.now()}-edit-review-${Math.random().toString(16).slice(2)}`;
+  const resolvedShadowRoot = resolveShadowRoot(shadowRoot, pendingEdit.workspaceRoot);
+  const shadowPath = path.resolve(resolvedShadowRoot, reviewId, pendingEdit.relativePath);
+
+  fs.mkdirSync(path.dirname(shadowPath), { recursive: true });
+  fs.writeFileSync(shadowPath, pendingEdit.nextContent, 'utf8');
+
+  return {
+    id: reviewId,
+    toolCallId: reviewId,
+    title: pendingEdit.changeType === 'created'
+      ? `Keep staged file creation for ${pendingEdit.relativePath}?`
+      : `Keep staged edit for ${pendingEdit.relativePath}?`,
+    summary: pendingEdit.changeType === 'created'
+      ? `Review the staged file creation before replacing the workspace copy for ${pendingEdit.relativePath}.`
+      : `Review the staged file edit before replacing the workspace copy for ${pendingEdit.relativePath}.`,
+    detail: [
+      pendingEdit.reviewDetail,
+      `Shadow path: ${shadowPath}`,
+      `Requested path: ${request.path.trim()}`,
+    ].join('\n\n'),
+    shadowPath,
+    fileChange: createRendererFileChange({
+      absolutePath: pendingEdit.absolutePath,
+      relativePath: pendingEdit.relativePath,
+      changeType: pendingEdit.changeType,
+      previousContent: pendingEdit.previousContent,
+      currentContent: pendingEdit.nextContent,
+    }),
+  };
+}
+
+function resolveShadowRoot(shadowRoot: string | (() => string) | undefined, workspaceRoot: string): string {
+  if (typeof shadowRoot === 'function') {
+    return path.resolve(shadowRoot());
+  }
+
+  if (shadowRoot) {
+    return path.resolve(shadowRoot);
+  }
+
+  return path.resolve(workspaceRoot, '.pueblo', 'shadow-edits');
+}
+
+function cleanupShadowReviewFile(shadowPath: string): void {
+  const reviewRoot = path.dirname(path.dirname(shadowPath));
+  if (fs.existsSync(reviewRoot)) {
+    fs.rmSync(reviewRoot, { recursive: true, force: true });
+  }
+}
+
+function restorePendingEditTarget(pendingEdit: PendingEditOutcome): void {
+  if (!pendingEdit.fileExistedBefore) {
+    if (fs.existsSync(pendingEdit.absolutePath)) {
+      fs.rmSync(pendingEdit.absolutePath, { force: true });
+    }
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(pendingEdit.absolutePath), { recursive: true });
+  fs.writeFileSync(pendingEdit.absolutePath, pendingEdit.previousContent, 'utf8');
 }
 
 function buildCreateFileApprovalPreview(request: EditToolRequest): EditApprovalPreview {

@@ -205,6 +205,36 @@ class InspectingRepeatedReadProviderAdapter implements ProviderAdapter {
   }
 }
 
+class InspectingToolSummaryProviderAdapter implements ProviderAdapter {
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const toolMessages = context.messages.filter((message) => message.role === 'tool');
+
+    if (toolMessages.length === 0) {
+      return {
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        args: { path: 'notes.txt' },
+        rationale: 'Read attempt 1',
+      };
+    }
+
+    const toolPayload = JSON.parse(toolMessages[0]!.content) as Record<string, unknown>;
+    const summary = String(toolPayload.summary ?? '');
+    return {
+      type: 'final',
+      outputSummary: JSON.stringify({
+        summaryLength: summary.length,
+        summaryEndsWithEllipsis: summary.endsWith('...'),
+      }),
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
 class UsageTrackingProviderAdapter implements ProviderAdapter {
   private hasRequestedTool = false;
 
@@ -227,6 +257,22 @@ class UsageTrackingProviderAdapter implements ProviderAdapter {
             cachedTokens: 4,
           },
         },
+        requestMetrics: {
+          submittedTokens: 1024,
+          bodyBytes: 4096,
+          originalBodyBytes: 4096,
+          messageCount: 2,
+          toolCount: 1,
+          roleCounts: {
+            system: 1,
+            user: 1,
+            assistant: 0,
+            tool: 0,
+          },
+          compacted: false,
+          compactedToolMessages: 0,
+          compactionStage: 'none',
+        },
       };
     }
 
@@ -245,6 +291,22 @@ class UsageTrackingProviderAdapter implements ProviderAdapter {
         completionTokensDetails: {
           reasoningTokens: 7,
         },
+      },
+      requestMetrics: {
+        submittedTokens: 2048,
+        bodyBytes: 8192,
+        originalBodyBytes: 24576,
+        messageCount: 4,
+        toolCount: 1,
+        roleCounts: {
+          system: 1,
+          user: 1,
+          assistant: 1,
+          tool: 1,
+        },
+        compacted: true,
+        compactedToolMessages: 1,
+        compactionStage: 'preview',
       },
     };
   }
@@ -287,6 +349,68 @@ describeIfNodeSqlite('agent task persistence integration', () => {
     expect(result.status).toBe('completed');
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.outputSummary).toContain('done');
+
+    database.close();
+  });
+
+  it('truncates oversized tool summaries before replaying them to the model', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-tool-summary-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new InspectingToolSummaryProviderAdapter());
+
+    const repository = new AgentTaskRepository({ connection: database.connection });
+    const runner = new AgentTaskRunner(registry, repository, {
+      describeTools: () => [
+        {
+          name: 'read',
+          description: 'Read file contents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+            },
+            required: ['path'],
+            additionalProperties: false,
+          },
+        },
+      ],
+      async execute(input: ExecuteToolRequest) {
+        return {
+          invocation: { id: 'tool-invocation-1' },
+          output: {
+            toolName: input.toolName,
+            status: 'succeeded',
+            summary: `Executed ${input.toolName}: ${'x'.repeat(600)}`,
+            output: ['1: line 1'],
+          },
+        };
+      },
+    } as unknown as ToolService);
+
+    const result = await runner.run({
+      goal: 'Inspect repository state with a large tool summary',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+
+    expect(result.status).toBe('completed');
+
+    const inspection = JSON.parse(result.outputSummary ?? '{}') as Record<string, unknown>;
+    expect(inspection.summaryLength).toBe(320);
+    expect(inspection.summaryEndsWithEllipsis).toBe(true);
 
     database.close();
   });
@@ -743,6 +867,22 @@ describeIfNodeSqlite('agent task persistence integration', () => {
       completionTokensDetails: {
         reasoningTokens: 7,
       },
+    });
+    expect(payload?.providerRequestMetrics).toEqual({
+      submittedTokens: 2048,
+      bodyBytes: 8192,
+      originalBodyBytes: 24576,
+      messageCount: 4,
+      toolCount: 1,
+      roleCounts: {
+        system: 1,
+        user: 1,
+        assistant: 1,
+        tool: 1,
+      },
+      compacted: true,
+      compactedToolMessages: 1,
+      compactionStage: 'preview',
     });
 
     database.close();

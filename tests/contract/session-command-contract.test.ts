@@ -33,5 +33,7 @@ describe('session command contract', () => {
     const imported = service.importSelectedMemoriesFromSession(target.id, source.id);
 
     expect(imported.selectedMemoryIds).toEqual([memory.id]);
+    expect(imported.pinnedMemoryIds).toEqual([memory.id]);
+    expect(imported.workingMemoryIds).toEqual([]);
   });
 });

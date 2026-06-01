@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { GitHubCopilotAdapter } from '../../src/providers/github-copilot-adapter';
 import { getToolExecutionPolicy } from '../../src/providers/provider-adapter';
+import { ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../../src/providers/provider-errors';
 
 describe('github copilot adapter', () => {
   it('fails fast when token is missing', async () => {
@@ -228,6 +229,55 @@ describe('github copilot adapter', () => {
     expect(requestBody.tool_choice).toBe('auto');
   });
 
+  it('raises a retryable unknown-tool error for unavailable tool calls', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [{
+          message: {
+            tool_calls: [
+              {
+                id: 'call-1',
+                type: 'function',
+                function: {
+                  name: 'search',
+                  arguments: JSON.stringify({ pattern: 'task' }),
+                },
+              },
+            ],
+          },
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const adapter = new GitHubCopilotAdapter({
+      token: 'copilot-access-token',
+      tokenType: 'copilot-access-token',
+      fetchImpl,
+    });
+
+    await expect(adapter.runStep({
+      modelId: 'copilot-chat',
+      messages: [{ role: 'user', content: 'inspect repo' }],
+      availableTools: [
+        {
+          name: 'grep',
+          description: 'Search files',
+          executionPolicy: getToolExecutionPolicy('grep'),
+          inputSchema: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string' },
+            },
+            required: ['pattern'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    })).rejects.toBeInstanceOf(ProviderUnknownToolError);
+  });
+
   it('rejects tool calls with invalid arguments', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
@@ -274,7 +324,7 @@ describe('github copilot adapter', () => {
           },
         },
       ],
-    })).rejects.toThrow();
+    })).rejects.toBeInstanceOf(ProviderInvalidToolArgumentsError);
   });
 
   it('serializes assistant tool calls and tool results with explicit tool metadata', async () => {

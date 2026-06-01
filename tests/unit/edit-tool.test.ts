@@ -38,6 +38,56 @@ describe('edit tool', () => {
     expect(fs.readFileSync(filePath, 'utf8')).not.toContain('beta');
   });
 
+  it('stages edits in a shadow copy and applies them after keep', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-tool-review-keep-'));
+    tempDirs.push(tempDir);
+    const filePath = path.join(tempDir, 'sample.txt');
+    fs.writeFileSync(filePath, 'alpha\nbeta\ngamma', 'utf8');
+    let observedShadowPath: string | null = null;
+
+    const editTool = createEditTool({
+      getReviewHandler: () => async (review) => {
+        observedShadowPath = review.shadowPath;
+        expect(fs.existsSync(review.shadowPath)).toBe(true);
+        expect(fs.readFileSync(review.shadowPath, 'utf8')).toContain('delta');
+        return 'keep';
+      },
+    });
+    const result = await editTool({
+      cwd: tempDir,
+      path: filePath,
+      oldText: 'beta',
+      newText: 'delta',
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.output).toContain('decision: keep');
+    expect(fs.readFileSync(filePath, 'utf8')).toContain('delta');
+    expect(observedShadowPath).not.toBeNull();
+    expect(fs.existsSync(observedShadowPath!)).toBe(false);
+  });
+
+  it('discards staged edits without mutating the workspace file', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-tool-review-discard-'));
+    tempDirs.push(tempDir);
+    const filePath = path.join(tempDir, 'sample.txt');
+    fs.writeFileSync(filePath, 'alpha\nbeta\ngamma', 'utf8');
+
+    const editTool = createEditTool({
+      getReviewHandler: () => async () => 'discard',
+    });
+    const result = await editTool({
+      cwd: tempDir,
+      path: filePath,
+      oldText: 'beta',
+      newText: 'delta',
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.summary).toContain('Discarded staged edit');
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('alpha\nbeta\ngamma');
+  });
+
   it('creates a missing file when oldText is empty', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-tool-create-'));
     tempDirs.push(tempDir);

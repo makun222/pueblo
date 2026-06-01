@@ -1,16 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
-import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
+  DesktopFileReviewRequest,
   DesktopMenuAction,
+  DesktopProviderStatus,
+  DesktopRuntimeStatus,
+  DesktopSessionSelectionResponse,
+  DesktopSubmitResponse,
   DesktopTalkActiveConversation,
   DesktopTalkContinuationPrompt,
   DesktopTalkContinuationResponse,
   DesktopTalkRequestResponse,
   DesktopTalkState,
-  DesktopProviderStatus,
-  DesktopRuntimeStatus,
-  DesktopSessionSelectionResponse,
-  DesktopSubmitResponse,
   DesktopToolApprovalBatch,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
@@ -20,11 +21,16 @@ const THINKING_PLACEHOLDER = 'Thinking through the next step...';
 const STREAM_CHUNK_SIZE = 24;
 const STREAM_TICK_MS = 18;
 const VISIBLE_TRANSCRIPT_GROUP_LIMIT = 10;
+const MESSAGE_TRACE_INITIAL_STEP_LIMIT = 100;
+const MESSAGE_TRACE_STEP_PAGE_SIZE = 100;
+const MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT = 25;
+const MESSAGE_TRACE_MESSAGE_PAGE_SIZE = 25;
 const TOOL_APPROVAL_SIDEBAR_MIN_WIDTH = 280;
 const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
 const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
 const EMPTY_TOOL_APPROVAL_STATE: DesktopToolApprovalState = {
   activeBatch: null,
+  activeFileReview: null,
 };
 const EMPTY_TALK_STATE: DesktopTalkState = {
   localPid: null,
@@ -50,6 +56,8 @@ interface AssistantTranscriptEntry {
   readonly role: 'assistant';
   readonly content: string;
   readonly createdAt: string;
+  readonly startedAtMs?: number;
+  readonly completedAtMs?: number | null;
   readonly messageTrace: RendererMessageTraceStep[];
   readonly fileChanges: RendererFileChange[];
   readonly status: 'pending' | 'streaming' | 'complete';
@@ -104,6 +112,9 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
     promptTokensSent: 0,
     cacheHitRatio: null,
   },
+  providerRequestMetrics: null,
+  selectedStepSummaryCount: 0,
+  compactContextMode: false,
   selectedPromptCount: 0,
   selectedMemoryCount: 0,
   availableProviders: [],
@@ -149,11 +160,13 @@ declare global {
       getToolApprovalState: () => Promise<DesktopToolApprovalState>;
       getTalkState: () => Promise<DesktopTalkState>;
       respondToolApproval: (response: { batchId: string; decision: 'allow' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
+      respondFileReview: (response: { reviewId: string; decision: 'keep' | 'discard' }) => Promise<DesktopToolApprovalState>;
       respondTalkRequest: (response: DesktopTalkRequestResponse) => Promise<DesktopTalkState>;
       respondTalkContinuation: (response: DesktopTalkContinuationResponse) => Promise<DesktopTalkState>;
       listAgentProfiles: () => Promise<AgentProfileTemplate[]>;
       startAgentSession: (profileId: string) => Promise<DesktopRuntimeStatus>;
-      listAgentSessions: (agentInstanceId: string) => Promise<Session[]>;
+      listAgentSessions: (agentInstanceId: string) => Promise<AgentSessionSummary[]>;
+      getSession: (sessionId: string) => Promise<Session | null>;
       listSessionMemories: (sessionId: string) => Promise<MemoryRecord[]>;
       selectSession: (sessionId: string) => Promise<DesktopSessionSelectionResponse>;
       onMenuAction: (callback: (action: DesktopMenuAction) => void) => (() => void);
@@ -186,14 +199,15 @@ export function App() {
   const [deepSeekBaseUrl, setDeepSeekBaseUrl] = useState('https://api.deepseek.com');
   const [isDeepSeekEditing, setIsDeepSeekEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [agentSessions, setAgentSessions] = useState<Session[]>([]);
+  const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([]);
+  const [activeSessionDetails, setActiveSessionDetails] = useState<Session | null>(null);
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [sessionSearchQuery, setSessionSearchQuery] = useState('');
   const [sessionSortMode, setSessionSortMode] = useState<SessionSortMode>('updated-desc');
   const [isNewSessionComposerOpen, setIsNewSessionComposerOpen] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
   const [sessionPanelError, setSessionPanelError] = useState<string | null>(null);
-  const [sessionInspectorSession, setSessionInspectorSession] = useState<Session | null>(null);
+  const [sessionInspectorSession, setSessionInspectorSession] = useState<AgentSessionSummary | null>(null);
   const [sessionInspectorMemories, setSessionInspectorMemories] = useState<MemoryRecord[]>([]);
   const [activeSessionMemories, setActiveSessionMemories] = useState<MemoryRecord[]>([]);
   const [toolApprovalState, setToolApprovalState] = useState<DesktopToolApprovalState>(EMPTY_TOOL_APPROVAL_STATE);
@@ -201,6 +215,7 @@ export function App() {
   const [selectedToolApprovalIds, setSelectedToolApprovalIds] = useState<string[]>([]);
   const [hasEditedToolApprovalSelection, setHasEditedToolApprovalSelection] = useState(false);
   const [isResolvingToolApproval, setIsResolvingToolApproval] = useState(false);
+  const [isResolvingFileReview, setIsResolvingFileReview] = useState(false);
   const [isRespondingTalkRequest, setIsRespondingTalkRequest] = useState(false);
   const [isRespondingTalkContinuation, setIsRespondingTalkContinuation] = useState(false);
   const [sessionInspectorError, setSessionInspectorError] = useState<string | null>(null);
@@ -213,6 +228,8 @@ export function App() {
   const [isContextBreakdownOpen, setIsContextBreakdownOpen] = useState(false);
   const [toolApprovalSidebarWidth, setToolApprovalSidebarWidth] = useState(TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH);
   const [isResizingToolApprovalSidebar, setIsResizingToolApprovalSidebar] = useState(false);
+  const [activeAnswerTimer, setActiveAnswerTimer] = useState<{ entryId: string; startedAtMs: number } | null>(null);
+  const [answerTimerNowMs, setAnswerTimerNowMs] = useState(() => Date.now());
   const runtimeStatusRef = useRef(runtimeStatus);
   const selectedToolApprovalIdsRef = useRef<string[]>([]);
   const pendingAssistantEntryIdRef = useRef<string | null>(null);
@@ -273,6 +290,7 @@ export function App() {
       }
 
       if (data.type === 'system' && data.title === 'Agent Activity') {
+        void window.electronAPI.getRuntimeStatus().then(setRuntimeStatus).catch(() => {});
         updatePendingAssistantProgress(data.content);
         return;
       }
@@ -320,6 +338,16 @@ export function App() {
   }, [toolApprovalState.activeBatch?.id]);
 
   useEffect(() => {
+    if (!toolApprovalState.activeFileReview) {
+      setIsResolvingFileReview(false);
+      return;
+    }
+
+    setIsToolApprovalSidebarOpen(true);
+    setIsResolvingFileReview(false);
+  }, [toolApprovalState.activeFileReview?.id]);
+
+  useEffect(() => {
     if (!talkState.incomingRequest) {
       setIsRespondingTalkRequest(false);
     }
@@ -334,6 +362,21 @@ export function App() {
   useEffect(() => {
     runtimeStatusRef.current = runtimeStatus;
   }, [runtimeStatus]);
+
+  useEffect(() => {
+    if (!activeAnswerTimer) {
+      return;
+    }
+
+    setAnswerTimerNowMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setAnswerTimerNowMs(Date.now());
+    }, 100);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeAnswerTimer]);
 
   useEffect(() => {
     setTranscriptSearchInput('');
@@ -435,6 +478,8 @@ export function App() {
   };
 
   const hydrateSessionTranscript = (session: Session | null) => {
+    setActiveSessionDetails(session);
+
     if (!session) {
       setTranscriptEntries([]);
       return;
@@ -466,8 +511,11 @@ export function App() {
       setSessionPanelError(null);
 
       if (options.hydrateCurrentSession) {
-        const activeSession = sessions.find((session) => session.id === nextRuntimeStatus.activeSessionId) ?? null;
-        setSelectedSidebarSessionId(activeSession?.id ?? null);
+        const activeSessionSummary = sessions.find((session) => session.id === nextRuntimeStatus.activeSessionId) ?? null;
+        setSelectedSidebarSessionId(activeSessionSummary?.id ?? null);
+        const activeSession = activeSessionSummary
+          ? await window.electronAPI.getSession(activeSessionSummary.id)
+          : null;
         hydrateSessionTranscript(activeSession);
       } else if (!sessions.some((session) => session.id === selectedSidebarSessionId)) {
         setSelectedSidebarSessionId(nextRuntimeStatus.activeSessionId ?? sessions[0]?.id ?? null);
@@ -480,8 +528,10 @@ export function App() {
 
   const appendPendingAssistantEntry = (createdAt: string): string => {
     const assistantEntryId = `${createdAt}-assistant-${Math.random().toString(16).slice(2)}`;
+    const startedAtMs = Date.now();
     pendingAssistantEntryIdRef.current = assistantEntryId;
     pendingAssistantDraftRef.current = '';
+    setActiveAnswerTimer({ entryId: assistantEntryId, startedAtMs });
     setTranscriptEntries((previous) => [
       ...previous,
       {
@@ -489,6 +539,8 @@ export function App() {
         role: 'assistant',
         content: THINKING_PLACEHOLDER,
         createdAt,
+        startedAtMs,
+        completedAtMs: null,
         messageTrace: [],
         fileChanges: [],
         status: 'pending',
@@ -586,6 +638,7 @@ export function App() {
           messageTrace: block.messageTrace,
           fileChanges: block.fileChanges,
           status: nextCursor >= block.content.length ? 'complete' : 'streaming',
+          completedAtMs: nextCursor >= block.content.length ? Date.now() : null,
           blockType: answerBlockType,
         };
       }));
@@ -593,6 +646,7 @@ export function App() {
       if (nextCursor >= block.content.length) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
+        setActiveAnswerTimer(null);
         streamTimerRef.current = null;
         return;
       }
@@ -614,11 +668,13 @@ export function App() {
           messageTrace: block.messageTrace,
           fileChanges: block.fileChanges,
           status: 'complete',
+          completedAtMs: Date.now(),
           blockType: answerBlockType,
         };
       }));
       pendingAssistantEntryIdRef.current = null;
       pendingAssistantDraftRef.current = '';
+      setActiveAnswerTimer(null);
       return;
     }
 
@@ -664,24 +720,11 @@ export function App() {
         sessionId: runtimeStatusRef.current.activeSessionId,
         attachments: options.attachments ?? [],
       }));
-      const messageTrace = response.blocks.find((block) => block.messageTrace.length > 0)?.messageTrace ?? [];
-
-      if (options.recordUserEntry) {
-        setTranscriptEntries((previous) => previous.map((entry) => {
-          if ('role' in entry && entry.id === transcriptEntryId) {
-            return {
-              ...entry,
-              messageTrace,
-            };
-          }
-
-          return entry;
-        }));
-      }
 
       if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
+        setActiveAnswerTimer(null);
         setTranscriptEntries((previous) => previous.filter((entry) => !('role' in entry) || entry.id !== assistantEntryId));
       }
 
@@ -699,6 +742,7 @@ export function App() {
       if (assistantEntryId) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
+        setActiveAnswerTimer(null);
         setTranscriptEntries((previous) => previous.map((entry) => {
           if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
             return entry;
@@ -708,6 +752,7 @@ export function App() {
             ...entry,
             content: message,
             status: 'complete',
+            completedAtMs: Date.now(),
             blockType: 'error',
           };
         }));
@@ -767,7 +812,7 @@ export function App() {
     }
   };
 
-  const handleOpenSessionInspector = async (session: Session) => {
+  const handleOpenSessionInspector = async (session: AgentSessionSummary) => {
     setSessionInspectorSession(session);
     setSessionInspectorMemories([]);
     setSessionInspectorError(null);
@@ -921,11 +966,11 @@ export function App() {
   const selectedProviderProfile = findProviderProfile(availableProviders, runtimeStatus.providerId);
   const availableModels = selectedProviderProfile?.models ?? [];
   const activeToolApprovalBatch = toolApprovalState.activeBatch;
+  const activeFileReview = toolApprovalState.activeFileReview;
   const activeTalkConversation = talkState.activeConversation;
   const activeTalkContinuationPrompt = activeTalkConversation?.continuationPrompt ?? null;
-  const activeSession = agentSessions.find((session) => session.id === runtimeStatus.activeSessionId) ?? null;
   const hasActiveWorkflow = runtimeStatus.workflow?.hasActiveWorkflow ?? false;
-  const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSession?.selectedMemoryIds ?? [], hasActiveWorkflow);
+  const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSessionDetails?.selectedMemoryIds ?? [], hasActiveWorkflow);
   const todoItems = parseTodoMemoryItems(todoMemory);
   const staleTodoMemory = !hasActiveWorkflow ? selectLatestTodoMemory(activeSessionMemories) : null;
   const staleTodoItems = parseTodoMemoryItems(staleTodoMemory);
@@ -941,16 +986,20 @@ export function App() {
     : filteredTranscriptGroups.slice(-VISIBLE_TRANSCRIPT_GROUP_LIMIT);
   const displayedProviderUsageStats = selectDisplayedProviderUsageStats(
     runtimeStatus.providerUsageStats,
-    activeSession?.providerUsageStats,
+    activeSessionDetails?.providerUsageStats,
   );
   const totalTokens = displayedProviderUsageStats.totalTokens;
   const cacheHitRatio = displayedProviderUsageStats.cacheHitRatio;
+  const providerRequestMetrics = runtimeStatus.providerRequestMetrics ?? null;
+  const selectedStepSummaryCount = runtimeStatus.selectedStepSummaryCount ?? 0;
+  const compactContextMode = runtimeStatus.compactContextMode ?? false;
+  const submittedContextTokens = providerRequestMetrics?.submittedTokens ?? runtimeStatus.contextCount.estimatedTokens;
   const contextWindowSummary = formatContextWindowSummary(
-    runtimeStatus.contextCount.estimatedTokens,
+    submittedContextTokens,
     runtimeStatus.contextCount.contextWindowLimit,
   );
   const contextUtilizationRatio = resolveContextUtilizationRatio(
-    runtimeStatus.contextCount.estimatedTokens,
+    submittedContextTokens,
     runtimeStatus.contextCount.contextWindowLimit,
     runtimeStatus.contextCount.utilizationRatio,
   );
@@ -1000,6 +1049,24 @@ export function App() {
       setToolApprovalState(nextState);
     } finally {
       setIsResolvingToolApproval(false);
+    }
+  };
+
+  const handleResolveFileReview = async (decision: 'keep' | 'discard') => {
+    if (!activeFileReview || isResolvingFileReview) {
+      return;
+    }
+
+    setIsResolvingFileReview(true);
+
+    try {
+      const nextState = await window.electronAPI.respondFileReview({
+        reviewId: activeFileReview.id,
+        decision,
+      });
+      setToolApprovalState(nextState);
+    } finally {
+      setIsResolvingFileReview(false);
     }
   };
 
@@ -1234,8 +1301,12 @@ export function App() {
                       isOpen: isTranscriptHistoryExpanded,
                       onToggle: setIsTranscriptHistoryExpanded,
                       onOpenFileChange: setSelectedFileChange,
+                      answerTimerNowMs,
                     }) : null}
-                    {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, { onOpenFileChange: setSelectedFileChange }))}
+                    {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, {
+                      onOpenFileChange: setSelectedFileChange,
+                      answerTimerNowMs,
+                    }))}
                   </>
                 )}
                 <div ref={transcriptEndRef} className="output-pane-end" aria-hidden="true" />
@@ -1293,14 +1364,23 @@ export function App() {
             />
             {renderToolApprovalSidebar({
               toolApprovalBatch: activeToolApprovalBatch,
+              fileReviewRequest: activeFileReview,
               selectedRequestIds: effectiveSelectedToolApprovalIds,
               isResolvingToolApproval,
+              isResolvingFileReview,
               onToggleRequest: handleToggleToolApprovalSelection,
+              onOpenFileReviewPreview: setSelectedFileChange,
               onAllow: () => {
                 void handleResolveToolApproval('allow');
               },
               onDeny: () => {
                 void handleResolveToolApproval('deny');
+              },
+              onKeepFileReview: () => {
+                void handleResolveFileReview('keep');
+              },
+              onDiscardFileReview: () => {
+                void handleResolveFileReview('discard');
               },
             })}
           </aside>
@@ -1420,7 +1500,11 @@ export function App() {
             {isContextBreakdownOpen ? (
               <div className="context-breakdown-popover" role="dialog" aria-label="context-breakdown">
                 <div className="context-breakdown-header">
-                  <span className="status-chip-label">Context Mix</span>
+                  <span className="status-chip-label">Current Step</span>
+                  <span className="context-breakdown-total">{formatCompactInteger(submittedContextTokens)} tokens</span>
+                </div>
+                <div className="context-breakdown-header">
+                  <span className="status-chip-label">Selected Context Mix</span>
                   <span className="context-breakdown-total">{formatCompactInteger(runtimeStatus.contextCount.estimatedTokens)} tokens</span>
                 </div>
                 <div className="context-breakdown-list">
@@ -1449,12 +1533,32 @@ export function App() {
                       <span className="context-breakdown-total">{runtimeStatus.modelMessageCharCount} chars</span>
                     </div>
                     <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Selected Context</span>
+                      <span className="context-breakdown-total">{formatCompactInteger(runtimeStatus.contextCount.estimatedTokens)} tokens</span>
+                    </div>
+                    <div className="context-breakdown-stat">
                       <span className="context-breakdown-name">Total Tokens</span>
                       <span className="context-breakdown-total">{formatCompactInteger(totalTokens)} tokens</span>
                     </div>
                     <div className="context-breakdown-stat">
                       <span className="context-breakdown-name">Cache Hit</span>
                       <span className="context-breakdown-total">{formatCacheHitRatio(cacheHitRatio)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Last Request</span>
+                      <span className="context-breakdown-total">{formatRequestSize(providerRequestMetrics?.bodyBytes)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Request Compaction</span>
+                      <span className="context-breakdown-total">{formatRequestCompaction(providerRequestMetrics)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Active Step Context</span>
+                      <span className="context-breakdown-total">{formatStepSummaryHits(selectedStepSummaryCount)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Compact Context</span>
+                      <span className="context-breakdown-total">{formatCompactContextMode(compactContextMode)}</span>
                     </div>
                   </div>
                 </div>
@@ -1680,12 +1784,62 @@ function formatCacheHitRatio(value: number | null): string {
   return `${percentage}%`;
 }
 
+function formatRequestSize(value: number | null | undefined): string {
+  if (!value || value <= 0) {
+    return 'n/a';
+  }
+
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 102.4) / 10} KB`;
+  }
+
+  return `${value} B`;
+}
+
+function formatRequestCompaction(metrics: DesktopRuntimeStatus['providerRequestMetrics']): string {
+  if (!metrics) {
+    return 'n/a';
+  }
+
+  if (!metrics.compacted) {
+    return 'none';
+  }
+
+  return `${metrics.compactionStage} · ${metrics.compactedToolMessages} tool`;
+}
+
+function formatStepSummaryHits(value: number): string {
+  return `${value} step`;
+}
+
+function formatCompactContextMode(value: boolean): string {
+  return value ? 'active' : 'inactive';
+}
+
 function formatWorkspaceLabel(value: string | null | undefined): string {
   if (!value) {
     return 'Not set';
   }
 
   return value.length <= 40 ? value : `...${value.slice(-37)}`;
+}
+
+function formatThinkingDuration(startedAtMs: number, endedAtMs: number): string {
+  const elapsedMs = Math.max(endedAtMs - startedAtMs, 0);
+  const elapsedSeconds = elapsedMs / 1000;
+
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds.toFixed(1)}s`;
+  }
+
+  const totalSeconds = Math.floor(elapsedSeconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}min${seconds}sec`;
 }
 
 function createRendererInputEnvelope(args: {
@@ -1738,6 +1892,7 @@ function renderCollapsedTranscriptHistory(args: {
   isOpen: boolean;
   onToggle: (isOpen: boolean) => void;
   onOpenFileChange: (fileChange: RendererFileChange) => void;
+  answerTimerNowMs: number;
 }) {
   const firstGroup = args.groups[0];
   const lastGroup = args.groups[args.groups.length - 1];
@@ -1759,7 +1914,10 @@ function renderCollapsedTranscriptHistory(args: {
       </summary>
       {args.isOpen ? (
         <div className="transcript-history-content">
-          {args.groups.map((group) => renderTranscriptGroup(group, { onOpenFileChange: args.onOpenFileChange }))}
+          {args.groups.map((group) => renderTranscriptGroup(group, {
+            onOpenFileChange: args.onOpenFileChange,
+            answerTimerNowMs: args.answerTimerNowMs,
+          }))}
         </div>
       ) : null}
     </details>
@@ -1768,7 +1926,10 @@ function renderCollapsedTranscriptHistory(args: {
 
 function renderTranscriptGroup(
   group: TranscriptGroup,
-  actions: { readonly onOpenFileChange: (fileChange: RendererFileChange) => void },
+  actions: {
+    readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
+    readonly answerTimerNowMs: number;
+  },
 ) {
   return (
     <div key={group.id} className="transcript-group">
@@ -1779,12 +1940,20 @@ function renderTranscriptGroup(
 
 function renderToolApprovalSidebar(args: {
   toolApprovalBatch: DesktopToolApprovalBatch | null;
+  fileReviewRequest: DesktopFileReviewRequest | null;
   selectedRequestIds: string[];
   isResolvingToolApproval: boolean;
+  isResolvingFileReview: boolean;
   onToggleRequest: (requestId: string) => void;
+  onOpenFileReviewPreview: (fileChange: RendererFileChange) => void;
   onAllow: () => void;
   onDeny: () => void;
+  onKeepFileReview: () => void;
+  onDiscardFileReview: () => void;
 }) {
+  const groupedRequests = groupToolApprovalRequests(args.toolApprovalBatch?.requests ?? []);
+  const hasQueuedApprovals = groupedRequests.command.length > 0 || groupedRequests.fileEdit.length > 0 || groupedRequests.other.length > 0;
+
   return (
     <section className="workflow-sidebar-panel">
       <header className="workflow-sidebar-header">
@@ -1794,46 +1963,91 @@ function renderToolApprovalSidebar(args: {
         </div>
         {args.toolApprovalBatch ? <span className="workflow-sidebar-badge">{args.toolApprovalBatch.requests.length}</span> : null}
       </header>
-      {args.toolApprovalBatch ? (
+      {args.fileReviewRequest ? (
         <>
-          <p className="workflow-sidebar-copy">Predictable tool calls are grouped here. Use the X button on each row to keep or remove it from the current approval set.</p>
-          <div className="tool-approval-list" role="list" aria-label="tool-approval-list">
-            {args.toolApprovalBatch.requests.map((request) => {
-              const isSelected = args.selectedRequestIds.includes(request.id);
-              const displayTargetLabel = truncateToolApprovalText(getToolApprovalDisplayLabel(request.targetLabel), 52);
-              const displayOperationLabel = truncateToolApprovalText(request.operationLabel, 18);
-              const displaySummary = truncateToolApprovalText(
-                getToolApprovalDisplaySummary(request.summary, request.targetLabel, displayTargetLabel),
-                92,
-              );
-              return (
-                <article
-                  key={request.id}
-                  className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
-                  title={request.detail}
-                >
-                  <div className="tool-approval-row-main">
-                    <div className="tool-approval-row-line">
-                      <span className="tool-approval-target">{displayTargetLabel}</span>
-                      <span className="tool-approval-operation">{displayOperationLabel}</span>
-                      <button
-                        type="button"
-                        className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
-                        aria-pressed={isSelected}
-                        aria-label={isSelected ? `Deselect ${request.targetLabel}` : `Select ${request.targetLabel}`}
-                        onClick={() => args.onToggleRequest(request.id)}
-                        disabled={args.isResolvingToolApproval}
-                      >
-                        X
-                      </button>
-                    </div>
-                    {displaySummary ? <p className="tool-approval-summary">{displaySummary}</p> : null}
-                  </div>
-
-                </article>
-              );
-            })}
+          <div className="workflow-sidebar-section-header">
+            <p className="workflow-sidebar-eyebrow">Staged Review</p>
+            <h3>Edited Copy Ready</h3>
           </div>
+          <p className="workflow-sidebar-copy">The file was edited in a shadow worktree copy. Keep applies it to the workspace; discard removes the staged copy.</p>
+          <article className="file-review-card">
+            <button
+              type="button"
+              className="file-review-path"
+              onClick={() => {
+                args.onOpenFileReviewPreview(args.fileReviewRequest!.fileChange);
+              }}
+            >
+              {args.fileReviewRequest.fileChange.path}
+            </button>
+            <p className="workflow-sidebar-meta">{formatFileChangeType(args.fileReviewRequest.fileChange.changeType)} staged in shadow copy</p>
+            <p className="workflow-sidebar-copy">{args.fileReviewRequest.summary}</p>
+          </article>
+          <div className="tool-approval-actions">
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-allow-button"
+              onClick={args.onKeepFileReview}
+              disabled={args.isResolvingFileReview}
+            >
+              {args.isResolvingFileReview ? 'Applying...' : 'Keep'}
+            </button>
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-deny-button"
+              onClick={args.onDiscardFileReview}
+              disabled={args.isResolvingFileReview}
+            >
+              Discard
+            </button>
+          </div>
+        </>
+      ) : null}
+      {hasQueuedApprovals ? (
+        <>
+          <p className="workflow-sidebar-copy">Use the + button to keep or remove it from the current approval set.</p>
+          {groupedRequests.command.length > 0 ? (
+            <div className="tool-approval-group">
+              <div className="workflow-sidebar-section-header">
+                <p className="workflow-sidebar-eyebrow">Commands</p>
+                <h3>{groupedRequests.command.length}</h3>
+              </div>
+              <div className="tool-approval-list" role="list" aria-label="tool-approval-command-list">
+                {groupedRequests.command.map((request) => {
+                  const isSelected = args.selectedRequestIds.includes(request.id);
+                  return renderToolApprovalRow(request, isSelected, args.onToggleRequest, args.isResolvingToolApproval);
+                })}
+              </div>
+            </div>
+          ) : null}
+          {groupedRequests.fileEdit.length > 0 ? (
+            <div className="tool-approval-group">
+              <div className="workflow-sidebar-section-header">
+                <p className="workflow-sidebar-eyebrow">File Edits</p>
+                <h3>{groupedRequests.fileEdit.length}</h3>
+              </div>
+              <div className="tool-approval-list" role="list" aria-label="tool-approval-file-list">
+                {groupedRequests.fileEdit.map((request) => {
+                  const isSelected = args.selectedRequestIds.includes(request.id);
+                  return renderToolApprovalRow(request, isSelected, args.onToggleRequest, args.isResolvingToolApproval);
+                })}
+              </div>
+            </div>
+          ) : null}
+          {groupedRequests.other.length > 0 ? (
+            <div className="tool-approval-group">
+              <div className="workflow-sidebar-section-header">
+                <p className="workflow-sidebar-eyebrow">Other</p>
+                <h3>{groupedRequests.other.length}</h3>
+              </div>
+              <div className="tool-approval-list" role="list" aria-label="tool-approval-other-list">
+                {groupedRequests.other.map((request) => {
+                  const isSelected = args.selectedRequestIds.includes(request.id);
+                  return renderToolApprovalRow(request, isSelected, args.onToggleRequest, args.isResolvingToolApproval);
+                })}
+              </div>
+            </div>
+          ) : null}
           <div className="tool-approval-actions">
             <button
               type="button"
@@ -1853,11 +2067,61 @@ function renderToolApprovalSidebar(args: {
             </button>
           </div>
         </>
-      ) : (
+      ) : args.fileReviewRequest ? null : (
         <p className="session-panel-empty">No pending tool approvals.</p>
       )}
     </section>
   );
+}
+
+function renderToolApprovalRow(
+  request: DesktopToolApprovalBatch['requests'][number],
+  isSelected: boolean,
+  onToggleRequest: (requestId: string) => void,
+  isResolvingToolApproval: boolean,
+) {
+  const displayText = getToolApprovalPrimaryDisplayText(request);
+  const actionLabel = truncateToolApprovalText(displayText || request.operationLabel || request.toolName, 80);
+
+  return (
+    <article
+      key={request.id}
+      className={`tool-approval-row ${isSelected ? 'tool-approval-row-selected' : 'tool-approval-row-muted'}`}
+    >
+      <div className="tool-approval-row-main">
+        <div className="tool-approval-row-line">
+          <span className="tool-approval-primary">{displayText}</span>
+          <button
+            type="button"
+            className={`tool-approval-toggle ${isSelected ? 'tool-approval-toggle-selected' : ''}`}
+            aria-pressed={isSelected}
+            aria-label={isSelected ? `Deselect ${actionLabel}` : `Select ${actionLabel}`}
+            onClick={() => onToggleRequest(request.id)}
+            disabled={isResolvingToolApproval}
+          >
+            +
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function groupToolApprovalRequests(requests: DesktopToolApprovalBatch['requests']) {
+  return {
+    command: requests.filter((request) => request.kind === 'command'),
+    fileEdit: requests.filter((request) => request.kind === 'file-edit'),
+    other: requests.filter((request) => request.kind === 'other'),
+  };
+}
+
+function getToolApprovalPrimaryDisplayText(request: DesktopToolApprovalBatch['requests'][number]): string {
+  if (request.kind === 'file-edit') {
+    return getToolApprovalDisplayLabel(request.primaryText);
+  }
+
+  const trimmed = request.primaryText.trim();
+  return trimmed.length > 0 ? trimmed : request.targetLabel;
 }
 
 function renderTodoSidebar(args: {
@@ -2333,7 +2597,7 @@ function renderAgentPicker(
 }
 
 function renderSessionSidebar(args: {
-  sessions: Session[];
+  sessions: AgentSessionSummary[];
   activeSessionId: string | null;
   selectedSessionId: string | null;
   agentProfileName: string | null;
@@ -2350,8 +2614,8 @@ function renderSessionSidebar(args: {
   onNewSessionTitleChange: (value: string) => void;
   onSessionSearchQueryChange: (value: string) => void;
   onSessionSortModeChange: (value: SessionSortMode) => void;
-  onSelectSession: (session: Session) => void;
-  onInspectSession: (session: Session) => void;
+  onSelectSession: (session: AgentSessionSummary) => void;
+  onInspectSession: (session: AgentSessionSummary) => void;
 }) {
   return (
     <section className="session-panel">
@@ -2448,7 +2712,7 @@ function renderSessionSidebar(args: {
                 {session.id === args.activeSessionId ? <span className="session-card-badge">Current</span> : null}
               </header>
               <p className="session-card-meta">{formatSessionState(session.status)} · {formatTimestamp(session.updatedAt)}</p>
-              <p className="session-card-meta">{session.messageHistory.length} messages · {session.selectedMemoryIds.length} selected memories</p>
+              <p className="session-card-meta">{session.messageCount} messages · {session.selectedMemoryCount} selected memories</p>
               <p className="session-card-preview">{getSessionPreview(session)}</p>
             </article>
           ))}
@@ -2459,7 +2723,7 @@ function renderSessionSidebar(args: {
 }
 
 function renderSessionInspectorModal(args: {
-  session: Session;
+  session: AgentSessionSummary;
   memories: MemoryRecord[];
   activeSessionId: string | null;
   error: string | null;
@@ -2475,7 +2739,7 @@ function renderSessionInspectorModal(args: {
           <div>
             <p className="session-panel-eyebrow">Session Memories</p>
             <h2>{args.session.title}</h2>
-            <p className="session-panel-copy">{formatSessionState(args.session.status)} · {args.session.messageHistory.length} messages · Updated {formatTimestamp(args.session.updatedAt)}</p>
+            <p className="session-panel-copy">{formatSessionState(args.session.status)} · {args.session.messageCount} messages · Updated {formatTimestamp(args.session.updatedAt)}</p>
           </div>
         </header>
         {args.error ? <p className="session-panel-error">{args.error}</p> : null}
@@ -2524,14 +2788,23 @@ function renderSessionInspectorModal(args: {
 
 function renderTranscriptEntry(
   entry: TranscriptEntry,
-  actions: { readonly onOpenFileChange: (fileChange: RendererFileChange) => void },
+  actions: {
+    readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
+    readonly answerTimerNowMs: number;
+  },
 ) {
   if ('role' in entry) {
     if (entry.role === 'assistant') {
       const handoff = parseTaskHandoff(entry.content);
+      const thinkingDuration = entry.startedAtMs === undefined
+        ? null
+        : formatThinkingDuration(entry.startedAtMs, entry.completedAtMs ?? actions.answerTimerNowMs);
       return (
         <article key={entry.id} className={`chat-entry chat-entry-answer chat-entry-answer-${entry.blockType} ${entry.status === 'pending' ? 'chat-entry-answer-pending' : ''}`}>
-          <header className="chat-entry-label">Pueblo</header>
+          <div className="chat-entry-header">
+            <header className="chat-entry-label">Pueblo</header>
+            {thinkingDuration ? <span className="chat-entry-thinking-duration">{thinkingDuration}</span> : null}
+          </div>
           {renderAnswerContent(entry.content, handoff)}
           {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
           {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: entry.blockType === 'task-result' })}
@@ -2661,6 +2934,8 @@ function mapSessionMessageToTranscriptEntry(message: SessionMessage): Transcript
       role: 'assistant',
       content: message.content,
       createdAt: message.createdAt,
+      startedAtMs: undefined,
+      completedAtMs: undefined,
       messageTrace: [],
       fileChanges: [],
       status: 'complete',
@@ -2786,24 +3061,11 @@ function formatTimestamp(value: string): string {
   }
 }
 
-function getSessionPreview(session: Session): string {
-  const lastMessage = [...session.messageHistory]
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
-
-  if (!lastMessage) {
-    return 'No messages yet.';
-  }
-
-  const prefix = lastMessage.role === 'assistant'
-    ? 'Pueblo'
-    : lastMessage.role === 'user'
-      ? 'You'
-      : lastMessage.role;
-
-  return `${prefix}: ${lastMessage.content}`;
+function getSessionPreview(session: AgentSessionSummary): string {
+  return session.preview;
 }
 
-function filterSessions(sessions: Session[], query: string): Session[] {
+function filterSessions(sessions: AgentSessionSummary[], query: string): AgentSessionSummary[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
     return sessions;
@@ -2812,14 +3074,14 @@ function filterSessions(sessions: Session[], query: string): Session[] {
   return sessions.filter((session) => {
     const haystacks = [
       session.title,
-      ...session.messageHistory.map((message) => message.content),
+      session.preview,
     ];
 
     return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
   });
 }
 
-function sortSessions(sessions: Session[], mode: SessionSortMode): Session[] {
+function sortSessions(sessions: AgentSessionSummary[], mode: SessionSortMode): AgentSessionSummary[] {
   const nextSessions = [...sessions];
   nextSessions.sort((left, right) => {
     const comparison = left.updatedAt.localeCompare(right.updatedAt) || left.createdAt.localeCompare(right.createdAt);
@@ -3126,6 +3388,178 @@ function formatFileChangeType(changeType: RendererFileChange['changeType']): str
   }
 }
 
+function summarizeRendererMessageTrace(messageTrace: RendererMessageTraceStep[]): {
+  readonly messageCount: number;
+  readonly charCount: number;
+  readonly toolCallCount: number;
+} {
+  let messageCount = 0;
+  let charCount = 0;
+  let toolCallCount = 0;
+
+  for (const step of messageTrace) {
+    messageCount += step.messageCount;
+    charCount += step.charCount;
+
+    for (const message of step.messages) {
+      if (message.toolName || message.toolCallId) {
+        toolCallCount += 1;
+      }
+    }
+  }
+
+  return {
+    messageCount,
+    charCount,
+    toolCallCount,
+  };
+}
+
+const MessageTraceMessageDetails = React.memo(function MessageTraceMessageDetails(args: {
+  readonly message: RendererMessageTraceStep['messages'][number];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details className="message-item" open={isOpen}>
+      <summary
+        className="message-item-header message-item-summary"
+        onClick={(event) => {
+          event.preventDefault();
+          setIsOpen((previous) => !previous);
+        }}
+      >
+        <span className="message-item-role">{args.message.role}</span>
+        <span className="message-item-meta">{args.message.charCount} chars</span>
+        {args.message.toolName ? <span className="message-item-meta">tool={args.message.toolName}</span> : null}
+        {args.message.toolCallId ? <span className="message-item-meta">call={args.message.toolCallId}</span> : null}
+      </summary>
+      {isOpen ? (
+        <div className="message-item-details">
+          <pre className="message-item-content">{args.message.content}</pre>
+          {args.message.toolArgs !== undefined ? (
+            <pre className="message-item-args">{JSON.stringify(args.message.toolArgs, null, 2)}</pre>
+          ) : null}
+        </div>
+      ) : null}
+    </details>
+  );
+});
+
+const MessageTraceStepDetails = React.memo(function MessageTraceStepDetails(args: {
+  readonly id: string;
+  readonly step: RendererMessageTraceStep;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(() => Math.min(args.step.messages.length, MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT));
+  const visibleMessages = useMemo(
+    () => args.step.messages.slice(0, visibleMessageCount),
+    [args.step.messages, visibleMessageCount],
+  );
+  const hiddenMessageCount = Math.max(0, args.step.messages.length - visibleMessageCount);
+
+  useEffect(() => {
+    setVisibleMessageCount(Math.min(args.step.messages.length, MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT));
+  }, [args.step.messages.length]);
+
+  return (
+    <details className="message-step" open={isOpen}>
+      <summary
+        className="message-step-header message-step-summary"
+        onClick={(event) => {
+          event.preventDefault();
+          setIsOpen((previous) => !previous);
+        }}
+      >
+        <span className="message-step-title">Step {args.step.stepNumber}</span>
+        <span className="message-step-meta">{args.step.messageCount} messages</span>
+        <span className="message-step-meta">{args.step.charCount} chars</span>
+      </summary>
+      {isOpen ? (
+        <div className="message-step-list">
+          {visibleMessages.map((message, index) => (
+            <MessageTraceMessageDetails
+              key={`${args.id}-step-${args.step.stepNumber}-message-${index + 1}`}
+              message={message}
+            />
+          ))}
+          {hiddenMessageCount > 0 ? (
+            <button
+              type="button"
+              className="provider-config-secondary message-trace-load-more"
+              onClick={() => {
+                setVisibleMessageCount((previous) => Math.min(args.step.messages.length, previous + MESSAGE_TRACE_MESSAGE_PAGE_SIZE));
+              }}
+            >
+              Show next {Math.min(MESSAGE_TRACE_MESSAGE_PAGE_SIZE, hiddenMessageCount)} messages ({hiddenMessageCount} left)
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </details>
+  );
+});
+
+const MessageTraceDetails = React.memo(function MessageTraceDetails(args: {
+  readonly id: string;
+  readonly messageTrace: RendererMessageTraceStep[];
+  readonly scrollable: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleStepCount, setVisibleStepCount] = useState(() => Math.min(args.messageTrace.length, MESSAGE_TRACE_INITIAL_STEP_LIMIT));
+  const traceTotals = useMemo(() => summarizeRendererMessageTrace(args.messageTrace), [args.messageTrace]);
+  const visibleSteps = useMemo(
+    () => args.messageTrace.slice(0, visibleStepCount),
+    [args.messageTrace, visibleStepCount],
+  );
+  const hiddenStepCount = Math.max(0, args.messageTrace.length - visibleStepCount);
+
+  useEffect(() => {
+    setVisibleStepCount(Math.min(args.messageTrace.length, MESSAGE_TRACE_INITIAL_STEP_LIMIT));
+  }, [args.messageTrace.length]);
+
+  return (
+    <details key={args.id} className={`message-details ${args.scrollable ? 'message-details-scrollable' : ''}`} open={isOpen}>
+      <summary
+        className="message-details-summary"
+        onClick={(event) => {
+          event.preventDefault();
+          setIsOpen((previous) => !previous);
+        }}
+      >
+        <span className="message-details-title">Process Info</span>
+        <span className="message-details-meta">{traceTotals.messageCount} messages</span>
+        <span className="message-details-meta">{args.messageTrace.length} steps</span>
+        {traceTotals.toolCallCount > 0 ? <span className="message-details-meta">{traceTotals.toolCallCount} tool calls</span> : null}
+        <span className="message-details-meta">{traceTotals.charCount} chars</span>
+      </summary>
+      {isOpen ? (
+        <div className="message-trace">
+          {hiddenStepCount > 0 ? (
+            <p className="message-trace-summary">
+              Large process traces are rendered in batches to keep the desktop renderer stable.
+            </p>
+          ) : null}
+          {visibleSteps.map((step) => (
+            <MessageTraceStepDetails key={`${args.id}-step-${step.stepNumber}`} id={args.id} step={step} />
+          ))}
+          {hiddenStepCount > 0 ? (
+            <button
+              type="button"
+              className="provider-config-secondary message-trace-load-more"
+              onClick={() => {
+                setVisibleStepCount((previous) => Math.min(args.messageTrace.length, previous + MESSAGE_TRACE_STEP_PAGE_SIZE));
+              }}
+            >
+              Show next {Math.min(MESSAGE_TRACE_STEP_PAGE_SIZE, hiddenStepCount)} steps ({hiddenStepCount} left)
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </details>
+  );
+});
+
 function renderMessageTrace(
   id: string,
   messageTrace: RendererMessageTraceStep[] | null | undefined,
@@ -3135,48 +3569,5 @@ function renderMessageTrace(
     return null;
   }
 
-  const totalMessages = messageTrace.reduce((sum, step) => sum + step.messageCount, 0);
-  const totalChars = messageTrace.reduce((sum, step) => sum + step.charCount, 0);
-  const totalToolCalls = messageTrace.reduce((sum, step) => sum + step.messages.filter((message) => message.toolName || message.toolCallId).length, 0);
-
-  return (
-    <details key={id} className={`message-details ${options.scrollable ? 'message-details-scrollable' : ''}`}>
-      <summary className="message-details-summary">
-        <span className="message-details-title">Process Info</span>
-        <span className="message-details-meta">{totalMessages} messages</span>
-        <span className="message-details-meta">{messageTrace.length} steps</span>
-        {totalToolCalls > 0 ? <span className="message-details-meta">{totalToolCalls} tool calls</span> : null}
-        <span className="message-details-meta">{totalChars} chars</span>
-      </summary>
-      <div className="message-trace">
-        {messageTrace.map((step) => (
-          <details key={`${id}-step-${step.stepNumber}`} className="message-step">
-            <summary className="message-step-header message-step-summary">
-              <span className="message-step-title">Step {step.stepNumber}</span>
-              <span className="message-step-meta">{step.messageCount} messages</span>
-              <span className="message-step-meta">{step.charCount} chars</span>
-            </summary>
-            <div className="message-step-list">
-              {step.messages.map((message, index) => (
-                <details key={`${id}-step-${step.stepNumber}-message-${index + 1}`} className="message-item">
-                  <summary className="message-item-header message-item-summary">
-                    <span className="message-item-role">{message.role}</span>
-                    <span className="message-item-meta">{message.charCount} chars</span>
-                    {message.toolName ? <span className="message-item-meta">tool={message.toolName}</span> : null}
-                    {message.toolCallId ? <span className="message-item-meta">call={message.toolCallId}</span> : null}
-                  </summary>
-                  <div className="message-item-details">
-                    <pre className="message-item-content">{message.content}</pre>
-                    {message.toolArgs !== undefined ? (
-                      <pre className="message-item-args">{JSON.stringify(message.toolArgs, null, 2)}</pre>
-                    ) : null}
-                  </div>
-                </details>
-              ))}
-            </div>
-          </details>
-        ))}
-      </div>
-    </details>
-  );
+  return <MessageTraceDetails id={id} messageTrace={messageTrace} scrollable={options.scrollable} />;
 }

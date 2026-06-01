@@ -296,6 +296,248 @@ const foundationalMigrations = [
       `,
     ],
   },
+  {
+    id: '009_memory_weight_policy',
+    statements: [
+      `
+      ALTER TABLE memory_records ADD COLUMN memory_kind TEXT NOT NULL DEFAULT 'generic'
+      `,
+      `
+      ALTER TABLE memory_records ADD COLUMN weight REAL NOT NULL DEFAULT 0
+      `,
+      `
+      ALTER TABLE memory_records ADD COLUMN last_accessed_at TEXT
+      `,
+      `
+      UPDATE memory_records
+         SET memory_kind = CASE
+           WHEN instr(tags_json, 'workflow') > 0 OR instr(tags_json, 'plan') > 0 OR instr(tags_json, 'todo') > 0 THEN 'workflow'
+           WHEN instr(tags_json, 'workspace-setting') > 0 THEN 'workspace-setting'
+           WHEN instr(tags_json, 'conversation-turn') > 0 AND parent_id IS NULL THEN 'turn'
+           WHEN derivation_type = 'summary' OR summary_depth > 0 THEN 'summary'
+           ELSE 'generic'
+         END
+      `,
+      `
+      UPDATE memory_records
+         SET weight = CASE
+           WHEN memory_kind = 'turn' THEN 0.8
+           WHEN memory_kind = 'summary' THEN 0.65
+           WHEN memory_kind = 'workflow' THEN 1.0
+           ELSE 0
+         END
+      `,
+      `
+      UPDATE memory_records
+         SET last_accessed_at = COALESCE(last_accessed_at, updated_at)
+      `,
+      'CREATE INDEX IF NOT EXISTS idx_memory_kind_status_updated_at ON memory_records(memory_kind, status, updated_at DESC)',
+    ],
+  },
+  {
+    id: '010_session_memory_selection_layers',
+    statements: [
+      `
+      ALTER TABLE sessions ADD COLUMN pinned_memory_ids_json TEXT NOT NULL DEFAULT '[]'
+      `,
+      `
+      ALTER TABLE sessions ADD COLUMN working_memory_ids_json TEXT NOT NULL DEFAULT '[]'
+      `,
+      `
+      UPDATE sessions
+         SET pinned_memory_ids_json = COALESCE(pinned_memory_ids_json, selected_memory_ids_json, '[]')
+      `,
+      `
+      UPDATE sessions
+         SET working_memory_ids_json = COALESCE(working_memory_ids_json, '[]')
+      `,
+    ],
+  },
+  {
+    id: '011_memory_selection_cleanup',
+    statements: [
+      `
+      UPDATE memory_records AS duplicate
+         SET status = 'expired'
+       WHERE duplicate.status = 'active'
+         AND duplicate.parent_id IS NOT NULL
+         AND instr(duplicate.tags_json, 'pepe-summary') > 0
+         AND EXISTS (
+           SELECT 1
+             FROM memory_records AS newer
+            WHERE newer.parent_id = duplicate.parent_id
+              AND newer.status = 'active'
+              AND instr(newer.tags_json, 'pepe-summary') > 0
+              AND newer.id != duplicate.id
+              AND (
+                newer.updated_at > duplicate.updated_at
+                OR (newer.updated_at = duplicate.updated_at AND newer.created_at > duplicate.created_at)
+                OR (newer.updated_at = duplicate.updated_at AND newer.created_at = duplicate.created_at AND newer.id > duplicate.id)
+              )
+         )
+      `,
+      `
+      UPDATE sessions AS session
+         SET working_memory_ids_json = COALESCE((
+           SELECT json_group_array(memory_id)
+             FROM (
+               SELECT selection.value AS memory_id
+                 FROM json_each(session.selected_memory_ids_json) AS selection
+                 JOIN memory_records AS memory ON memory.id = selection.value
+                WHERE memory.status = 'active'
+                  AND memory.source_session_id = session.id
+                  AND (
+                    instr(memory.tags_json, 'auto-captured') > 0
+                    OR instr(memory.tags_json, 'workflow') > 0
+                    OR instr(memory.tags_json, 'pepe-summary') > 0
+                    OR instr(memory.tags_json, 'task-step-summary') > 0
+                    OR instr(memory.tags_json, 'conversation-turn') > 0
+                  )
+                  AND NOT (
+                    instr(memory.tags_json, 'pepe-summary') > 0
+                    AND instr(memory.tags_json, 'pepe-session-summary') = 0
+                    AND EXISTS (
+                      SELECT 1
+                        FROM json_each(session.selected_memory_ids_json) AS selected_summary
+                        JOIN memory_records AS summary_memory ON summary_memory.id = selected_summary.value
+                       WHERE summary_memory.status = 'active'
+                         AND instr(summary_memory.tags_json, 'pepe-session-summary') > 0
+                    )
+                  )
+                GROUP BY selection.value, selection.key
+                ORDER BY CAST(selection.key AS INTEGER)
+             )
+         ), '[]')
+      `,
+      `
+      UPDATE sessions AS session
+         SET pinned_memory_ids_json = COALESCE((
+           SELECT json_group_array(memory_id)
+             FROM (
+               SELECT selection.value AS memory_id
+                 FROM json_each(session.selected_memory_ids_json) AS selection
+                 JOIN memory_records AS memory ON memory.id = selection.value
+                WHERE memory.status = 'active'
+                  AND NOT (
+                    memory.source_session_id = session.id
+                    AND (
+                      instr(memory.tags_json, 'auto-captured') > 0
+                      OR instr(memory.tags_json, 'workflow') > 0
+                      OR instr(memory.tags_json, 'pepe-summary') > 0
+                      OR instr(memory.tags_json, 'task-step-summary') > 0
+                      OR instr(memory.tags_json, 'conversation-turn') > 0
+                    )
+                    AND NOT (
+                      instr(memory.tags_json, 'pepe-summary') > 0
+                      AND instr(memory.tags_json, 'pepe-session-summary') = 0
+                      AND EXISTS (
+                        SELECT 1
+                          FROM json_each(session.selected_memory_ids_json) AS selected_summary
+                          JOIN memory_records AS summary_memory ON summary_memory.id = selected_summary.value
+                         WHERE summary_memory.status = 'active'
+                           AND instr(summary_memory.tags_json, 'pepe-session-summary') > 0
+                      )
+                    )
+                  )
+                GROUP BY selection.value, selection.key
+                ORDER BY CAST(selection.key AS INTEGER)
+             )
+         ), '[]')
+      `,
+      `
+      UPDATE sessions AS session
+         SET selected_memory_ids_json = COALESCE((
+           SELECT json_group_array(memory_id)
+             FROM (
+               SELECT memory_id
+                 FROM (
+                   SELECT value AS memory_id, MIN(ord) AS first_ord
+                     FROM (
+                       SELECT value, CAST(key AS INTEGER) AS ord
+                         FROM json_each(session.pinned_memory_ids_json)
+                       UNION ALL
+                       SELECT value, 1000000 + CAST(key AS INTEGER) AS ord
+                         FROM json_each(session.working_memory_ids_json)
+                     )
+                    GROUP BY value
+                    ORDER BY first_ord
+                 )
+             )
+         ), '[]')
+      `,
+    ],
+  },
+  {
+    id: '012_step_memory_retirement',
+    statements: [
+      `
+      UPDATE memory_records
+         SET derivation_type = 'manual',
+             summary_depth = 0
+       WHERE status = 'active'
+         AND parent_id IS NULL
+         AND instr(tags_json, 'conversation-turn') > 0
+         AND (derivation_type = 'summary' OR summary_depth > 0)
+      `,
+      `
+      UPDATE memory_records
+         SET status = 'expired'
+       WHERE status = 'active'
+         AND instr(tags_json, 'task-step-summary') > 0
+      `,
+      `
+      UPDATE sessions AS session
+         SET pinned_memory_ids_json = COALESCE((
+           SELECT json_group_array(memory_id)
+             FROM (
+               SELECT selection.value AS memory_id
+                 FROM json_each(session.pinned_memory_ids_json) AS selection
+                 JOIN memory_records AS memory ON memory.id = selection.value
+                WHERE memory.status = 'active'
+                  AND instr(memory.tags_json, 'task-step-summary') = 0
+                GROUP BY selection.value, selection.key
+                ORDER BY CAST(selection.key AS INTEGER)
+             )
+         ), '[]')
+      `,
+      `
+      UPDATE sessions AS session
+         SET working_memory_ids_json = COALESCE((
+           SELECT json_group_array(memory_id)
+             FROM (
+               SELECT selection.value AS memory_id
+                 FROM json_each(session.working_memory_ids_json) AS selection
+                 JOIN memory_records AS memory ON memory.id = selection.value
+                WHERE memory.status = 'active'
+                  AND instr(memory.tags_json, 'task-step-summary') = 0
+                GROUP BY selection.value, selection.key
+                ORDER BY CAST(selection.key AS INTEGER)
+             )
+         ), '[]')
+      `,
+      `
+      UPDATE sessions AS session
+         SET selected_memory_ids_json = COALESCE((
+           SELECT json_group_array(memory_id)
+             FROM (
+               SELECT memory_id
+                 FROM (
+                   SELECT value AS memory_id, MIN(ord) AS first_ord
+                     FROM (
+                       SELECT value, CAST(key AS INTEGER) AS ord
+                         FROM json_each(session.pinned_memory_ids_json)
+                       UNION ALL
+                       SELECT value, 1000000 + CAST(key AS INTEGER) AS ord
+                         FROM json_each(session.working_memory_ids_json)
+                     )
+                    GROUP BY value
+                    ORDER BY first_ord
+                 )
+             )
+         ), '[]')
+      `,
+    ],
+  },
 ];
 
 export interface MigrationResult {

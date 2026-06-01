@@ -1,10 +1,17 @@
 import path from 'node:path';
-import type { AppConfig } from '../../src/shared/config';
+import { DEFAULT_MEMORY_CONFIG, DEFAULT_PEPE_RANKING_CONFIG, type AppConfig } from '../../src/shared/config';
 
-type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'pepe' | 'workflow' | 'githubCopilot'>> & {
+type TestAppConfigOverrides = Partial<Omit<AppConfig, 'desktopWindow' | 'deepseek' | 'pepe' | 'memory' | 'workflow' | 'githubCopilot'>> & {
   desktopWindow?: Partial<AppConfig['desktopWindow']>;
   deepseek?: Partial<AppConfig['deepseek']>;
   pepe?: Partial<AppConfig['pepe']>;
+  memory?: {
+    turn?: Partial<AppConfig['memory']['turn']>;
+    derivedSummary?: Partial<AppConfig['memory']['derivedSummary']>;
+    sessionSummary?: Partial<AppConfig['memory']['sessionSummary']>;
+    knowledge?: Partial<AppConfig['memory']['knowledge']>;
+    workflow?: Partial<AppConfig['memory']['workflow']>;
+  };
   workflow?: Partial<AppConfig['workflow']>;
   githubCopilot?: Partial<AppConfig['githubCopilot']>;
 };
@@ -47,8 +54,34 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       summaryIntervalMs: overrides.pepe?.summaryIntervalMs ?? 5_000,
       resultTopK: overrides.pepe?.resultTopK ?? 8,
       similarityThreshold: overrides.pepe?.similarityThreshold ?? 0.2,
+      ranking: {
+        ...DEFAULT_PEPE_RANKING_CONFIG,
+        ...overrides.pepe?.ranking,
+      },
       workingDirectoryPattern: overrides.pepe?.workingDirectoryPattern ?? 'agent-{agentInstanceId}',
       skillDirectoryName: overrides.pepe?.skillDirectoryName ?? 'skills',
+    },
+    memory: {
+      turn: {
+        ...DEFAULT_MEMORY_CONFIG.turn,
+        ...overrides.memory?.turn,
+      },
+      derivedSummary: {
+        ...DEFAULT_MEMORY_CONFIG.derivedSummary,
+        ...overrides.memory?.derivedSummary,
+      },
+      sessionSummary: {
+        ...DEFAULT_MEMORY_CONFIG.sessionSummary,
+        ...overrides.memory?.sessionSummary,
+      },
+      knowledge: {
+        ...DEFAULT_MEMORY_CONFIG.knowledge,
+        ...overrides.memory?.knowledge,
+      },
+      workflow: {
+        ...DEFAULT_MEMORY_CONFIG.workflow,
+        ...overrides.memory?.workflow,
+      },
     },
     workflow: {
       enabled: overrides.workflow?.enabled ?? true,

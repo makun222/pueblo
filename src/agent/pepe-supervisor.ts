@@ -44,8 +44,8 @@ export type PepeWorkerFactory = (data: PepeWorkerData) => PepeWorkerLike;
 export interface PepeSupervisorDependencies {
   readonly appConfig: AppConfig;
   readonly config: Pick<PepeConfig, 'enabled' | 'flushIntervalMs' | 'workingDirectoryPattern'>;
-  readonly memoryService: Pick<MemoryService, 'listSessionMemories' | 'createDerivedSummaryMemory'>;
-  readonly sessionService: Pick<SessionService, 'getSession' | 'addSelectedMemory'>;
+  readonly memoryService: Pick<MemoryService, 'listSessionMemories' | 'createDerivedSummaryMemory' | 'upsertSessionSummaryMemory' | 'reconcileWorkingMemoryIds'>;
+  readonly sessionService: Pick<SessionService, 'getSession' | 'setWorkingMemoryIds'>;
   readonly agentInstanceService: Pick<AgentInstanceService, 'getAgentInstance'>;
   readonly resultService: PepeResultService;
   readonly memoryMirror?: PepeMemoryMirror;
@@ -55,6 +55,7 @@ export interface PepeSupervisorDependencies {
 export class PepeSupervisor {
   private readonly monitors = new Map<string, PepeSessionMonitor>();
   private readonly pendingWorkerRequests = new Map<string, PendingWorkerRequest>();
+  private readonly pendingFlushes = new Map<string, Promise<void>>();
   private readonly memoryMirror: PepeMemoryMirror;
   private readonly worker: PepeWorkerLike | null;
 
@@ -125,6 +126,27 @@ export class PepeSupervisor {
       return;
     }
 
+    const existingFlush = this.pendingFlushes.get(sessionId);
+    if (existingFlush) {
+      await existingFlush;
+      return;
+    }
+
+    const flushPromise = this.flushSessionInternal(sessionId);
+    this.pendingFlushes.set(sessionId, flushPromise);
+
+    try {
+      await flushPromise;
+    } finally {
+      this.pendingFlushes.delete(sessionId);
+    }
+  }
+
+  private async flushSessionInternal(sessionId: string): Promise<void> {
+    if (!this.dependencies.config.enabled) {
+      return;
+    }
+
     const monitor = this.monitors.get(sessionId);
     const session = this.dependencies.sessionService.getSession(sessionId);
     if (!monitor || !session?.agentInstanceId) {
@@ -143,7 +165,8 @@ export class PepeSupervisor {
       pendingInput: monitor.lastInput ?? undefined,
       memories,
     });
-    memories = this.applyWorkerSummaries(sessionId, memories, workerResult);
+    const appliedSummaries = this.applyWorkerSummaries(sessionId, memories, workerResult);
+    memories = appliedSummaries.memories;
 
     const refreshedSession = this.dependencies.sessionService.getSession(sessionId);
     const summaryMemoryIdsByParent = buildSummaryMemoryMap(memories);
@@ -171,7 +194,8 @@ export class PepeSupervisor {
     });
 
     monitor.lastSummaryAt = workerResult?.lastSummaryAt ?? new Date().toISOString();
-    monitor.lastSummaryMemoryId = workerResult?.lastSummaryMemoryId
+    monitor.lastSummaryMemoryId = appliedSummaries.sessionSummaryMemory?.id
+      ?? workerResult?.lastSummaryMemoryId
       ?? memories.at(-1)?.id
       ?? resolvedResult.resultItems.at(0)?.memoryId
       ?? null;
@@ -244,7 +268,10 @@ export class PepeSupervisor {
     result: PepeWorkerProcessResult | null,
   ) {
     if (!result || result.summaries.length === 0) {
-      return memories;
+      return {
+        memories,
+        sessionSummaryMemory: null,
+      };
     }
 
     const nextMemories = [...memories];
@@ -265,12 +292,49 @@ export class PepeSupervisor {
         parentMemory,
         summary: summary.summary,
       });
-      this.dependencies.sessionService.addSelectedMemory(sessionId, summaryMemory.id);
       existingSummaryParents.add(parentMemory.id);
-      nextMemories.push(summaryMemory);
+      const existingIndex = nextMemories.findIndex((candidate) => candidate.id === summaryMemory.id);
+      if (existingIndex >= 0) {
+        nextMemories.splice(existingIndex, 1, summaryMemory);
+      } else {
+        nextMemories.push(summaryMemory);
+      }
     }
 
-    return nextMemories;
+    const sessionSummaryMemory = this.dependencies.memoryService.upsertSessionSummaryMemory({
+      sessionId,
+      summaries: nextMemories,
+    });
+
+    if (sessionSummaryMemory) {
+      const existingIndex = nextMemories.findIndex((candidate) => candidate.id === sessionSummaryMemory.id);
+      if (existingIndex >= 0) {
+        nextMemories.splice(existingIndex, 1, sessionSummaryMemory);
+      } else {
+        nextMemories.push(sessionSummaryMemory);
+      }
+
+      const currentSession = this.dependencies.sessionService.getSession(sessionId);
+      const autoPepeSummaryIds = new Set(
+        nextMemories
+          .filter((memory) => memory.tags.includes('pepe-summary') && !memory.tags.includes('pepe-session-summary'))
+          .map((memory) => memory.id),
+      );
+      const nextWorkingMemoryIds = [
+        ...(currentSession?.workingMemoryIds ?? []).filter((memoryId) => !autoPepeSummaryIds.has(memoryId)),
+      ];
+      const reconciledWorkingMemoryIds = this.dependencies.memoryService.reconcileWorkingMemoryIds({
+        workingMemoryIds: nextWorkingMemoryIds,
+        incomingMemoryIds: [sessionSummaryMemory.id],
+        updatedAt: sessionSummaryMemory.updatedAt,
+      });
+      this.dependencies.sessionService.setWorkingMemoryIds(sessionId, reconciledWorkingMemoryIds);
+    }
+
+    return {
+      memories: nextMemories,
+      sessionSummaryMemory,
+    };
   }
 
   private handleWorkerMessage(message: PepeWorkerResponse): void {

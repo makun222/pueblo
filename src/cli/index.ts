@@ -13,7 +13,6 @@ import { AgentInstanceService } from '../agent/agent-instance-service';
 import { AgentTemplateLoader } from '../agent/agent-template-loader';
 import { ContextResolver } from '../agent/context-resolver';
 import { PepeResultService } from '../agent/pepe-result-service';
-import { PepeSemanticClient } from '../agent/pepe-semantic-client';
 import { PepeSupervisor, type PepeWorkerFactory } from '../agent/pepe-supervisor';
 import { AgentTaskRepository } from '../agent/task-repository';
 import {
@@ -31,6 +30,7 @@ import {
   createMemoryListCommand,
   createMemorySearchCommand,
   createMemorySelectCommand,
+  createMemoryWeightCommand,
 } from '../commands/memory-command';
 import { createWorkflowStartCommand } from '../commands/workflow-command';
 import {
@@ -67,7 +67,7 @@ import {
 import { resolveGitHubCopilotAuth, resolveGitHubCopilotToken } from '../providers/github-copilot-auth';
 import { createDefaultCredentialStore, type CredentialStore } from '../providers/credential-store';
 import { createGitHubCopilotProfile } from '../providers/github-copilot-profile';
-import { InMemoryProviderAdapter } from '../providers/provider-adapter';
+import { InMemoryProviderAdapter, type ProviderRequestMetrics } from '../providers/provider-adapter';
 import { ProviderError } from '../providers/provider-errors';
 import { ModelService } from '../providers/model-service';
 import { createProviderProfile } from '../providers/provider-profile';
@@ -80,6 +80,7 @@ import {
   failureResult,
   formatCommandResult,
   formatError,
+  type ParsedTaskOutputSummary,
   summarizeModelMessageTrace,
   successResult,
 } from '../shared/result';
@@ -89,6 +90,7 @@ import { PromptRepository } from '../prompts/prompt-repository';
 import { PromptService } from '../prompts/prompt-service';
 import { SessionRepository } from '../sessions/session-repository';
 import { SessionService } from '../sessions/session-service';
+import type { EditReviewHandler } from '../tools/edit-tool';
 import { ToolInvocationRepository } from '../tools/tool-invocation-repository';
 import { ToolService } from '../tools/tool-service';
 import { PUEBLO_PLAN_WORKFLOW_TYPE } from '../workflow/pueblo-plan/pueblo-plan-workflow';
@@ -102,7 +104,7 @@ import { WorkflowRepository } from '../workflow/workflow-repository';
 import { WorkflowRouter } from '../workflow/workflow-router';
 import { WorkflowService } from '../workflow/workflow-service';
 import type { DesktopProviderStatuses, DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
-import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
+import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
 import { isTaskCancellationError } from '../shared/task-cancellation';
 
 export async function main(argv: string[] = process.argv): Promise<void> {
@@ -159,12 +161,14 @@ export interface CliDependencies {
   readonly getRuntimeStatus: () => DesktopRuntimeStatus;
   readonly listAgentProfiles: () => AgentProfileTemplate[];
   readonly startAgentSession: (profileId: string) => DesktopRuntimeStatus;
-  readonly listAgentSessions: (agentInstanceId: string) => Session[];
+  readonly listAgentSessions: (agentInstanceId: string) => AgentSessionSummary[];
+  readonly getSession: (sessionId: string) => Session | null;
   readonly listSessionMemories: (sessionId: string) => MemoryRecord[];
   readonly selectSession: (sessionId: string) => { runtimeStatus: DesktopRuntimeStatus; session: Session | null };
   readonly setProgressReporter: (reporter: ((update: { title: string; message: string }) => void) | null) => void;
   readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
   readonly setToolApprovalBatchHandler: (handler: ToolApprovalBatchHandler | null) => void;
+  readonly setFileReviewHandler: (handler: EditReviewHandler | null) => void;
   readonly databaseClose: () => void;
 }
 
@@ -352,6 +356,7 @@ export function createCliDependencies(
   let progressReporter: ((update: { title: string; message: string }) => void) | null = null;
   let toolApprovalHandler: ToolApprovalHandler | null = null;
   let toolApprovalBatchHandler: ToolApprovalBatchHandler | null = null;
+  let fileReviewHandler: EditReviewHandler | null = null;
   const credentialStore = options.credentialStore ?? createDefaultCredentialStore();
   const database = createSqliteDatabase({ dbPath: config.databasePath });
   const dispatcher = new CommandDispatcher();
@@ -371,13 +376,17 @@ export function createCliDependencies(
   const cliProjectRoot = resolveProjectRoot(__dirname);
   const puebloWorkingDirectory = path.resolve(options.puebloWorkingDirectory ?? process.cwd());
   const promptService = new PromptService(promptRepository);
-  const memoryService = new MemoryService(memoryRepository);
+  const memoryService = new MemoryService(memoryRepository, currentConfig.memory);
   let currentWorkspace = initializeWorkspacePath(memoryService, process.cwd());
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
-  const pepeSemanticClient = new PepeSemanticClient(providerRegistry, currentConfig);
   const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
-  const toolService = new ToolService({ repository: toolInvocationRepository, cwd: () => currentWorkspace });
+  const toolService = new ToolService({
+    repository: toolInvocationRepository,
+    cwd: () => currentWorkspace,
+    resolveEditReviewHandler: () => fileReviewHandler,
+    editShadowRoot: () => path.resolve(currentWorkspace, '.pueblo', 'shadow-edits'),
+  });
   const workflowRepository = new WorkflowRepository({ connection: database.connection });
   const workflowRegistry = new WorkflowRegistry([
     {
@@ -409,6 +418,12 @@ export function createCliDependencies(
         message,
       });
     },
+    reportRequestMetrics: (metrics) => {
+      lastProviderRequestMetrics = {
+        ...metrics,
+        roleCounts: { ...metrics.roleCounts },
+      };
+    },
     reportAssistantDelta: (text) => {
       progressReporter?.({
         title: 'Assistant Draft',
@@ -418,30 +433,41 @@ export function createCliDependencies(
   });
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository, memoryService);
-  const pepeSupervisor = new PepeSupervisor({
-    appConfig: currentConfig,
-    config: currentConfig.pepe,
+  const createPepeSupervisor = (resolvedConfig: AppConfig) => new PepeSupervisor({
+    appConfig: resolvedConfig,
+    config: resolvedConfig.pepe,
     memoryService,
     sessionService,
     agentInstanceService,
     resultService: pepeResultService,
     workerFactory: options.pepeWorkerFactory,
   });
-  const contextResolver = new ContextResolver({
-    config: currentConfig,
+  let pepeSupervisor = createPepeSupervisor(currentConfig);
+  const createContextResolver = (resolvedConfig: AppConfig) => new ContextResolver({
+    config: resolvedConfig,
     sessionService,
     promptService,
     memoryService,
     agentInstanceService,
     providerRegistry,
     pepeResultService,
+    taskRepository,
     workflowService,
     resolveBackgroundSummaryStatus: (sessionId) => pepeSupervisor.getBackgroundSummaryStatus(sessionId),
   });
+  let contextResolver = createContextResolver(currentConfig);
   let lastModelMessageCount = 0;
   let lastModelMessageCharCount = 0;
+  let lastProviderRequestMetrics: ProviderRequestMetrics | null = null;
   let activeAgentInstanceId: string | null = null;
   let activeAgentProfileId: string | null = options.deferAgentSelection ? null : (currentConfig.defaultAgentProfileId ?? 'code-master');
+
+  function refreshRuntimeConfig(nextConfig: AppConfig): void {
+    currentConfig = nextConfig;
+    pepeSupervisor.stopAll();
+    pepeSupervisor = createPepeSupervisor(nextConfig);
+    contextResolver = createContextResolver(nextConfig);
+  }
 
   const runTask = async (
     goal: string,
@@ -452,6 +478,7 @@ export function createCliDependencies(
     const trimmedGoal = goal.trim();
     const normalizedUserInput = userInputOverride?.trim() || trimmedGoal;
     const submitAbortSignal = inputAbortSignalContext.getStore();
+    lastProviderRequestMetrics = null;
 
     if (!trimmedGoal) {
       return failureResult('TASK_GOAL_REQUIRED', 'Task goal is required', ['Provide a task goal and retry.']);
@@ -524,6 +551,7 @@ export function createCliDependencies(
       const messageTraceTotals = summarizeModelMessageTrace(outputPayload?.modelMessageTrace);
       lastModelMessageCount = messageTraceTotals.messageCount;
       lastModelMessageCharCount = messageTraceTotals.messageCharCount;
+      lastProviderRequestMetrics = outputPayload?.providerRequestMetrics ?? lastProviderRequestMetrics;
       sessionService.addProviderUsage(sessionId, outputPayload?.providerUsage);
 
       for (const toolResult of outputPayload?.toolResults ?? []) {
@@ -543,7 +571,12 @@ export function createCliDependencies(
         userInput: normalizedUserInput,
         assistantOutput: assistantOutput ?? 'No assistant output recorded.',
       });
-      sessionService.addSelectedMemory(sessionId, turnMemory.id);
+      addTaskMemoriesToSession({
+        sessionId,
+        turnMemory,
+        memoryService,
+        sessionService,
+      });
       await pepeSupervisor.flushSession(sessionId);
 
       return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
@@ -560,10 +593,12 @@ export function createCliDependencies(
         const latestTask = persistedTasks[persistedTasks.length - 1] ?? null;
         const latestPayload = extractTaskOutputSummaryPayload(latestTask?.outputSummary);
         sessionService.addProviderUsage(sessionId, latestPayload?.providerUsage);
+
+        return latestPayload;
       };
 
       if (error instanceof ProviderError) {
-        accumulateLatestTaskProviderUsage();
+        const latestPayload = accumulateLatestTaskProviderUsage();
         const activeWorkflow = sessionId ? workflowService.getActiveWorkflowForSession(sessionId) : null;
         if (activeWorkflow) {
           workflowService.markWorkflowFailed(activeWorkflow.id, error.message);
@@ -575,7 +610,12 @@ export function createCliDependencies(
           userInput: normalizedUserInput,
           assistantOutput: `Task failed: ${error.message}`,
         });
-        sessionService.addSelectedMemory(sessionId, turnMemory.id);
+        addTaskMemoriesToSession({
+          sessionId,
+          turnMemory,
+          memoryService,
+          sessionService,
+        });
         await pepeSupervisor.flushSession(sessionId);
         return failureResult('TASK_RUN_FAILED', error.message, [
           'Use /model to review the active provider configuration.',
@@ -651,10 +691,12 @@ export function createCliDependencies(
         tasks: todoTasks,
       })
       : null;
-    sessionService.addSelectedMemory(sessionId, planMemory.id);
-    if (todoMemory) {
-      sessionService.addSelectedMemory(sessionId, todoMemory.id);
-    }
+    reconcileSessionWorkingMemories({
+      sessionId,
+      incomingMemoryIds: [planMemory.id, todoMemory?.id ?? null],
+      memoryService,
+      sessionService,
+    });
     workflowService.saveWorkflow({
       ...workflow,
       status: nextRound ? 'round-active' : 'planning',
@@ -988,7 +1030,6 @@ export function createCliDependencies(
       workflow: transition.workflow,
       sessionId,
     });
-    sessionService.addSelectedMemory(sessionId, refreshedPlanMemory.id);
 
     let nextTodoMemoryId: string | null = null;
     if (transition.nextRound) {
@@ -999,9 +1040,15 @@ export function createCliDependencies(
         round: transition.nextRound,
         tasks: nextRoundTasks,
       });
-      sessionService.addSelectedMemory(sessionId, todoMemory.id);
       nextTodoMemoryId = todoMemory.id;
     }
+
+    reconcileSessionWorkingMemories({
+      sessionId,
+      incomingMemoryIds: [refreshedPlanMemory.id, nextTodoMemoryId],
+      memoryService,
+      sessionService,
+    });
 
     const updatedWorkflow = workflowService.saveWorkflow({
       ...transition.workflow,
@@ -1056,6 +1103,12 @@ export function createCliDependencies(
   });
 
   const syncSelectionFromSession = (sessionId: string | null): void => {
+    const previousSessionId = selectionState.sessionId;
+
+    if (previousSessionId && previousSessionId !== sessionId) {
+      pepeSupervisor.stopSession(previousSessionId);
+    }
+
     selectionState.sessionId = sessionId;
 
     if (!sessionId) {
@@ -1067,7 +1120,9 @@ export function createCliDependencies(
     const session = sessionService.getSession(sessionId);
     activeAgentInstanceId = session?.agentInstanceId ?? null;
     activeAgentProfileId = agentInstanceService.getAgentInstance(activeAgentInstanceId)?.profileId ?? activeAgentProfileId;
-    pepeSupervisor.startSession(sessionId);
+    if (previousSessionId !== sessionId) {
+      pepeSupervisor.startSession(sessionId);
+    }
 
     const resolved = contextResolver.resolve({
       activeSessionId: sessionId,
@@ -1151,6 +1206,11 @@ export function createCliDependencies(
     sessionService,
     getCurrentSessionId: () => selectionState.sessionId,
   }));
+  dispatcher.register('/memory-weight', createMemoryWeightCommand({
+    memoryService,
+    sessionService,
+    getCurrentSessionId: () => selectionState.sessionId,
+  }));
   dispatcher.register('/workflow', createWorkflowStartCommand({
     startWorkflow,
     defaultWorkflowType: PUEBLO_PLAN_WORKFLOW_TYPE,
@@ -1172,9 +1232,7 @@ export function createCliDependencies(
   });
   const providerConfigCommand = createProviderConfigCommand({
     getCurrentConfig: () => currentConfig,
-    setCurrentConfig: (nextConfig) => {
-      currentConfig = nextConfig;
-    },
+    setCurrentConfig: refreshRuntimeConfig,
     credentialStore,
     runGitHubCopilotLogin: () => maybeRunCliStartupSetup(currentConfig, {
       credentialStore,
@@ -1222,10 +1280,9 @@ export function createCliDependencies(
   const currentSession = options.startNewSession && !options.deferAgentSelection
     ? sessionService.createSession('Desktop session', null, ensureAgentInstance())
     : sessionService.getCurrentSession();
-  selectionState.sessionId = currentSession?.id ?? currentConfig.defaultSessionId;
   selectionState.providerId = currentConfig.defaultProviderId;
   selectionState.modelId = currentSession?.currentModelId ?? null;
-  syncSelectionFromSession(selectionState.sessionId);
+  syncSelectionFromSession(currentSession?.id ?? currentConfig.defaultSessionId);
 
   return {
     dispatcher,
@@ -1247,6 +1304,9 @@ export function createCliDependencies(
       const currentSession = selectionState.sessionId
         ? sessionService.getSession(selectionState.sessionId)
         : sessionService.getCurrentSession();
+      const latestTaskPayload = currentSession?.id
+        ? extractTaskOutputSummaryPayload((taskRepository.listBySession(currentSession.id).at(-1)?.outputSummary) ?? null)
+        : null;
       const activeWorkflow = currentSession?.id
         ? workflowService.getActiveWorkflowForSession(currentSession.id)
         : null;
@@ -1260,6 +1320,7 @@ export function createCliDependencies(
         modelMessageCharCount: lastModelMessageCharCount,
         workspace: currentWorkspace,
         providerUsageStats: currentSession?.providerUsageStats,
+        providerRequestMetrics: lastProviderRequestMetrics ?? latestTaskPayload?.providerRequestMetrics ?? null,
         availableProviders: providerRegistry.listProfiles(),
         providerStatuses: buildDesktopProviderStatuses(currentConfig, credentialStore),
         workflow: {
@@ -1288,9 +1349,12 @@ export function createCliDependencies(
       return this.getRuntimeStatus();
     },
     listAgentSessions(agentInstanceId: string) {
-      return sessionService.listSessions()
+      return sessionService.listSessionSummaries()
         .filter((session) => session.agentInstanceId === agentInstanceId && session.status !== 'deleted')
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+    },
+    getSession(sessionId: string) {
+      return sessionService.getSession(sessionId);
     },
     listSessionMemories(sessionId: string) {
       return memoryService.listSessionMemories(sessionId)
@@ -1312,6 +1376,9 @@ export function createCliDependencies(
     },
     setToolApprovalBatchHandler(handler: ToolApprovalBatchHandler | null): void {
       toolApprovalBatchHandler = handler;
+    },
+    setFileReviewHandler(handler: EditReviewHandler | null): void {
+      fileReviewHandler = handler;
     },
     databaseClose(): void {
       pepeSupervisor.stopAll();
@@ -1444,6 +1511,34 @@ function initializeWorkspacePath(memoryService: MemoryService, fallbackPath: str
   const defaultWorkspace = resolveWorkspaceDirectory(fallbackPath);
   memoryService.setWorkspacePath(defaultWorkspace);
   return defaultWorkspace;
+}
+
+function addTaskMemoriesToSession(args: {
+  readonly sessionId: string;
+  readonly turnMemory: ReturnType<MemoryService['createConversationTurnMemory']>;
+  readonly memoryService: MemoryService;
+  readonly sessionService: SessionService;
+}): void {
+  reconcileSessionWorkingMemories({
+    sessionId: args.sessionId,
+    incomingMemoryIds: [args.turnMemory.id],
+    memoryService: args.memoryService,
+    sessionService: args.sessionService,
+  });
+}
+
+function reconcileSessionWorkingMemories(args: {
+  readonly sessionId: string;
+  readonly incomingMemoryIds: Array<string | null | undefined>;
+  readonly memoryService: MemoryService;
+  readonly sessionService: SessionService;
+}): void {
+  const currentSession = args.sessionService.getSession(args.sessionId);
+  const nextWorkingMemoryIds = args.memoryService.reconcileWorkingMemoryIds({
+    workingMemoryIds: currentSession?.workingMemoryIds ?? [],
+    incomingMemoryIds: args.incomingMemoryIds.filter((memoryId): memoryId is string => Boolean(memoryId)),
+  });
+  args.sessionService.setWorkingMemoryIds(args.sessionId, nextWorkingMemoryIds);
 }
 
 function resolveWorkspaceDirectory(requestedPath: string): string {

@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const MAX_GREP_RESULTS = 200;
+const MAX_GREP_OUTPUT_CHARS = 12000;
+
 export interface GrepToolRequest {
   readonly pattern: string;
   readonly cwd: string;
@@ -24,7 +27,9 @@ function matchesInclude(filePath: string, include?: string): boolean {
 export function createGrepTool() {
   return async (request: GrepToolRequest): Promise<ToolExecutionResult> => {
     try {
-      const results: string[] = [];
+      const output: string[] = [];
+      let totalMatches = 0;
+      let totalChars = 0;
       const regex = new RegExp(request.pattern, 'i');
 
       const visit = (dirPath: string): void => {
@@ -53,18 +58,35 @@ export function createGrepTool() {
               continue;
             }
 
-            results.push(`${relativePath}:${index + 1}: ${line}`);
+            totalMatches += 1;
+            if (output.length >= MAX_GREP_RESULTS) {
+              continue;
+            }
+
+            const matchedLine = `${relativePath}:${index + 1}: ${line}`;
+            if (totalChars + matchedLine.length > MAX_GREP_OUTPUT_CHARS && output.length > 0) {
+              continue;
+            }
+
+            output.push(matchedLine);
+            totalChars += matchedLine.length;
           }
         }
       };
 
       visit(request.cwd);
 
+      const truncated = output.length < totalMatches;
+
       return {
         toolName: 'grep',
-        status: results.length > 0 ? 'succeeded' : 'empty',
-        summary: results.length > 0 ? `Matched ${results.length} line(s)` : 'No content matched',
-        output: results,
+        status: totalMatches > 0 ? 'succeeded' : 'empty',
+        summary: totalMatches > 0
+          ? truncated
+            ? `Matched ${output.length} of ${totalMatches} line(s)`
+            : `Matched ${totalMatches} line(s)`
+          : 'No content matched',
+        output,
       };
     } catch (error) {
       return {

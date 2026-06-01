@@ -27,7 +27,7 @@ export class PepeResultService {
 
   constructor(
     private readonly memoryService: Pick<MemoryService, 'resolveMemorySelection'>,
-    private readonly config: Pick<PepeConfig, 'enabled' | 'resultTopK' | 'similarityThreshold'>,
+    private readonly config: Pick<PepeConfig, 'enabled' | 'resultTopK' | 'similarityThreshold' | 'ranking'>,
   ) {}
 
   resolve(input: ResolvePepeResultInput): ResolvedPepeResult {
@@ -57,6 +57,7 @@ export class PepeResultService {
       pendingUserInput: input.pendingUserInput,
       resultTopK: this.config.resultTopK,
       similarityThreshold: this.config.similarityThreshold,
+      ranking: this.config.ranking,
       selectedMemoryIds: input.selectedMemoryIds,
     }).map((candidate) => toPepeResultItem(candidate, candidate.memoryId ?? candidate.parentMemoryId ?? 'unknown-memory'));
     const resultSet = pepeResultSetSchema.parse({

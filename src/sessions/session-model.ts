@@ -22,6 +22,8 @@ export function createSessionModel(input: CreateSessionInput): Session {
     currentModelId: input.currentModelId ?? null,
     messageHistory: [],
     selectedPromptIds: [],
+    pinnedMemoryIds: [],
+    workingMemoryIds: [],
     selectedMemoryIds: [],
     providerUsageStats: {
       promptTokens: 0,

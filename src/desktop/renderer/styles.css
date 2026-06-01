@@ -689,6 +689,20 @@ select {
   min-width: 0;
 }
 
+.workflow-sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-sidebar-section-header h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.1;
+  color: var(--ink-strong);
+}
+
 .workflow-sidebar-header h2 {
   margin: 0;
   color: var(--ink-strong);
@@ -727,7 +741,6 @@ select {
 
 .workflow-sidebar-copy,
 .workflow-sidebar-meta,
-.tool-approval-summary,
 .todo-item-title {
   margin: 0;
   font-size: 13px;
@@ -747,6 +760,12 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+.tool-approval-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .tool-approval-row,
@@ -771,61 +790,46 @@ select {
   opacity: 0.62;
 }
 
-.tool-approval-target,
-.tool-approval-operation {
-  display: inline-flex;
 .tool-approval-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
 }
-  align-items: center;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+
 .tool-approval-row-main {
-  flex: 0 1 80%;
-  max-width: 80%;
-  overflow: hidden;
+  flex: 0 1 90%;
+  max-width: 90%;
+  min-width: 0;
 }
+
+.tool-approval-row-line {
+  align-items: flex-start;
+}
+
+.tool-approval-primary {
+  display: block;
+  min-width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  line-height: 1.55;
   color: var(--ink-strong);
-}
-
-.tool-approval-target {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-approval-operation {
-  flex-shrink: 0;
-  max-width: 38%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-soft);
-}
-
-.tool-approval-summary {
-  margin-top: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tool-approval-toggle {
-  flex: 0 0 10%;
-  width: 10%;
-  min-width: 10px;
-  height: 20px;
-  border: 1px solid rgba(15, 23, 36, 0.72);
+  flex: 0 0 auto;
+  min-width: 28px;
+  height: 24px;
+  border: 1px solid rgba(2, 133, 233, 0.72);
   border-radius: 0;
   background: transparent;
   color: var(--ink-strong);
-  font-size: 10px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.08em;
   cursor: pointer;
 }
@@ -842,6 +846,34 @@ select {
   gap: 12px;
 }
 
+.file-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 3px solid var(--line-strong);
+  border-bottom: 3px solid var(--line-strong);
+}
+
+.file-review-path {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.file-review-path:hover {
+  text-decoration: underline;
+}
+
 .todo-sidebar-actions {
   display: flex;
   flex-direction: column;
@@ -856,7 +888,7 @@ select {
   flex: 0 0 20%;
   width: 20%;
   min-width: 0;
-  min-height: 40px;
+  min-height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -928,10 +960,8 @@ select {
 .workspace-sidebar .session-card-preview,
 .workspace-sidebar .workflow-sidebar-copy,
 .workspace-sidebar .workflow-sidebar-meta,
-.workspace-sidebar .tool-approval-summary,
 .workspace-sidebar .todo-item-title,
-.workspace-sidebar .tool-approval-target,
-.workspace-sidebar .tool-approval-operation,
+.workspace-sidebar .tool-approval-primary,
 .workspace-sidebar .workflow-sidebar-header h2,
 .workspace-sidebar .workflow-sidebar-section-header h3,
 .workspace-sidebar .session-panel-header h2,
@@ -1142,7 +1172,7 @@ select {
 .input-pane button {
   border: none;
   border-radius: 14px;
-  background: linear-gradient(135deg, #e2ea11b8 0%, var(--accent) 58%, #dff114e3 100%);
+  background: linear-gradient(73deg, #b3b028ed 0%, #f2f6fb 58%, #009ff6e3 100%);
   color: #141515;
   box-shadow: 0 10px 20px rgba(10, 124, 255, 0.18);
 }
@@ -2031,6 +2061,24 @@ select {
   opacity: 1;
 }
 
+.chat-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chat-entry-header .chat-entry-label {
+  margin-bottom: 0;
+}
+
+.chat-entry-thinking-duration {
+  font-size: 12px;
+  line-height: 1;
+  color: rgba(50, 70, 102, 0.74);
+  font-variant-numeric: tabular-nums;
+}
+
 .chat-entry-answer .chat-entry-label {
   background: rgba(10, 124, 255, 0.08);
   color: #3266a2;
@@ -2302,11 +2350,22 @@ select {
   gap: 8px;
 }
 
+.message-trace-summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
 .message-details-scrollable[open] > .message-trace {
   max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 4px;
+}
+
+.message-trace-load-more {
+  align-self: flex-start;
 }
 
 .message-step {

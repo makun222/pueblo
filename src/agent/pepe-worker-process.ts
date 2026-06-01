@@ -9,7 +9,7 @@ export async function processPepeSessionSnapshot(
   snapshot: PepeWorkerSessionSnapshot,
   semanticClient: Pick<PepeSemanticClient, 'isConfigured' | 'summarizeMemory'>,
   embeddingClient: Pick<PepeLocalEmbeddingClient, 'embedTexts'>,
-  config: Pick<PepeConfig, 'resultTopK' | 'similarityThreshold'>,
+  config: Pick<PepeConfig, 'resultTopK' | 'similarityThreshold' | 'ranking'>,
 ): Promise<PepeWorkerProcessResult> {
   const existingSummaryParents = new Set(
     snapshot.memories
@@ -54,6 +54,7 @@ export async function processPepeSessionSnapshot(
     pendingUserInput: snapshot.pendingInput,
     resultTopK: config.resultTopK,
     similarityThreshold: config.similarityThreshold,
+    ranking: config.ranking,
     summaryOverrides,
     selectedMemoryIds: snapshot.selectedMemoryIds,
     vectors: embeddingBatch.vectors,
@@ -85,6 +86,14 @@ function shouldSummarizeMemory(memory: MemoryRecord, existingSummaryParents: Set
   }
 
   if (memory.tags.includes('plan') || memory.tags.includes('todo') || memory.tags.includes('workflow')) {
+    return false;
+  }
+
+  if (memory.memoryKind !== 'turn') {
+    return false;
+  }
+
+  if (memory.parentId) {
     return false;
   }
 

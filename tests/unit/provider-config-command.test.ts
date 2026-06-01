@@ -42,7 +42,7 @@ describe('provider config command', () => {
     const secrets = new Map<string, string>();
     let currentConfig = createTestAppConfig({
       providers: [],
-      defaultProviderId: null,
+      defaultProviderId: 'openai',
       deepseek: {
         apiKey: undefined,
       },
@@ -71,6 +71,7 @@ describe('provider config command', () => {
 
     expect(result.ok).toBe(true);
     expect(result.code).toBe('DEEPSEEK_AUTH_COMPLETED');
+    expect(currentConfig.defaultProviderId).toBe('deepseek');
     expect(currentConfig.providers.find((provider) => provider.providerId === 'deepseek')).toMatchObject({
       defaultModelId: 'deepseek-v4-pro',
       credentialSource: 'windows-credential-manager',
@@ -78,6 +79,12 @@ describe('provider config command', () => {
     expect(currentConfig.deepseek.baseUrl).toBe('https://api.deepseek.com');
     expect(currentConfig.deepseek.credentialTarget).toBeTruthy();
     expect(secrets.get(currentConfig.deepseek.credentialTarget ?? '')).toBe('deepseek-secret');
+    expect(result.data).toMatchObject({
+      providerId: 'deepseek',
+      defaultModelId: 'deepseek-v4-pro',
+      baseUrl: 'https://api.deepseek.com',
+      credentialTarget: currentConfig.deepseek.credentialTarget,
+    });
   });
 
   it('surfaces the detailed GitHub Copilot login error', async () => {

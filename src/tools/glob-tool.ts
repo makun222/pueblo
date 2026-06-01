@@ -2,6 +2,9 @@ import { glob } from 'node:fs/promises';
 
 import type { RendererFileChange } from '../shared/schema';
 
+const MAX_GLOB_RESULTS = 200;
+const MAX_GLOB_OUTPUT_CHARS = 12000;
+
 export interface GlobToolRequest {
   readonly pattern: string;
   readonly cwd: string;
@@ -18,17 +21,36 @@ export interface ToolExecutionResult {
 export function createGlobTool() {
   return async (request: GlobToolRequest): Promise<ToolExecutionResult> => {
     try {
-      const matches: string[] = [];
+      const output: string[] = [];
+      let totalMatches = 0;
+      let totalChars = 0;
 
       for await (const entry of glob(request.pattern, { cwd: request.cwd })) {
-        matches.push(entry);
+        totalMatches += 1;
+
+        if (output.length >= MAX_GLOB_RESULTS) {
+          continue;
+        }
+
+        if (totalChars + entry.length > MAX_GLOB_OUTPUT_CHARS && output.length > 0) {
+          continue;
+        }
+
+        output.push(entry);
+        totalChars += entry.length;
       }
+
+      const truncated = output.length < totalMatches;
 
       return {
         toolName: 'glob',
-        status: matches.length > 0 ? 'succeeded' : 'empty',
-        summary: matches.length > 0 ? `Matched ${matches.length} path(s)` : 'No paths matched',
-        output: matches,
+        status: totalMatches > 0 ? 'succeeded' : 'empty',
+        summary: totalMatches > 0
+          ? truncated
+            ? `Matched ${output.length} of ${totalMatches} path(s)`
+            : `Matched ${totalMatches} path(s)`
+          : 'No paths matched',
+        output,
       };
     } catch (error) {
       return {

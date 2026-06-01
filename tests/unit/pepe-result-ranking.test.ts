@@ -94,21 +94,47 @@ describe('pepe result ranking', () => {
     expect(ranked[0]?.memoryId).toBe('memory-recent');
     expect(ranked.some((item) => item.memoryId === 'memory-stale')).toBe(false);
   });
+
+  it('gives task step summaries a lightweight ranking edge over similarly relevant turn memories', async () => {
+    const memories = [
+      createMemoryRecord('memory-turn', '常规对话记忆'),
+      createMemoryRecord('memory-step', 'Step 1 Summary', ['task-step-summary', 'auto-captured']),
+    ];
+
+    const ranked = await rankMemoryCandidatesWithVectors({
+      memories,
+      pendingUserInput: '继续定位这次失败的直接原因',
+      resultTopK: 1,
+      similarityThreshold: 0.8,
+      vectors: [
+        [1, 0],
+        [0.82, 0.57],
+        [0.8, 0.6],
+      ],
+      vectorVersion: 'test-vectors',
+    });
+
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]?.memoryId).toBe('memory-step');
+  });
 });
 
-function createMemoryRecord(id: string, title: string): MemoryRecord {
+function createMemoryRecord(id: string, title: string, tags: string[] = ['conversation-turn']): MemoryRecord {
   const timestamp = '2026-04-30T00:00:00.000Z';
   return {
     id,
     type: 'short-term',
+    memoryKind: tags.includes('task-step-summary') ? 'summary' : 'turn',
     title,
     content: `${title} 内容`,
     scope: 'session',
     status: 'active',
-    tags: ['conversation-turn'],
+    tags,
     parentId: null,
     derivationType: 'manual',
     summaryDepth: 0,
+    weight: tags.includes('task-step-summary') ? 0 : 0.8,
+    lastAccessedAt: timestamp,
     sourceSessionId: 'session-1',
     createdAt: timestamp,
     updatedAt: timestamp,

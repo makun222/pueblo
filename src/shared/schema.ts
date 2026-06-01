@@ -170,7 +170,9 @@ export const sessionSchema = z.object({
   currentModelId: z.string().min(1).nullable(),
   messageHistory: z.array(sessionMessageSchema),
   selectedPromptIds: z.array(z.string()),
-  selectedMemoryIds: z.array(z.string()),
+  pinnedMemoryIds: z.array(z.string()).optional(),
+  workingMemoryIds: z.array(z.string()).optional(),
+  selectedMemoryIds: z.array(z.string()).default([]),
   providerUsageStats: providerUsageStatsSchema.default({
     promptTokens: 0,
     completionTokens: 0,
@@ -190,16 +192,51 @@ export const sessionSchema = z.object({
   completedAt: z.string().datetime().nullable(),
   failedAt: z.string().datetime().nullable(),
   archivedAt: z.string().datetime().nullable(),
+}).transform((session) => {
+  const pinnedMemoryIds = uniqueStringValues(session.pinnedMemoryIds ?? session.selectedMemoryIds);
+  const workingMemoryIds = uniqueStringValues(session.workingMemoryIds ?? []);
+  const selectedMemoryIds = uniqueStringValues([
+    ...session.selectedMemoryIds,
+    ...pinnedMemoryIds,
+    ...workingMemoryIds,
+  ]);
+
+  return {
+    ...session,
+    pinnedMemoryIds,
+    workingMemoryIds,
+    selectedMemoryIds,
+  };
+});
+
+export const agentSessionSummarySchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: sessionStatusSchema,
+  sessionKind: sessionKindSchema.default('user'),
+  agentInstanceId: z.string().min(1).nullable().optional().transform((value) => value ?? null),
+  currentModelId: z.string().min(1).nullable(),
+  messageCount: z.number().int().nonnegative(),
+  selectedMemoryCount: z.number().int().nonnegative(),
+  preview: z.string().min(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  failedAt: z.string().datetime().nullable(),
+  archivedAt: z.string().datetime().nullable(),
 });
 
 export const memoryTypeSchema = z.enum(['short-term', 'long-term']);
 export const memoryScopeSchema = z.enum(['session', 'project', 'global']);
 export const memoryStatusSchema = z.enum(['active', 'expired', 'deleted']);
 export const memoryDerivationTypeSchema = z.enum(['manual', 'summary', 'imported']);
+export const memoryKindSchema = z.enum(['generic', 'turn', 'summary', 'workflow', 'knowledge', 'workspace-setting']);
 
 export const memoryRecordSchema = z.object({
   id: z.string().min(1),
   type: memoryTypeSchema,
+  memoryKind: memoryKindSchema.default('generic'),
   title: z.string().min(1),
   content: z.string().min(1),
   scope: memoryScopeSchema,
@@ -208,6 +245,8 @@ export const memoryRecordSchema = z.object({
   parentId: z.string().min(1).nullable(),
   derivationType: memoryDerivationTypeSchema.default('manual'),
   summaryDepth: z.number().int().nonnegative().default(0),
+  weight: z.number().min(0).default(0),
+  lastAccessedAt: z.string().datetime().nullable().default(null),
   sourceSessionId: z.string().min(1).nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -310,6 +349,10 @@ export const workflowInstanceSchema = z.object({
   failedAt: z.string().datetime().nullable(),
   cancelledAt: z.string().datetime().nullable(),
 });
+
+function uniqueStringValues(values: string[]): string[] {
+  return [...new Set(values)];
+}
 
 // ── Agent Collaboration ──────────────────────────────────────────
 
@@ -590,6 +633,7 @@ export type AgentProfileTemplate = z.infer<typeof agentProfileTemplateSchema>;
 export type AgentInstanceStatus = z.infer<typeof agentInstanceStatusSchema>;
 export type AgentInstance = z.infer<typeof agentInstanceSchema>;
 export type Session = z.infer<typeof sessionSchema>;
+export type AgentSessionSummary = z.infer<typeof agentSessionSummarySchema>;
 export type MemoryType = z.infer<typeof memoryTypeSchema>;
 export type MemoryScope = z.infer<typeof memoryScopeSchema>;
 export type MemoryStatus = z.infer<typeof memoryStatusSchema>;

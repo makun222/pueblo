@@ -123,6 +123,47 @@ describe('Result Block Rendering', () => {
     ]);
   });
 
+  it('should keep model message trace on only the first emitted block', () => {
+    const result = successResult('TASK_COMPLETED', 'Agent task completed', {
+      outputSummary: JSON.stringify({
+        outputSummary: 'Short visible answer',
+        attribution: {
+          modelOutput: 'Verbose model trace',
+          promptIds: ['prompt-1'],
+        },
+        toolResults: [
+          {
+            toolName: 'grep',
+            status: 'succeeded',
+            summary: 'found files',
+          },
+        ],
+        modelMessageTrace: [
+          {
+            stepNumber: 1,
+            messages: [
+              {
+                role: 'user',
+                content: 'inspect repo',
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const blocks = createResultBlocks(result);
+
+    expect(blocks.map((block) => block.title)).toEqual([
+      'Output Summary',
+      'Model Output',
+      'TASK_COMPLETED-prompts',
+      'TASK_COMPLETED-grep',
+    ]);
+    expect(blocks[0]?.messageTrace).toHaveLength(1);
+    expect(blocks.slice(1).every((block) => block.messageTrace.length === 0)).toBe(true);
+  });
+
   it('should render workflow and export metadata for completed workflow task results', () => {
     const result = successResult('TASK_COMPLETED', 'Agent task completed', {
       outputSummary: JSON.stringify({

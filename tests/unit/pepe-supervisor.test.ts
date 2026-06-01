@@ -61,7 +61,18 @@ describe('pepe supervisor', () => {
       userInput: 'Investigate sqlite persistence',
       assistantOutput: 'SQLite is the authoritative store.',
     });
+    const legacyStepMemory = memoryService.createMemory('Legacy step summary', 'Step 1\n- tool-result / read / call-1: Read succeeded', 'session', {
+      type: 'short-term',
+      memoryKind: 'summary',
+      tags: ['task-step-summary', 'auto-captured'],
+      parentId: turnMemory.id,
+      derivationType: 'summary',
+      summaryDepth: 1,
+      sourceSessionId: session.id,
+      weight: 0.65,
+    });
     sessionService.addSelectedMemory(session.id, turnMemory.id);
+    sessionService.addWorkingMemory(session.id, legacyStepMemory.id);
 
     const supervisor = new PepeSupervisor({
       config: config.pepe,
@@ -97,14 +108,89 @@ describe('pepe supervisor', () => {
     await supervisor.flushSession(session.id);
 
     const sessionMemories = memoryService.listSessionMemories(session.id);
-    const summaryMemory = sessionMemories.find((memory) => memory.tags.includes('pepe-summary'));
+    const summaryMemory = sessionMemories.find((memory) => memory.tags.includes('pepe-summary') && memory.parentId === turnMemory.id);
+    const sessionSummaryMemory = sessionMemories.find((memory) => memory.tags.includes('pepe-session-summary'));
     expect(summaryMemory).toBeTruthy();
     expect(summaryMemory?.parentId).toBe(turnMemory.id);
-    expect(sessionService.getSession(session.id)?.selectedMemoryIds).toContain(summaryMemory?.id);
+    expect(sessionSummaryMemory).toBeTruthy();
+    expect(sessionService.getSession(session.id)?.selectedMemoryIds).toContain(sessionSummaryMemory?.id);
+    expect(sessionService.getSession(session.id)?.selectedMemoryIds).not.toContain(summaryMemory?.id);
+    expect(sessionService.getSession(session.id)?.selectedMemoryIds).not.toContain(legacyStepMemory.id);
 
     const mirrorDirectory = path.join(tempDir, 'agent-agent-1', '.memory');
     const summaryFile = fs.readdirSync(mirrorDirectory).find((fileName) => fileName.startsWith('summary-'));
     expect(summaryFile).toBeTruthy();
+
+    supervisor.stopAll();
+  });
+
+  it('does not create duplicate active summaries when the same session flushes repeatedly', async () => {
+    const config = createTestAppConfig({
+      pepe: {
+        providerId: 'openai',
+        modelId: 'gpt-4.1-mini',
+        embeddingBackend: 'local-hash',
+      },
+    });
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const sessionService = new SessionService(new InMemorySessionRepository(), memoryService);
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Semantic summary'),
+    );
+
+    const session = sessionService.createSession('Summary session', 'gpt-4.1-mini', 'agent-1');
+    const turnMemory = memoryService.createConversationTurnMemory({
+      sessionId: session.id,
+      turnNumber: 1,
+      userInput: 'Investigate sqlite persistence',
+      assistantOutput: 'SQLite is the authoritative store.',
+    });
+    sessionService.addSelectedMemory(session.id, turnMemory.id);
+
+    const supervisor = new PepeSupervisor({
+      config: config.pepe,
+      memoryService,
+      sessionService,
+      appConfig: config,
+      agentInstanceService: {
+        getAgentInstance: () => ({
+          id: 'agent-1',
+          profileId: 'code-master',
+          profileName: 'Code Master',
+          status: 'active',
+          isDefaultForProfile: true,
+          workspaceRoot: process.cwd(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          terminatedAt: null,
+        }),
+      },
+      resultService: new PepeResultService(memoryService, config.pepe),
+      workerFactory: (data) => createFakePepeWorker(
+        data,
+        new PepeSemanticClient(providerRegistry, config),
+        createStaticEmbeddingClient(),
+        config.pepe,
+      ),
+    });
+
+    supervisor.startSession(session.id);
+    supervisor.recordInput(session.id, 'Investigate sqlite persistence');
+    await Promise.all([supervisor.flushSession(session.id), supervisor.flushSession(session.id)]);
+    await supervisor.flushSession(session.id);
+
+    const sessionMemories = memoryService.listSessionMemories(session.id);
+    const summaryMemories = sessionMemories.filter((memory) => memory.tags.includes('pepe-summary') && memory.parentId === turnMemory.id);
+    const sessionSummaryMemories = sessionMemories.filter((memory) => memory.tags.includes('pepe-session-summary'));
+    expect(summaryMemories).toHaveLength(1);
+    expect(sessionSummaryMemories).toHaveLength(1);
 
     supervisor.stopAll();
   });
@@ -151,7 +237,7 @@ function createFakePepeWorker(
   data: PepeWorkerData,
   semanticClient: PepeSemanticClient,
   embeddingClient: Pick<PepeLocalEmbeddingClient, 'embedTexts'>,
-  config: Pick<PepeConfig, 'resultTopK' | 'similarityThreshold'>,
+  config: Pick<PepeConfig, 'resultTopK' | 'similarityThreshold' | 'ranking'>,
 ) {
   let messageHandler: ((message: PepeWorkerResponse) => void) | null = null;
   let errorHandler: ((error: Error) => void) | null = null;

@@ -110,6 +110,12 @@ export type ProviderExecToolArgs = z.infer<typeof providerExecToolArgsSchema>;
 export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
 export type ProviderEditToolArgs = z.infer<typeof providerEditToolArgsSchema>;
 export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs;
+export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
+  TToolName extends 'glob' ? ProviderGlobToolArgs :
+    TToolName extends 'grep' ? ProviderGrepToolArgs :
+      TToolName extends 'exec' ? ProviderExecToolArgs :
+        TToolName extends 'read' ? ProviderReadToolArgs :
+          ProviderEditToolArgs;
 export type ProviderToolCall =
   | {
       readonly toolCallId: string;
@@ -268,11 +274,24 @@ export interface ProviderUsage {
   readonly completionTokensDetails?: ProviderCompletionUsageDetails;
 }
 
+export interface ProviderRequestMetrics {
+  readonly submittedTokens: number;
+  readonly bodyBytes: number;
+  readonly originalBodyBytes: number;
+  readonly messageCount: number;
+  readonly toolCount: number;
+  readonly roleCounts: Record<ProviderMessage['role'], number>;
+  readonly compacted: boolean;
+  readonly compactedToolMessages: number;
+  readonly compactionStage: string;
+}
+
 export type ProviderStepResult =
   | {
       readonly type: 'final';
       readonly outputSummary: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -282,6 +301,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -291,6 +311,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -300,6 +321,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -309,6 +331,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -318,6 +341,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-calls';
@@ -325,6 +349,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     };
 
 export interface ProviderRunRequest {
@@ -336,6 +361,7 @@ export interface ProviderRunRequest {
 export interface ProviderRunResult {
   readonly outputSummary: string;
   readonly usage?: ProviderUsage;
+  readonly requestMetrics?: ProviderRequestMetrics;
 }
 
 export interface ProviderAdapter {
@@ -386,23 +412,21 @@ export function createLegacyStepContext(request: ProviderRunRequest): ProviderSt
   };
 }
 
-export function parseProviderToolArgs(toolName: 'glob', rawArgs: unknown): ProviderGlobToolArgs;
-export function parseProviderToolArgs(toolName: 'grep', rawArgs: unknown): ProviderGrepToolArgs;
-export function parseProviderToolArgs(toolName: 'exec', rawArgs: unknown): ProviderExecToolArgs;
-export function parseProviderToolArgs(toolName: 'read', rawArgs: unknown): ProviderReadToolArgs;
-export function parseProviderToolArgs(toolName: 'edit', rawArgs: unknown): ProviderEditToolArgs;
-export function parseProviderToolArgs(toolName: ProviderToolName, rawArgs: unknown): ProviderToolArgs {
+export function parseProviderToolArgs<TToolName extends ProviderToolName>(
+  toolName: TToolName,
+  rawArgs: unknown,
+): ProviderToolArgsByName<TToolName> {
   switch (toolName) {
     case 'glob':
-      return providerGlobToolArgsSchema.parse(rawArgs);
+      return providerGlobToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'grep':
-      return providerGrepToolArgsSchema.parse(rawArgs);
+      return providerGrepToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'exec':
-      return providerExecToolArgsSchema.parse(rawArgs);
+      return providerExecToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'read':
-      return providerReadToolArgsSchema.parse(rawArgs);
+      return providerReadToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'edit':
-      return providerEditToolArgsSchema.parse(rawArgs);
+      return providerEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
   }
 }
 

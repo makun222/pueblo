@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { PepeWorkerRequest, PepeWorkerResponse } from '../../src/agent/pepe-worker-protocol';
 import { createCliDependencies } from '../../src/cli/index';
+import { MemoryRepository } from '../../src/memory/memory-repository';
 import { SessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
 import { createSqliteDatabase } from '../../src/persistence/sqlite';
@@ -62,13 +64,289 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     const created = service.createSession('Selection session');
     service.addSelectedPrompt(created.id, 'prompt-1');
     service.addSelectedPrompt(created.id, 'prompt-2');
-    service.addSelectedMemory(created.id, 'memory-1');
+    service.addPinnedMemory(created.id, 'memory-1');
+    service.addWorkingMemory(created.id, 'memory-2');
 
     const restoredService = new SessionService(new SessionRepository({ connection: database.connection }));
     const restored = restoredService.getSession(created.id);
 
     expect(restored?.selectedPromptIds).toEqual(['prompt-1', 'prompt-2']);
-    expect(restored?.selectedMemoryIds).toEqual(['memory-1']);
+    expect(restored?.pinnedMemoryIds).toEqual(['memory-1']);
+    expect(restored?.workingMemoryIds).toEqual(['memory-2']);
+    expect(restored?.selectedMemoryIds).toEqual(['memory-1', 'memory-2']);
+
+    database.close();
+  });
+
+  it('redistributes legacy selected memories, retires step summaries, and normalizes misclassified turn memories', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-selection-migration-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+
+    database.connection.exec(`
+      CREATE TABLE schema_migrations (
+        id TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        session_kind TEXT NOT NULL DEFAULT 'user',
+        agent_instance_id TEXT,
+        current_model_id TEXT,
+        message_history_json TEXT NOT NULL,
+        selected_prompt_ids_json TEXT NOT NULL,
+        selected_memory_ids_json TEXT NOT NULL,
+        pinned_memory_ids_json TEXT NOT NULL DEFAULT '[]',
+        working_memory_ids_json TEXT NOT NULL DEFAULT '[]',
+        provider_usage_stats_json TEXT NOT NULL DEFAULT '{}',
+        origin_session_id TEXT,
+        trigger_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        failed_at TEXT,
+        archived_at TEXT
+      );
+      CREATE TABLE memory_records (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        memory_kind TEXT NOT NULL DEFAULT 'generic',
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        status TEXT NOT NULL,
+        tags_json TEXT NOT NULL,
+        parent_id TEXT,
+        derivation_type TEXT NOT NULL DEFAULT 'manual',
+        summary_depth INTEGER NOT NULL DEFAULT 0,
+        weight REAL NOT NULL DEFAULT 0,
+        last_accessed_at TEXT,
+        source_session_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const insertMigration = database.connection.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)');
+    const appliedAt = new Date().toISOString();
+    for (const id of [
+      '001_initial_foundation',
+      '002_provider_desktop_updates',
+      '003_context_memory_metadata',
+      '004_agent_instances',
+      '005_session_context_backfill',
+      '006_agent_instance_defaults',
+      '007_workflow_instances',
+      '008_session_provider_usage_stats',
+      '009_memory_weight_policy',
+      '010_session_memory_selection_layers',
+    ]) {
+      insertMigration.run(id, appliedAt);
+    }
+
+    const now = '2026-05-31T00:00:00.000Z';
+    database.connection.prepare(`
+      INSERT INTO sessions (
+        id, title, status, session_kind, agent_instance_id, current_model_id, message_history_json,
+        selected_prompt_ids_json, selected_memory_ids_json, pinned_memory_ids_json, working_memory_ids_json,
+        provider_usage_stats_json, origin_session_id, trigger_reason, created_at, updated_at,
+        started_at, completed_at, failed_at, archived_at
+      ) VALUES (
+        @id, @title, @status, @session_kind, @agent_instance_id, @current_model_id, @message_history_json,
+        @selected_prompt_ids_json, @selected_memory_ids_json, @pinned_memory_ids_json, @working_memory_ids_json,
+        @provider_usage_stats_json, @origin_session_id, @trigger_reason, @created_at, @updated_at,
+        @started_at, @completed_at, @failed_at, @archived_at
+      )
+    `).run({
+      id: 'session-1',
+      title: 'Legacy session',
+      status: 'active',
+      session_kind: 'user',
+      agent_instance_id: null,
+      current_model_id: 'gpt-4.1-mini',
+      message_history_json: '[]',
+      selected_prompt_ids_json: '[]',
+      selected_memory_ids_json: JSON.stringify([
+        'memory-imported',
+        'memory-turn',
+        'memory-summary-older',
+        'memory-workflow',
+        'memory-step',
+        'memory-summary-latest',
+      ]),
+      pinned_memory_ids_json: JSON.stringify([
+        'memory-imported',
+        'memory-turn',
+        'memory-summary-older',
+        'memory-workflow',
+        'memory-step',
+        'memory-summary-latest',
+      ]),
+      working_memory_ids_json: '[]',
+      provider_usage_stats_json: '{}',
+      origin_session_id: null,
+      trigger_reason: null,
+      created_at: now,
+      updated_at: now,
+      started_at: now,
+      completed_at: null,
+      failed_at: null,
+      archived_at: null,
+    });
+
+    const insertMemory = database.connection.prepare(`
+      INSERT INTO memory_records (
+        id, type, memory_kind, title, content, scope, status, tags_json, parent_id,
+        derivation_type, summary_depth, weight, last_accessed_at, source_session_id, created_at, updated_at
+      ) VALUES (
+        @id, @type, @memory_kind, @title, @content, @scope, @status, @tags_json, @parent_id,
+        @derivation_type, @summary_depth, @weight, @last_accessed_at, @source_session_id, @created_at, @updated_at
+      )
+    `);
+    for (const row of [
+      {
+        id: 'memory-imported',
+        type: 'short-term',
+        memory_kind: 'turn',
+        title: 'Imported memory',
+        content: 'Imported from another session.',
+        scope: 'session',
+        status: 'active',
+        tags_json: JSON.stringify(['conversation-turn', 'auto-captured']),
+        parent_id: null,
+        derivation_type: 'manual',
+        summary_depth: 0,
+        weight: 0.8,
+        last_accessed_at: now,
+        source_session_id: 'session-source',
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'memory-turn',
+        type: 'short-term',
+        memory_kind: 'turn',
+        title: 'Turn 1',
+        content: 'User: inspect\n\nAssistant: done',
+        scope: 'session',
+        status: 'active',
+        tags_json: JSON.stringify(['conversation-turn', 'auto-captured']),
+        parent_id: null,
+        derivation_type: 'summary',
+        summary_depth: 1,
+        weight: 0.8,
+        last_accessed_at: now,
+        source_session_id: 'session-1',
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'memory-workflow',
+        type: 'short-term',
+        memory_kind: 'workflow',
+        title: 'Workflow todo',
+        content: 'workflowId: wf-1',
+        scope: 'session',
+        status: 'active',
+        tags_json: JSON.stringify(['workflow', 'todo']),
+        parent_id: null,
+        derivation_type: 'manual',
+        summary_depth: 0,
+        weight: 1,
+        last_accessed_at: now,
+        source_session_id: 'session-1',
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'memory-step',
+        type: 'short-term',
+        memory_kind: 'summary',
+        title: 'Step 1 Summary: Turn 1',
+        content: 'Step 1\n- tool-result: ok',
+        scope: 'session',
+        status: 'active',
+        tags_json: JSON.stringify(['task-step-summary', 'auto-captured']),
+        parent_id: 'memory-turn',
+        derivation_type: 'summary',
+        summary_depth: 1,
+        weight: 0,
+        last_accessed_at: now,
+        source_session_id: 'session-1',
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: 'memory-summary-older',
+        type: 'short-term',
+        memory_kind: 'summary',
+        title: 'Summary: Turn 1',
+        content: 'Older summary',
+        scope: 'session',
+        status: 'active',
+        tags_json: JSON.stringify(['pepe-summary', 'semantic-summary']),
+        parent_id: 'memory-turn',
+        derivation_type: 'summary',
+        summary_depth: 1,
+        weight: 0.65,
+        last_accessed_at: '2026-05-30T00:00:00.000Z',
+        source_session_id: 'session-1',
+        created_at: '2026-05-30T00:00:00.000Z',
+        updated_at: '2026-05-30T00:00:00.000Z',
+      },
+      {
+        id: 'memory-summary-latest',
+        type: 'short-term',
+        memory_kind: 'summary',
+        title: 'Summary: Turn 1',
+        content: 'Latest summary',
+        scope: 'session',
+        status: 'active',
+        tags_json: JSON.stringify(['pepe-summary', 'semantic-summary']),
+        parent_id: 'memory-turn',
+        derivation_type: 'summary',
+        summary_depth: 1,
+        weight: 0.65,
+        last_accessed_at: now,
+        source_session_id: 'session-1',
+        created_at: now,
+        updated_at: now,
+      },
+    ]) {
+      insertMemory.run(row);
+    }
+
+    runMigrations(database.connection);
+
+    const sessionRepository = new SessionRepository({ connection: database.connection });
+    const memoryRepository = new MemoryRepository({ connection: database.connection });
+    const migratedSession = sessionRepository.getById('session-1');
+    const migratedTurn = memoryRepository.getById('memory-turn');
+    const migratedStep = memoryRepository.getById('memory-step');
+    const olderSummary = memoryRepository.getById('memory-summary-older');
+    const latestSummary = memoryRepository.getById('memory-summary-latest');
+
+    expect(migratedSession?.pinnedMemoryIds).toEqual(['memory-imported']);
+    expect(migratedSession?.workingMemoryIds).toEqual([
+      'memory-turn',
+      'memory-workflow',
+      'memory-summary-latest',
+    ]);
+    expect(migratedSession?.selectedMemoryIds).toEqual([
+      'memory-imported',
+      'memory-turn',
+      'memory-workflow',
+      'memory-summary-latest',
+    ]);
+    expect(migratedTurn?.derivationType).toBe('manual');
+    expect(migratedTurn?.summaryDepth).toBe(0);
+    expect(migratedStep?.status).toBe('expired');
+    expect(olderSummary?.status).toBe('expired');
+    expect(latestSummary?.status).toBe('active');
 
     database.close();
   });
@@ -99,6 +377,37 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       role: 'assistant',
       content: 'Workflow inspection complete',
       taskId: 'task-1',
+    });
+
+    database.close();
+  });
+
+  it('lists session summaries from sqlite without hydrating full message history', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-summaries-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const repository = new SessionRepository({ connection: database.connection });
+    const service = new SessionService(repository);
+
+    const created = service.createSession('Summary session', null, 'agent-1');
+    service.addUserMessage(created.id, 'Inspect the workflow');
+    service.addAssistantMessage(created.id, 'Workflow inspection complete');
+    service.addPinnedMemory(created.id, 'memory-1');
+    service.addWorkingMemory(created.id, 'memory-2');
+
+    const restoredService = new SessionService(new SessionRepository({ connection: database.connection }));
+    const summaries = restoredService.listSessionSummaries();
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      id: created.id,
+      agentInstanceId: 'agent-1',
+      messageCount: 2,
+      selectedMemoryCount: 2,
+      preview: 'Pueblo: Workflow inspection complete',
     });
 
     database.close();
@@ -252,4 +561,87 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       cli.databaseClose();
     }
   });
+
+  it('stops the previous Pepe monitor when the active session changes', async () => {
+    vi.useFakeTimers();
+
+    const processCounts = new Map<string, number>();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-pepe-session-switch-'));
+    tempDirs.push(tempDir);
+    const cli = createCliDependencies(createTestAppConfig({
+      databasePath: path.join(tempDir, 'pueblo.db'),
+      defaultProviderId: 'openai',
+      defaultSessionId: null,
+      pepe: {
+        enabled: true,
+        embeddingBackend: 'local-hash',
+        flushIntervalMs: 2_000,
+      },
+      providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
+    }), {
+      deferAgentSelection: true,
+      pepeWorkerFactory: () => createCountingPepeWorker(processCounts),
+    });
+
+    try {
+      const firstRuntime = cli.startAgentSession('code-master');
+      const firstSessionId = firstRuntime.activeSessionId;
+
+      expect(firstSessionId).toBeTruthy();
+      expect(processCounts.get(firstSessionId!)).toBe(1);
+
+      const newSessionResult = await cli.dispatcher.dispatch({ input: '/new isolate next task' });
+      expect(newSessionResult.ok).toBe(true);
+
+      const secondSessionId = cli.getRuntimeStatus().activeSessionId;
+      expect(secondSessionId).toBeTruthy();
+      expect(secondSessionId).not.toBe(firstSessionId);
+
+      const firstCountAfterSwitch = processCounts.get(firstSessionId!) ?? 0;
+      const secondCountAfterSwitch = processCounts.get(secondSessionId!) ?? 0;
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(processCounts.get(firstSessionId!) ?? 0).toBe(firstCountAfterSwitch);
+      expect(processCounts.get(secondSessionId!) ?? 0).toBeGreaterThan(secondCountAfterSwitch);
+    } finally {
+      cli.databaseClose();
+      vi.useRealTimers();
+    }
+  });
 });
+
+function createCountingPepeWorker(processCounts: Map<string, number>) {
+  let messageHandler: ((message: PepeWorkerResponse) => void) | null = null;
+
+  return {
+    postMessage(message: PepeWorkerRequest) {
+      if (message.type === 'shutdown') {
+        return;
+      }
+
+      processCounts.set(message.snapshot.sessionId, (processCounts.get(message.snapshot.sessionId) ?? 0) + 1);
+      messageHandler?.({
+        type: 'process-result',
+        requestId: message.requestId,
+        result: {
+          sessionId: message.snapshot.sessionId,
+          summaries: [],
+          resultCandidates: [],
+          lastSummaryAt: null,
+          lastSummaryMemoryId: null,
+        },
+      });
+    },
+    on(event: 'message' | 'error', listener: ((message: PepeWorkerResponse) => void) | ((error: Error) => void)) {
+      if (event === 'message') {
+        messageHandler = listener as (message: PepeWorkerResponse) => void;
+      }
+
+      return this;
+    },
+    async terminate() {
+      return 0;
+    },
+  };
+}

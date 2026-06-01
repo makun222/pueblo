@@ -1,6 +1,8 @@
 import type { CommandResult } from '../../shared/result';
+import type { ProviderRequestMetrics } from '../../providers/provider-adapter';
 import type {
   AgentProfileTemplate,
+  AgentSessionSummary,
   BackgroundSummaryStatus,
   ContextCount,
   DesktopWindowSession,
@@ -9,6 +11,7 @@ import type {
   MemoryRecord,
   ProviderUsageStats,
   ProviderProfile,
+  RendererFileChange,
   RendererOutputBlock,
   Session,
   WorkflowInstance,
@@ -24,9 +27,11 @@ export interface DesktopToolApprovalRequest {
   readonly id: string;
   readonly toolCallId: string;
   readonly toolName: string;
+  readonly kind: 'command' | 'file-edit' | 'other';
   readonly title: string;
   readonly summary: string;
   readonly detail: string;
+  readonly primaryText: string;
   readonly targetLabel: string;
   readonly operationLabel: string;
 }
@@ -40,12 +45,28 @@ export interface DesktopToolApprovalBatch {
 
 export interface DesktopToolApprovalState {
   readonly activeBatch: DesktopToolApprovalBatch | null;
+  readonly activeFileReview: DesktopFileReviewRequest | null;
 }
 
 export interface DesktopToolApprovalResponse {
   readonly batchId: string;
   readonly decision: 'allow' | 'deny';
   readonly selectedRequestIds: string[];
+}
+
+export interface DesktopFileReviewRequest {
+  readonly id: string;
+  readonly toolCallId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly detail: string;
+  readonly fileChange: RendererFileChange;
+  readonly shadowPath: string;
+}
+
+export interface DesktopFileReviewResponse {
+  readonly reviewId: string;
+  readonly decision: 'keep' | 'discard';
 }
 
 export type DesktopMenuAction = 'open-provider-config' | 'open-agent-picker';
@@ -127,9 +148,12 @@ export interface DesktopRuntimeStatus {
   readonly workspace?: string | null;
   readonly activeSessionId: string | null;
   readonly contextCount: ContextCount;
+  readonly selectedStepSummaryCount?: number;
+  readonly compactContextMode?: boolean;
   readonly modelMessageCount: number;
   readonly modelMessageCharCount: number;
   readonly providerUsageStats?: ProviderUsageStats;
+  readonly providerRequestMetrics?: ProviderRequestMetrics | null;
   readonly selectedPromptCount: number;
   readonly selectedMemoryCount: number;
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
@@ -150,11 +174,13 @@ export interface DesktopBridge {
   getToolApprovalState(): Promise<DesktopToolApprovalState>;
   getTalkState(): Promise<DesktopTalkState>;
   respondToolApproval(response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState>;
+  respondFileReview(response: DesktopFileReviewResponse): Promise<DesktopToolApprovalState>;
   respondTalkRequest(response: DesktopTalkRequestResponse): Promise<DesktopTalkState>;
   respondTalkContinuation(response: DesktopTalkContinuationResponse): Promise<DesktopTalkState>;
   listAgentProfiles(): Promise<AgentProfileTemplate[]>;
   startAgentSession(profileId: string): Promise<DesktopRuntimeStatus>;
-  listAgentSessions(agentInstanceId: string): Promise<Session[]>;
+  listAgentSessions(agentInstanceId: string): Promise<AgentSessionSummary[]>;
+  getSession(sessionId: string): Promise<Session | null>;
   listSessionMemories(sessionId: string): Promise<MemoryRecord[]>;
   selectSession(sessionId: string): Promise<DesktopSessionSelectionResponse>;
   onMenuAction(listener: (action: DesktopMenuAction) => void): () => void;

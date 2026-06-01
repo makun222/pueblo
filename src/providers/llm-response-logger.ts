@@ -12,6 +12,10 @@ export interface LlmResponseLogEntry {
   readonly message: string;
   readonly requestUrl?: string;
   readonly modelId?: string;
+  readonly requestBody?: string;
+  readonly requestPayload?: unknown;
+  readonly promptMessages?: unknown;
+  readonly requestMetrics?: unknown;
   readonly status?: number;
   readonly statusText?: string;
   readonly responseText?: string;
@@ -40,6 +44,9 @@ export function createLlmResponseLogger(options: LlmResponseLoggerOptions = {}):
         fs.writeFileSync(filePath, JSON.stringify({
           timestamp: isoTimestamp,
           ...entry,
+          requestPayload: normalizeUnknown(entry.requestPayload),
+          promptMessages: normalizeUnknown(entry.promptMessages),
+          requestMetrics: normalizeUnknown(entry.requestMetrics),
           payload: normalizeUnknown(entry.payload),
           details: normalizeUnknown(entry.details),
         }, null, 2), 'utf8');

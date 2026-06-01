@@ -54,4 +54,24 @@ describe('grep tool', () => {
     expect(result.status).toBe('succeeded');
     expect(result.output).toEqual(['alpha.ts:1: task in ts']);
   });
+
+  it('truncates oversized grep result sets before returning them', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-grep-tool-truncated-'));
+    tempDirs.push(tempDir);
+
+    const repeatedLine = 'task '.repeat(80);
+    const content = Array.from({ length: 260 }, () => repeatedLine).join('\n');
+    fs.writeFileSync(path.join(tempDir, 'alpha.ts'), content, 'utf8');
+
+    const grepTool = createGrepTool();
+    const result = await grepTool({
+      cwd: tempDir,
+      pattern: 'task',
+      include: '*.ts',
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.summary).toMatch(/^Matched \d+ of 260 line\(s\)$/);
+    expect(result.output.length).toBeLessThan(260);
+  });
 });
