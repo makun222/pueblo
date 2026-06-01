@@ -7,6 +7,7 @@ import {
   type ProviderMessage,
   type ProviderRunRequest,
   type ProviderRunResult,
+  type ProviderRequestMetrics,
   type ProviderStepContext,
   type ProviderStepResult,
   type ProviderToolCall,
@@ -19,6 +20,8 @@ import { ProviderAuthError, ProviderError, ProviderInvalidToolArgumentsError, Pr
 import { consumeServerSentEventStream } from './server-sent-events';
 import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
 import { ZodError } from 'zod';
+
+const ESTIMATED_TOKENS_PER_CHAR = 0.25;
 
 interface DeepSeekResponsePayload {
   readonly choices?: Array<{
@@ -77,7 +80,57 @@ interface DeepSeekUsagePayload {
   };
 }
 
+interface DeepSeekRequestPayload {
+  readonly model: string;
+  readonly user_id: string;
+  readonly stream: boolean;
+  readonly stream_options?: {
+    readonly include_usage: true;
+  };
+  readonly messages: ReturnType<typeof toDeepSeekMessage>[];
+  readonly tools?: ReturnType<typeof toDeepSeekToolDefinition>[];
+  readonly tool_choice?: 'auto';
+}
+
+interface DeepSeekRequestLogContext {
+  readonly requestBody: string;
+  readonly requestPayload: DeepSeekRequestPayload;
+  readonly promptMessages: ProviderMessage[];
+  readonly requestMetrics: ProviderRequestMetrics;
+}
+
+type DeepSeekCompactionStageName = 'preview' | 'aggressive-preview' | 'summary-only';
+
+interface DeepSeekCompactionStage {
+  readonly name: DeepSeekCompactionStageName;
+  readonly defaultPreviewItems: number;
+  readonly readPreviewItems: number;
+  readonly previewItemMaxChars: number;
+}
+
 const DEEPSEEK_NETWORK_RETRY_LIMIT = 1;
+const DEEPSEEK_MAX_REQUEST_BODY_BYTES = 512_000;
+const DEEPSEEK_COMPACTION_GUIDANCE = '该工具执行结果已被压缩。如果需要完整输出，请使用更窄的参数重新运行该工具。';
+const DEEPSEEK_COMPACTION_STAGES: readonly DeepSeekCompactionStage[] = [
+  {
+    name: 'preview',
+    defaultPreviewItems: 12,
+    readPreviewItems: 24,
+    previewItemMaxChars: 400,
+  },
+  {
+    name: 'aggressive-preview',
+    defaultPreviewItems: 4,
+    readPreviewItems: 8,
+    previewItemMaxChars: 200,
+  },
+  {
+    name: 'summary-only',
+    defaultPreviewItems: 0,
+    readPreviewItems: 0,
+    previewItemMaxChars: 0,
+  },
+] as const;
 const RETRYABLE_NETWORK_ERROR_CODES = new Set([
   'ECONNRESET',
   'ECONNREFUSED',
@@ -115,6 +168,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
 
     const requestUrl = `${this.baseUrl}/chat/completions`;
     const streamingEnabled = Boolean(context.onTextDelta);
+    const requestLogContext = this.prepareRequestLogContext(context, requestUrl, streamingEnabled);
     const response = await this.fetchWithProviderError(requestUrl, {
       method: 'POST',
       headers: {
@@ -123,20 +177,12 @@ export class DeepSeekAdapter implements ProviderAdapter {
         Accept: 'application/json',
         Connection: 'close',
       },
-      body: JSON.stringify({
-        model: context.modelId,
-        user_id: String(process.pid),
-        stream: streamingEnabled,
-        stream_options: streamingEnabled ? { include_usage: true } : undefined,
-        messages: context.messages.map(toDeepSeekMessage),
-        tools: context.availableTools.length > 0 ? context.availableTools.map(toDeepSeekToolDefinition) : undefined,
-        tool_choice: context.availableTools.length > 0 ? 'auto' : undefined,
-      }),
+      body: requestLogContext.requestBody,
       signal: context.signal,
-    });
+    }, requestLogContext);
 
     if (streamingEnabled) {
-      return this.readStreamingStepResult(response, requestUrl, context);
+      return this.readStreamingStepResult(response, requestUrl, context, requestLogContext);
     }
 
     const responseText = await response.text();
@@ -148,6 +194,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
         message: `DeepSeek request failed (${response.status})`,
         requestUrl,
         modelId: context.modelId,
+        requestBody: requestLogContext.requestBody,
+        requestPayload: requestLogContext.requestPayload,
+        promptMessages: requestLogContext.promptMessages,
+        requestMetrics: requestLogContext.requestMetrics,
         status: response.status,
         statusText: response.statusText,
         responseText,
@@ -159,10 +209,11 @@ export class DeepSeekAdapter implements ProviderAdapter {
       logger: this.responseLogger,
       requestUrl,
       modelId: context.modelId,
+      requestLogContext,
     });
 
     try {
-      return extractDeepSeekStepResult(payload);
+      return extractDeepSeekStepResult(payload, requestLogContext.requestMetrics);
     } catch (error) {
       this.responseLogger.log({
         providerId: 'deepseek',
@@ -170,6 +221,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
         message: error instanceof Error ? error.message : 'DeepSeek response payload was invalid',
         requestUrl,
         modelId: context.modelId,
+        requestBody: requestLogContext.requestBody,
+        requestPayload: requestLogContext.requestPayload,
+        promptMessages: requestLogContext.promptMessages,
+        requestMetrics: requestLogContext.requestMetrics,
         payload,
         details: error,
       });
@@ -181,6 +236,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
     response: Response,
     requestUrl: string,
     context: ProviderStepContext,
+    requestLogContext: DeepSeekRequestLogContext,
   ): Promise<ProviderStepResult> {
     if (!response.ok) {
       const errorText = await response.text();
@@ -190,6 +246,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
         message: `DeepSeek request failed (${response.status})`,
         requestUrl,
         modelId: context.modelId,
+        requestBody: requestLogContext.requestBody,
+        requestPayload: requestLogContext.requestPayload,
+        promptMessages: requestLogContext.promptMessages,
+        requestMetrics: requestLogContext.requestMetrics,
         status: response.status,
         statusText: response.statusText,
         responseText: errorText,
@@ -205,7 +265,13 @@ export class DeepSeekAdapter implements ProviderAdapter {
           return;
         }
 
-        const payload = parseDeepSeekStreamingPayload(eventData, this.responseLogger, requestUrl, context.modelId);
+        const payload = parseDeepSeekStreamingPayload(
+          eventData,
+          this.responseLogger,
+          requestUrl,
+          context.modelId,
+          requestLogContext,
+        );
         applyDeepSeekStreamingChunk(aggregate, payload, context.onTextDelta);
       });
     } catch (error) {
@@ -219,12 +285,16 @@ export class DeepSeekAdapter implements ProviderAdapter {
         message: error instanceof Error ? error.message : 'DeepSeek stream read failed',
         requestUrl,
         modelId: context.modelId,
+        requestBody: requestLogContext.requestBody,
+        requestPayload: requestLogContext.requestPayload,
+        promptMessages: requestLogContext.promptMessages,
+        requestMetrics: requestLogContext.requestMetrics,
         details: error,
       });
       throw error;
     }
 
-    return extractDeepSeekStepResult(buildDeepSeekResponsePayloadFromStream(aggregate));
+    return extractDeepSeekStepResult(buildDeepSeekResponsePayloadFromStream(aggregate), requestLogContext.requestMetrics);
   }
 
   async runTask(request: ProviderRunRequest): Promise<ProviderRunResult> {
@@ -244,10 +314,108 @@ export class DeepSeekAdapter implements ProviderAdapter {
     return {
       outputSummary: result.outputSummary,
       usage: result.usage,
+      requestMetrics: result.requestMetrics,
     };
   }
 
-  private async fetchWithProviderError(input: string, init: RequestInit): Promise<Response> {
+  private prepareRequestLogContext(
+    context: ProviderStepContext,
+    requestUrl: string,
+    streamingEnabled: boolean,
+  ): DeepSeekRequestLogContext {
+    const originalPromptMessages = clonePromptMessages(context.messages);
+    const originalRequestPayload = buildDeepSeekRequestPayload(context, streamingEnabled, originalPromptMessages);
+    const originalRequestBody = JSON.stringify(originalRequestPayload);
+    const originalBodyBytes = Buffer.byteLength(originalRequestBody, 'utf8');
+
+    if (originalBodyBytes <= DEEPSEEK_MAX_REQUEST_BODY_BYTES) {
+      return createDeepSeekRequestLogContext({
+        promptMessages: originalPromptMessages,
+        requestPayload: originalRequestPayload,
+        requestBody: originalRequestBody,
+        availableToolCount: context.availableTools.length,
+        originalBodyBytes,
+        compactedToolMessages: 0,
+        compactionStage: 'none',
+      });
+    }
+
+    let bestAttempt = createDeepSeekRequestLogContext({
+      promptMessages: originalPromptMessages,
+      requestPayload: originalRequestPayload,
+      requestBody: originalRequestBody,
+      availableToolCount: context.availableTools.length,
+      originalBodyBytes,
+      compactedToolMessages: 0,
+      compactionStage: 'none',
+    });
+
+    for (const stage of DEEPSEEK_COMPACTION_STAGES) {
+      const compacted = compactDeepSeekPromptMessages(originalPromptMessages, stage);
+      if (compacted.compactedToolMessages === 0) {
+        continue;
+      }
+
+      const requestPayload = buildDeepSeekRequestPayload(context, streamingEnabled, compacted.messages);
+      const requestBody = JSON.stringify(requestPayload);
+      const requestLogContext = createDeepSeekRequestLogContext({
+        promptMessages: compacted.messages,
+        requestPayload,
+        requestBody,
+        availableToolCount: context.availableTools.length,
+        originalBodyBytes,
+        compactedToolMessages: compacted.compactedToolMessages,
+        compactionStage: stage.name,
+      });
+
+      if (requestLogContext.requestMetrics.bodyBytes <= bestAttempt.requestMetrics.bodyBytes) {
+        bestAttempt = requestLogContext;
+      }
+
+      if (requestLogContext.requestMetrics.bodyBytes <= DEEPSEEK_MAX_REQUEST_BODY_BYTES) {
+        this.responseLogger.log({
+          providerId: 'deepseek',
+          category: 'request-compacted',
+          message: `DeepSeek request body exceeded the local limit and was compacted (${originalBodyBytes} bytes -> ${requestLogContext.requestMetrics.bodyBytes} bytes)`,
+          requestUrl,
+          modelId: context.modelId,
+          requestBody: requestLogContext.requestBody,
+          requestPayload: requestLogContext.requestPayload,
+          promptMessages: requestLogContext.promptMessages,
+          requestMetrics: requestLogContext.requestMetrics,
+          details: {
+            limitBytes: DEEPSEEK_MAX_REQUEST_BODY_BYTES,
+            originalBodyBytes,
+            savedBytes: Math.max(0, originalBodyBytes - requestLogContext.requestMetrics.bodyBytes),
+          },
+        });
+        return requestLogContext;
+      }
+    }
+
+    this.responseLogger.log({
+      providerId: 'deepseek',
+      category: 'request-too-large',
+      message: `DeepSeek request body remained too large after local compaction (${bestAttempt.requestMetrics.bodyBytes} bytes)`,
+      requestUrl,
+      modelId: context.modelId,
+      requestBody: bestAttempt.requestBody,
+      requestPayload: bestAttempt.requestPayload,
+      promptMessages: bestAttempt.promptMessages,
+      requestMetrics: bestAttempt.requestMetrics,
+    });
+
+    throw new ProviderError(
+      `DeepSeek request body remained too large after local compaction (${bestAttempt.requestMetrics.bodyBytes} bytes > ${DEEPSEEK_MAX_REQUEST_BODY_BYTES} bytes). Narrow the task scope or reduce attached context.`,
+      { requestMetrics: bestAttempt.requestMetrics },
+    );
+  }
+
+  private async fetchWithProviderError(
+    input: string,
+    init: RequestInit,
+    requestLogContext: DeepSeekRequestLogContext,
+  ): Promise<Response> {
     for (let attempt = 0; attempt <= DEEPSEEK_NETWORK_RETRY_LIMIT; attempt += 1) {
       try {
         return await this.fetchImpl(input, init);
@@ -263,6 +431,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
             category: 'network-error-retry',
             message: 'DeepSeek network request failed; retrying once',
             requestUrl: input,
+            requestBody: requestLogContext.requestBody,
+            requestPayload: requestLogContext.requestPayload,
+            promptMessages: requestLogContext.promptMessages,
+            requestMetrics: requestLogContext.requestMetrics,
             details: {
               attempt: attempt + 1,
               error,
@@ -276,6 +448,10 @@ export class DeepSeekAdapter implements ProviderAdapter {
           category: 'network-error',
           message: 'DeepSeek network request failed',
           requestUrl: input,
+          requestBody: requestLogContext.requestBody,
+          requestPayload: requestLogContext.requestPayload,
+          promptMessages: requestLogContext.promptMessages,
+          requestMetrics: requestLogContext.requestMetrics,
           details: {
             attempt: attempt + 1,
             error,
@@ -318,6 +494,7 @@ function parseDeepSeekResponsePayload(
     readonly logger: LlmResponseLogger;
     readonly requestUrl: string;
     readonly modelId: string;
+    readonly requestLogContext: DeepSeekRequestLogContext;
   },
 ): DeepSeekResponsePayload {
   try {
@@ -329,6 +506,10 @@ function parseDeepSeekResponsePayload(
       message: 'DeepSeek returned invalid JSON',
       requestUrl: options.requestUrl,
       modelId: options.modelId,
+      requestBody: options.requestLogContext.requestBody,
+      requestPayload: options.requestLogContext.requestPayload,
+      promptMessages: options.requestLogContext.promptMessages,
+      requestMetrics: options.requestLogContext.requestMetrics,
       responseText,
       details: error,
     });
@@ -339,6 +520,174 @@ function parseDeepSeekResponsePayload(
 function normalizeDeepSeekBaseUrl(value: string | undefined): string {
   const trimmed = value?.trim();
   return trimmed ? trimmed.replace(/\/+$/, '') : 'https://api.deepseek.com';
+}
+
+function buildDeepSeekRequestPayload(
+  context: ProviderStepContext,
+  streamingEnabled: boolean,
+  promptMessages: ProviderMessage[] = context.messages,
+): DeepSeekRequestPayload {
+  return {
+    model: context.modelId,
+    user_id: String(process.pid),
+    stream: streamingEnabled,
+    stream_options: streamingEnabled ? { include_usage: true } : undefined,
+    messages: promptMessages.map(toDeepSeekMessage),
+    tools: context.availableTools.length > 0 ? context.availableTools.map(toDeepSeekToolDefinition) : undefined,
+    tool_choice: context.availableTools.length > 0 ? 'auto' : undefined,
+  };
+}
+
+function createDeepSeekRequestLogContext(input: {
+  readonly promptMessages: ProviderMessage[];
+  readonly requestPayload: DeepSeekRequestPayload;
+  readonly requestBody: string;
+  readonly availableToolCount: number;
+  readonly originalBodyBytes: number;
+  readonly compactedToolMessages: number;
+  readonly compactionStage: DeepSeekCompactionStageName | 'none';
+}): DeepSeekRequestLogContext {
+  return {
+    requestBody: input.requestBody,
+    requestPayload: input.requestPayload,
+    promptMessages: input.promptMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      toolCallId: message.toolCallId,
+      toolName: message.toolName,
+      toolArgs: message.toolArgs,
+      toolCalls: message.toolCalls,
+      reasoningContent: message.reasoningContent,
+    })),
+    requestMetrics: {
+      submittedTokens: estimateDeepSeekSubmittedTokens(input.promptMessages, input.requestPayload.tools),
+      bodyBytes: Buffer.byteLength(input.requestBody, 'utf8'),
+      originalBodyBytes: input.originalBodyBytes,
+      messageCount: input.promptMessages.length,
+      toolCount: input.availableToolCount,
+      roleCounts: countPromptRoles(input.promptMessages),
+      compacted: input.compactedToolMessages > 0,
+      compactedToolMessages: input.compactedToolMessages,
+      compactionStage: input.compactionStage,
+    },
+  };
+}
+
+function clonePromptMessages(messages: ProviderMessage[]): ProviderMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    toolCallId: message.toolCallId,
+    toolName: message.toolName,
+    toolArgs: message.toolArgs,
+    toolCalls: message.toolCalls ? [...message.toolCalls] : undefined,
+    reasoningContent: message.reasoningContent,
+  }));
+}
+
+function compactDeepSeekPromptMessages(
+  messages: ProviderMessage[],
+  stage: DeepSeekCompactionStage,
+): { readonly messages: ProviderMessage[]; readonly compactedToolMessages: number } {
+  let compactedToolMessages = 0;
+
+  return {
+    messages: messages.map((message) => {
+      if (message.role !== 'tool') {
+        return clonePromptMessages([message])[0] as ProviderMessage;
+      }
+
+      const compactedContent = compactDeepSeekToolMessageContent(message, stage);
+      if (compactedContent === message.content) {
+        return clonePromptMessages([message])[0] as ProviderMessage;
+      }
+
+      compactedToolMessages += 1;
+      return {
+        ...message,
+        content: compactedContent,
+      };
+    }),
+    compactedToolMessages,
+  };
+}
+
+function compactDeepSeekToolMessageContent(message: ProviderMessage, stage: DeepSeekCompactionStage): string {
+  const parsed = parseDeepSeekSerializedToolMessage(message.content);
+  if (!parsed) {
+    return message.content;
+  }
+
+  const previewLimit = message.toolName === 'read' ? stage.readPreviewItems : stage.defaultPreviewItems;
+  const preview = previewLimit > 0
+    ? parsed.output.slice(0, previewLimit).map((entry) => truncateDeepSeekPreviewText(entry, stage.previewItemMaxChars))
+    : [];
+
+  return JSON.stringify({
+    status: parsed.status,
+    summary: truncateDeepSeekToolSummary(parsed.summary),
+    outputPreview: previewLimit > 0 ? preview : undefined,
+    outputCount: parsed.output.length,
+    outputTruncated: preview.length < parsed.output.length,
+    compression: 'deepseek-request-compacted',
+    compactionStage: stage.name,
+    guidance: DEEPSEEK_COMPACTION_GUIDANCE,
+  });
+}
+
+function parseDeepSeekSerializedToolMessage(content: string): { status: string; summary: string; output: string[] } | null {
+  try {
+    const parsed = JSON.parse(content) as {
+      status?: unknown;
+      summary?: unknown;
+      output?: unknown;
+    };
+
+    if (typeof parsed.status !== 'string' || typeof parsed.summary !== 'string' || !Array.isArray(parsed.output)) {
+      return null;
+    }
+
+    return {
+      status: parsed.status,
+      summary: parsed.summary,
+      output: parsed.output.filter((entry): entry is string => typeof entry === 'string'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function truncateDeepSeekPreviewText(value: string, maxLength: number): string {
+  if (maxLength <= 0 || value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+const DEEPSEEK_TOOL_SUMMARY_CHAR_LIMIT = 320;
+
+function truncateDeepSeekToolSummary(value: string): string {
+  if (value.length <= DEEPSEEK_TOOL_SUMMARY_CHAR_LIMIT) {
+    return value;
+  }
+
+  return `${value.slice(0, DEEPSEEK_TOOL_SUMMARY_CHAR_LIMIT - 3)}...`;
+}
+
+function countPromptRoles(messages: ProviderMessage[]): Record<ProviderMessage['role'], number> {
+  const counts: Record<ProviderMessage['role'], number> = {
+    system: 0,
+    user: 0,
+    assistant: 0,
+    tool: 0,
+  };
+
+  for (const message of messages) {
+    counts[message.role] += 1;
+  }
+
+  return counts;
 }
 
 function toDeepSeekToolDefinition(tool: ProviderToolDefinition) {
@@ -406,14 +755,17 @@ function toDeepSeekMessage(message: ProviderMessage) {
   };
 }
 
-function extractDeepSeekStepResult(payload: DeepSeekResponsePayload): ProviderStepResult {
+function extractDeepSeekStepResult(
+  payload: DeepSeekResponsePayload,
+  requestMetrics?: ProviderRequestMetrics,
+): ProviderStepResult {
   const message = payload.choices?.[0]?.message;
   const toolCalls = message?.tool_calls ?? [];
   const reasoningContent = normalizeReasoningContent(message?.reasoning_content);
   const usage = normalizeDeepSeekUsage(payload.usage);
 
   if (toolCalls.length > 0) {
-    return parseDeepSeekToolCalls(toolCalls, message?.content, reasoningContent, usage);
+    return parseDeepSeekToolCalls(toolCalls, message?.content, reasoningContent, usage, requestMetrics);
   }
 
   if (typeof message?.content === 'string' && message.content.trim()) {
@@ -421,6 +773,7 @@ function extractDeepSeekStepResult(payload: DeepSeekResponsePayload): ProviderSt
       type: 'final',
       outputSummary: message.content.trim(),
       usage,
+      requestMetrics,
     };
   }
 
@@ -435,6 +788,7 @@ function extractDeepSeekStepResult(payload: DeepSeekResponsePayload): ProviderSt
         type: 'final',
         outputSummary: text,
         usage,
+        requestMetrics,
       };
     }
   }
@@ -549,6 +903,7 @@ function parseDeepSeekToolCalls(
   content: DeepSeekMessageContent,
   reasoningContent: string | undefined,
   usage: ProviderUsage | undefined,
+  requestMetrics: ProviderRequestMetrics | undefined,
 ): ProviderStepResult {
   const parsedToolCalls = toolCalls.map((toolCall) => parseDeepSeekToolCall(toolCall));
   const rationale = extractMessageText(content);
@@ -560,6 +915,7 @@ function parseDeepSeekToolCalls(
       rationale,
       reasoningContent,
       usage,
+      requestMetrics,
     };
   }
 
@@ -569,6 +925,7 @@ function parseDeepSeekToolCalls(
     rationale,
     reasoningContent,
     usage,
+    requestMetrics,
   };
 }
 
@@ -601,6 +958,7 @@ function parseDeepSeekStreamingPayload(
   logger: LlmResponseLogger,
   requestUrl: string,
   modelId: string,
+  requestLogContext: DeepSeekRequestLogContext,
 ): DeepSeekStreamPayload {
   try {
     return JSON.parse(responseText) as DeepSeekStreamPayload;
@@ -611,6 +969,10 @@ function parseDeepSeekStreamingPayload(
       message: 'DeepSeek returned invalid streaming JSON',
       requestUrl,
       modelId,
+      requestBody: requestLogContext.requestBody,
+      requestPayload: requestLogContext.requestPayload,
+      promptMessages: requestLogContext.promptMessages,
+      requestMetrics: requestLogContext.requestMetrics,
       responseText,
       details: error,
     });
@@ -727,4 +1089,23 @@ function extractStreamingMessageText(content: DeepSeekMessageContent): string | 
     .join('');
 
   return text || undefined;
+}
+
+function estimateDeepSeekSubmittedTokens(
+  promptMessages: readonly ProviderMessage[],
+  toolDefinitions: DeepSeekRequestPayload['tools'] | undefined,
+): number {
+  const serializedMessages = promptMessages
+    .map((message) => [
+      message.role,
+      message.content,
+      message.toolCallId ?? '',
+      message.toolName ?? '',
+      message.reasoningContent ?? '',
+      message.toolCalls ? JSON.stringify(message.toolCalls) : '',
+    ].join('\n'))
+    .join('\n\n');
+  const serializedTools = toolDefinitions ? JSON.stringify(toolDefinitions) : '';
+  const estimatedChars = `${serializedMessages}\n${serializedTools}`.length;
+  return Math.max(0, Math.ceil(estimatedChars * ESTIMATED_TOKENS_PER_CHAR));
 }

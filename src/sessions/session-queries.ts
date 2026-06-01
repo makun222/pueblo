@@ -1,4 +1,4 @@
-import type { Session } from '../shared/schema';
+import type { AgentSessionSummary, Session } from '../shared/schema';
 import type { SessionStore } from './session-repository';
 
 export class SessionQueries {
@@ -6,6 +6,10 @@ export class SessionQueries {
 
   listSessions(): Session[] {
     return this.repository.list();
+  }
+
+  listSessionSummaries(): AgentSessionSummary[] {
+    return this.repository.listSummaries();
   }
 
   getCurrentSession(): Session | null {

@@ -4,59 +4,89 @@ import type { TaskContext } from './task-context';
 
 export const RECENT_CONTEXT_MESSAGE_LIMIT = 6;
 export const RECENT_CONTEXT_MESSAGE_CHAR_LIMIT = 480;
+const SYSTEM_CONTEXT_TOTAL_CHAR_BUDGET = 24_000;
+const PUEBLO_SYSTEM_MESSAGE_CHAR_LIMIT = 6_000;
+const TARGET_DIRECTORY_MESSAGE_CHAR_LIMIT = 600;
+const SKILL_CONTEXT_MESSAGE_CHAR_LIMIT = 4_000;
+const SELECTED_PROMPTS_LIMIT = 4;
+const SELECTED_PROMPT_CHAR_LIMIT = 1_200;
+const SELECTED_PROMPTS_MESSAGE_CHAR_LIMIT = 6_000;
+const WORKFLOW_SUMMARY_CHAR_LIMIT = 2_000;
+const WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT = 5_000;
+const ATTACHMENT_CONTEXT_LIMIT = 4;
+const ATTACHMENT_PREVIEW_CHAR_LIMIT = 400;
+const ATTACHMENT_INLINE_JSON_CHAR_LIMIT = 1_600;
+const ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT = 6_000;
+const ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT = 3_000;
+const RESULT_ITEMS_LIMIT = 6;
+const RESULT_ITEM_SUMMARY_CHAR_LIMIT = 1_600;
+const RESULT_ITEMS_MESSAGE_CHAR_LIMIT = 8_000;
+const RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT = 4_000;
+export const COMPACT_CONTEXT_UTILIZATION_THRESHOLD = 0.7;
+const COMPACT_RESULT_ITEMS_LIMIT = 3;
+const COMPACT_RESULT_ITEM_SUMMARY_CHAR_LIMIT = 600;
+const COMPACT_RECENT_CONVERSATION_MESSAGE_LIMIT = 3;
+const COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT = 1_800;
 
 export function buildProviderMessages(taskContext: TaskContext, goal: string): ProviderMessage[] {
   const messages: ProviderMessage[] = [];
+  const budget = { remainingChars: SYSTEM_CONTEXT_TOTAL_CHAR_BUDGET };
+  const compactContext = isCompactContextModeEnabled(taskContext.contextCount);
   const puebloMessage = buildPuebloSystemMessage(taskContext);
   const targetDirectoryMessage = buildTargetDirectoryMessage(taskContext.targetDirectory);
   const skillContextMessage = buildSkillSystemMessage(taskContext.skillContext);
   const attachmentContextMessage = buildAttachmentContextMessage(taskContext);
-  const recentConversationMessage = buildRecentConversationMessage(taskContext.recentMessages);
+  const recentConversationMessage = buildRecentConversationMessage(
+    taskContext.recentMessages,
+    compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_LIMIT : RECENT_CONTEXT_MESSAGE_LIMIT,
+  );
 
-  if (puebloMessage) {
-    messages.push({ role: 'system', content: puebloMessage });
-  }
-
-  if (targetDirectoryMessage) {
-    messages.push({ role: 'system', content: targetDirectoryMessage });
-  }
-
-  if (skillContextMessage) {
-    messages.push({ role: 'system', content: skillContextMessage });
-  }
+  pushSystemMessage(messages, budget, puebloMessage, PUEBLO_SYSTEM_MESSAGE_CHAR_LIMIT);
+  pushSystemMessage(messages, budget, targetDirectoryMessage, TARGET_DIRECTORY_MESSAGE_CHAR_LIMIT);
+  pushSystemMessage(messages, budget, skillContextMessage, SKILL_CONTEXT_MESSAGE_CHAR_LIMIT);
 
   if (taskContext.prompts.length > 0) {
-    messages.push({
-      role: 'system',
-      content: [
+    pushSystemMessage(
+      messages,
+      budget,
+      [
         'Selected prompts:',
-        ...taskContext.prompts.map((prompt, index) => `${index + 1}. ${prompt.title}: ${prompt.content}`),
+        ...taskContext.prompts
+          .slice(0, SELECTED_PROMPTS_LIMIT)
+          .map((prompt, index) => `${index + 1}. ${prompt.title}: ${truncatePromptText(prompt.content, SELECTED_PROMPT_CHAR_LIMIT)}`),
       ].join('\n'),
-    });
+      SELECTED_PROMPTS_MESSAGE_CHAR_LIMIT,
+    );
   }
 
   const workflowContextMessage = buildWorkflowContextMessage(taskContext);
-  if (workflowContextMessage) {
-    messages.push({ role: 'system', content: workflowContextMessage });
-  }
-
-  if (attachmentContextMessage) {
-    messages.push({ role: 'system', content: attachmentContextMessage });
-  }
+  pushSystemMessage(messages, budget, workflowContextMessage, WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT);
+  pushSystemMessage(messages, budget, attachmentContextMessage, ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT);
+  pushSystemMessage(messages, budget, taskContext.activeTurnStepContext ?? null, ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT);
 
   if (taskContext.resultItems.length > 0) {
-    messages.push({
-      role: 'system',
-      content: [
+    pushSystemMessage(
+      messages,
+      budget,
+      [
         'Relevant result items:',
-        ...taskContext.resultItems.map((item, index) => `${index + 1}. [similarity=${item.similarity}] ${item.summary}`),
+        ...taskContext.resultItems
+          .slice(0, compactContext ? COMPACT_RESULT_ITEMS_LIMIT : RESULT_ITEMS_LIMIT)
+          .map(
+            (item, index) =>
+              `${index + 1}. [similarity=${item.similarity}] ${truncatePromptText(item.summary, compactContext ? COMPACT_RESULT_ITEM_SUMMARY_CHAR_LIMIT : RESULT_ITEM_SUMMARY_CHAR_LIMIT)}`,
+          ),
       ].join('\n'),
-    });
+      RESULT_ITEMS_MESSAGE_CHAR_LIMIT,
+    );
   }
 
-  if (recentConversationMessage) {
-    messages.push({ role: 'system', content: recentConversationMessage });
-  }
+  pushSystemMessage(
+    messages,
+    budget,
+    recentConversationMessage,
+    compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT,
+  );
 
   messages.push({ role: 'user', content: goal });
   return dedupeSafeSystemBlocks(messages);
@@ -68,13 +98,13 @@ function buildAttachmentContextMessage(taskContext: TaskContext): string | null 
   }
 
   const lines = [
-    'Uploaded attachment context:',
-    'Treat uploaded files as canonical JSON assets.',
-    'When you edit a canonical attachment JSON asset with the edit tool, Pueblo will automatically rewrite the original docx or spreadsheet file from that JSON.',
-    'If an attachment is marked large, inspect its JSON path with the read tool instead of assuming the full content is already in context.',
+    '关于上传的附件:',
+    '将附件转换为规范的 JSON 资产。',
+    '当你使用编辑工具编辑规范的附件 JSON 资产时，Pueblo 会自动从该 JSON 重写原始的 docx 或电子表格文件。',
+    '如果附件被标记为大文件，使用tool:read读取JSON 路径文件内容，而不要将整个文件纳入上下文。',
   ];
 
-  for (const [index, attachment] of taskContext.uploadedAttachments.entries()) {
+  for (const [index, attachment] of taskContext.uploadedAttachments.slice(0, ATTACHMENT_CONTEXT_LIMIT).entries()) {
     lines.push(`${index + 1}. ${attachment.source.fileName}`);
     lines.push(`   - kind: ${attachment.kind}`);
     lines.push(`   - jsonPath: ${attachment.asset.jsonPath}`);
@@ -93,11 +123,15 @@ function buildAttachmentContextMessage(taskContext: TaskContext): string | null 
       lines.push(`   - cells: ${attachment.summary.cellCount}`);
     }
     if (attachment.summary.previewText) {
-      lines.push(`   - preview: ${attachment.summary.previewText}`);
+      lines.push(`   - preview: ${truncatePromptText(attachment.summary.previewText, ATTACHMENT_PREVIEW_CHAR_LIMIT)}`);
     }
     if (attachment.inlineJsonExcerpt) {
       lines.push('   - inline JSON excerpt:');
-      lines.push(...attachment.inlineJsonExcerpt.split(/\r?\n/).map((line) => `     ${line}`));
+      lines.push(
+        ...truncatePromptText(attachment.inlineJsonExcerpt, ATTACHMENT_INLINE_JSON_CHAR_LIMIT)
+          .split(/\r?\n/)
+          .map((line) => `     ${line}`),
+      );
     }
   }
 
@@ -155,12 +189,12 @@ function buildWorkflowContextMessage(taskContext: TaskContext): string | null {
 
   if (workflowContext.planSummary) {
     lines.push('Plan summary:');
-    lines.push(...workflowContext.planSummary.split(/\r?\n/).map((line) => `- ${line}`));
+    lines.push(...truncatePromptText(workflowContext.planSummary, WORKFLOW_SUMMARY_CHAR_LIMIT).split(/\r?\n/).map((line) => `- ${line}`));
   }
 
   if (workflowContext.todoSummary) {
     lines.push('Current todo:');
-    lines.push(...workflowContext.todoSummary.split(/\r?\n/).map((line) => `- ${line}`));
+    lines.push(...truncatePromptText(workflowContext.todoSummary, WORKFLOW_SUMMARY_CHAR_LIMIT).split(/\r?\n/).map((line) => `- ${line}`));
   }
 
   return lines.join('\n');
@@ -173,9 +207,9 @@ function buildTargetDirectoryMessage(targetDirectory: string | null): string | n
 
   return [
     'Target repository context:',
-    `- Use ${targetDirectory} as the repository root for this task.`,
-    '- Resolve relative tool paths and glob patterns from that directory.',
-    '- If the user asks to analyze or describe that directory, inspect it with tools before answering.',
+    `- 使用 ${targetDirectory} 作为此任务的仓库根目录。`,
+    '- 从该目录解析相对工具路径和全局模式。',
+    '- 如果用户要求分析该目录的相关情况，请先使用工具检查再回答。',
   ].join('\n');
 }
 
@@ -185,8 +219,10 @@ export function selectRecentMessagesForPrompt(recentMessages: readonly string[])
     .map(compactRecentMessageForPrompt);
 }
 
-function buildRecentConversationMessage(recentMessages: readonly string[]): string | null {
-  const selectedMessages = selectRecentMessagesForPrompt(recentMessages);
+function buildRecentConversationMessage(recentMessages: readonly string[], messageLimit = RECENT_CONTEXT_MESSAGE_LIMIT): string | null {
+  const selectedMessages = recentMessages
+    .slice(-messageLimit)
+    .map(compactRecentMessageForPrompt);
 
   if (selectedMessages.length === 0) {
     return null;
@@ -196,6 +232,26 @@ function buildRecentConversationMessage(recentMessages: readonly string[]): stri
     'Recent conversation context:',
     ...selectedMessages.map((message, index) => `${index + 1}. ${message}`),
   ].join('\n');
+}
+
+function pushSystemMessage(
+  messages: ProviderMessage[],
+  budget: { remainingChars: number },
+  content: string | null,
+  maxChars: number,
+): void {
+  if (!content || budget.remainingChars <= 0) {
+    return;
+  }
+
+  const effectiveLimit = Math.min(maxChars, budget.remainingChars);
+  const compactedContent = truncatePromptText(content, effectiveLimit);
+  if (!compactedContent) {
+    return;
+  }
+
+  messages.push({ role: 'system', content: compactedContent });
+  budget.remainingChars -= compactedContent.length;
 }
 
 export function compactRecentMessageForPrompt(message: string): string {
@@ -213,6 +269,11 @@ export function compactRecentMessageForPrompt(message: string): string {
   ].join('\n');
 }
 
+export function isCompactContextModeEnabled(contextCount: TaskContext['contextCount']): boolean {
+  const utilizationRatio = contextCount.utilizationRatio;
+  return utilizationRatio !== null && utilizationRatio >= COMPACT_CONTEXT_UTILIZATION_THRESHOLD;
+}
+
 function appendSection(target: string[], title: string, values: string[]): void {
   const dedupedValues = dedupeTextValues(values);
 
@@ -221,6 +282,44 @@ function appendSection(target: string[], title: string, values: string[]): void 
   }
 
   target.push(`${title}:\n${dedupedValues.map((value) => `- ${value}`).join('\n')}`);
+}
+
+function truncatePromptText(value: string, maxChars: number): string {
+  const normalized = sanitizePromptText(value);
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  if (maxChars <= 64) {
+    return normalized.slice(0, Math.max(0, maxChars)).trimEnd();
+  }
+
+  const headLength = Math.max(32, Math.floor(maxChars * 0.72));
+  const tailLength = Math.max(16, Math.min(160, maxChars - headLength - 32));
+  const safeHeadLength = Math.max(0, Math.min(headLength, maxChars));
+  const safeTailLength = Math.max(0, Math.min(tailLength, Math.max(0, maxChars - safeHeadLength - 32)));
+  const omittedChars = Math.max(0, normalized.length - safeHeadLength - safeTailLength);
+  const truncated = [
+    normalized.slice(0, safeHeadLength).trimEnd(),
+    `... [truncated ${omittedChars} chars] ...`,
+    safeTailLength > 0 ? normalized.slice(-safeTailLength).trimStart() : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return truncated.length <= maxChars ? truncated : truncated.slice(0, maxChars).trimEnd();
+}
+
+function sanitizePromptText(value: string): string {
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export function dedupeSafeSystemBlocks(messages: readonly ProviderMessage[]): ProviderMessage[] {

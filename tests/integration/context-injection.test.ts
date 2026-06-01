@@ -123,7 +123,7 @@ function createFakePepeWorker(
   data: PepeWorkerData,
   semanticClient: PepeSemanticClient,
   embeddingClient: Pick<PepeLocalEmbeddingClient, 'embedTexts'>,
-  config: Pick<PepeConfig, 'resultTopK' | 'similarityThreshold'>,
+  config: Pick<PepeConfig, 'resultTopK' | 'similarityThreshold' | 'ranking'>,
 ) {
   let messageHandler: ((message: PepeWorkerResponse) => void) | null = null;
   let errorHandler: ((error: Error) => void) | null = null;

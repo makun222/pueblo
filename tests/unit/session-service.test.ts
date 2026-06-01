@@ -57,6 +57,24 @@ describe('session service', () => {
     const updated = service.importSelectedMemoriesFromSession(target.id, source.id);
 
     expect(updated.selectedMemoryIds).toEqual([sourceMemory.id]);
+    expect(updated.pinnedMemoryIds).toEqual([sourceMemory.id]);
+    expect(updated.workingMemoryIds).toEqual([]);
+  });
+
+  it('keeps pinned and working memory selections separate while exposing a union', () => {
+    const repository = new InMemorySessionRepository();
+    const service = new SessionService(repository);
+
+    const session = service.createSession('Session A');
+    service.addPinnedMemory(session.id, 'memory-pinned');
+    service.addWorkingMemory(session.id, 'memory-working-1');
+    service.addWorkingMemory(session.id, 'memory-working-2');
+
+    const reloaded = service.getSession(session.id);
+
+    expect(reloaded?.pinnedMemoryIds).toEqual(['memory-pinned']);
+    expect(reloaded?.workingMemoryIds).toEqual(['memory-working-1', 'memory-working-2']);
+    expect(reloaded?.selectedMemoryIds).toEqual(['memory-pinned', 'memory-working-1', 'memory-working-2']);
   });
 
   it('returns the most recent non-deleted session for an agent instance', () => {
@@ -74,5 +92,27 @@ describe('session service', () => {
     expect(service.getMostRecentSessionForAgentInstance('agent-1')?.id).toBe(first.id);
     expect(service.getMostRecentSessionForAgentInstance('agent-2')?.id).toBe(third.id);
     expect(service.getMostRecentSessionForAgentInstance('missing-agent')).toBeNull();
+  });
+
+  it('lists lightweight session summaries with preview and counts', () => {
+    const repository = new InMemorySessionRepository();
+    const service = new SessionService(repository);
+
+    const session = service.createSession('Session A', null, 'agent-1');
+    service.addUserMessage(session.id, 'Inspect the repo');
+    service.addAssistantMessage(session.id, 'Repository inspection complete');
+    service.addPinnedMemory(session.id, 'memory-1');
+    service.addWorkingMemory(session.id, 'memory-2');
+
+    const summaries = service.listSessionSummaries();
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      id: session.id,
+      agentInstanceId: 'agent-1',
+      messageCount: 2,
+      selectedMemoryCount: 2,
+      preview: 'Pueblo: Repository inspection complete',
+    });
   });
 });

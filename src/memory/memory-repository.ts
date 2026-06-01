@@ -6,6 +6,7 @@ import { createMemoryModel, type CreateMemoryModelOptions } from './memory-model
 interface MemoryRow {
   id: string;
   type: MemoryRecord['type'];
+  memory_kind: MemoryRecord['memoryKind'];
   title: string;
   content: string;
   scope: MemoryRecord['scope'];
@@ -14,6 +15,8 @@ interface MemoryRow {
   parent_id: string | null;
   derivation_type: MemoryRecord['derivationType'];
   summary_depth: number;
+  weight: number;
+  last_accessed_at: string | null;
   source_session_id: string | null;
   created_at: string;
   updated_at: string;
@@ -82,6 +85,7 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
     const params = {
       id: memory.id,
       type: memory.type,
+      memory_kind: memory.memoryKind,
       title: memory.title,
       content: memory.content,
       scope: memory.scope,
@@ -90,6 +94,8 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       parent_id: memory.parentId,
       derivation_type: memory.derivationType,
       summary_depth: memory.summaryDepth,
+      weight: memory.weight,
+      last_accessed_at: memory.lastAccessedAt,
       source_session_id: memory.sourceSessionId,
       created_at: memory.createdAt,
       updated_at: memory.updatedAt,
@@ -98,9 +104,10 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
     if (existing) {
       this.run(
         `UPDATE memory_records
-         SET type=@type, title=@title, content=@content, scope=@scope, status=@status,
+         SET type=@type, memory_kind=@memory_kind, title=@title, content=@content, scope=@scope, status=@status,
              tags_json=@tags_json, parent_id=@parent_id, derivation_type=@derivation_type,
-             summary_depth=@summary_depth, source_session_id=@source_session_id,
+             summary_depth=@summary_depth, weight=@weight, last_accessed_at=@last_accessed_at,
+             source_session_id=@source_session_id,
              created_at=@created_at, updated_at=@updated_at
          WHERE id=@id`,
         params,
@@ -108,11 +115,11 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
     } else {
       this.run(
         `INSERT INTO memory_records (
-          id, type, title, content, scope, status, tags_json, parent_id, derivation_type, summary_depth,
-          source_session_id, created_at, updated_at
+          id, type, memory_kind, title, content, scope, status, tags_json, parent_id, derivation_type, summary_depth,
+          weight, last_accessed_at, source_session_id, created_at, updated_at
         ) VALUES (
-          @id, @type, @title, @content, @scope, @status, @tags_json, @parent_id, @derivation_type, @summary_depth,
-          @source_session_id, @created_at, @updated_at
+          @id, @type, @memory_kind, @title, @content, @scope, @status, @tags_json, @parent_id, @derivation_type, @summary_depth,
+          @weight, @last_accessed_at, @source_session_id, @created_at, @updated_at
         )`,
         params,
       );
@@ -135,6 +142,7 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
     return memoryRecordSchema.parse({
       id: row.id,
       type: row.type,
+      memoryKind: row.memory_kind,
       title: row.title,
       content: row.content,
       scope: row.scope,
@@ -143,6 +151,8 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       parentId: row.parent_id,
       derivationType: row.derivation_type,
       summaryDepth: row.summary_depth,
+      weight: row.weight,
+      lastAccessedAt: row.last_accessed_at,
       sourceSessionId: row.source_session_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

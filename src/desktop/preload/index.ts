@@ -11,7 +11,7 @@ import type {
   DesktopToolApprovalResponse,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
-import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session } from '../../shared/schema';
+import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session } from '../../shared/schema';
 
 const MENU_ACTION_CHANNEL = 'desktop-menu-action';
 const TOOL_APPROVAL_CHANNEL = 'tool-approval-state';
@@ -31,7 +31,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   respondTalkContinuation: (response: DesktopTalkContinuationResponse): Promise<DesktopTalkState> => ipcRenderer.invoke('respond-talk-continuation', response),
   listAgentProfiles: (): Promise<AgentProfileTemplate[]> => ipcRenderer.invoke('list-agent-profiles'),
   startAgentSession: (profileId: string): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('start-agent-session', profileId),
-  listAgentSessions: (agentInstanceId: string): Promise<Session[]> => ipcRenderer.invoke('list-agent-sessions', agentInstanceId),
+  listAgentSessions: (agentInstanceId: string): Promise<AgentSessionSummary[]> => ipcRenderer.invoke('list-agent-sessions', agentInstanceId),
+  getSession: (sessionId: string): Promise<Session | null> => ipcRenderer.invoke('get-session', sessionId),
   listSessionMemories: (sessionId: string): Promise<MemoryRecord[]> => ipcRenderer.invoke('list-session-memories', sessionId),
   selectSession: (sessionId: string): Promise<DesktopSessionSelectionResponse> => ipcRenderer.invoke('select-session', sessionId),
   onMenuAction: (callback: (action: DesktopMenuAction) => void) => {

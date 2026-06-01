@@ -74,3 +74,36 @@ export function createMemorySearchCommand(dependencies: MemoryCommandDependencie
     });
   };
 }
+
+export function createMemoryWeightCommand(dependencies: MemoryCommandDependencies) {
+  return (args: string[]): CommandResult => {
+    const [memoryId, operation, rawValue] = args;
+
+    if (!memoryId || !operation || !rawValue) {
+      return failureResult('MEMORY_WEIGHT_INVALID', 'Memory id, operation, and value are required', [
+        'Use /memory-weight <id> <set|add|sub> <value>.',
+      ]);
+    }
+
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue)) {
+      return failureResult('MEMORY_WEIGHT_INVALID_VALUE', 'Memory weight value must be numeric', [
+        'Use a decimal number such as 0.1 or 0.75.',
+      ]);
+    }
+
+    switch (operation) {
+      case 'set':
+        return successResult('MEMORY_WEIGHT_UPDATED', 'Memory weight updated', dependencies.memoryService.setMemoryWeight(memoryId, numericValue));
+      case 'add':
+        return successResult('MEMORY_WEIGHT_UPDATED', 'Memory weight updated', dependencies.memoryService.adjustMemoryWeight(memoryId, Math.abs(numericValue)));
+      case 'sub':
+      case 'reduce':
+        return successResult('MEMORY_WEIGHT_UPDATED', 'Memory weight updated', dependencies.memoryService.adjustMemoryWeight(memoryId, -Math.abs(numericValue)));
+      default:
+        return failureResult('MEMORY_WEIGHT_INVALID_OPERATION', 'Unsupported memory weight operation', [
+          'Use one of: set, add, sub.',
+        ]);
+    }
+  };
+}

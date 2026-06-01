@@ -2350,11 +2350,22 @@ select {
   gap: 8px;
 }
 
+.message-trace-summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
 .message-details-scrollable[open] > .message-trace {
   max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 4px;
+}
+
+.message-trace-load-more {
+  align-self: flex-start;
 }
 
 .message-step {

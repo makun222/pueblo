@@ -1,6 +1,8 @@
 import type { CommandResult } from '../../shared/result';
+import type { ProviderRequestMetrics } from '../../providers/provider-adapter';
 import type {
   AgentProfileTemplate,
+  AgentSessionSummary,
   BackgroundSummaryStatus,
   ContextCount,
   DesktopWindowSession,
@@ -146,9 +148,12 @@ export interface DesktopRuntimeStatus {
   readonly workspace?: string | null;
   readonly activeSessionId: string | null;
   readonly contextCount: ContextCount;
+  readonly selectedStepSummaryCount?: number;
+  readonly compactContextMode?: boolean;
   readonly modelMessageCount: number;
   readonly modelMessageCharCount: number;
   readonly providerUsageStats?: ProviderUsageStats;
+  readonly providerRequestMetrics?: ProviderRequestMetrics | null;
   readonly selectedPromptCount: number;
   readonly selectedMemoryCount: number;
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
@@ -174,7 +179,8 @@ export interface DesktopBridge {
   respondTalkContinuation(response: DesktopTalkContinuationResponse): Promise<DesktopTalkState>;
   listAgentProfiles(): Promise<AgentProfileTemplate[]>;
   startAgentSession(profileId: string): Promise<DesktopRuntimeStatus>;
-  listAgentSessions(agentInstanceId: string): Promise<Session[]>;
+  listAgentSessions(agentInstanceId: string): Promise<AgentSessionSummary[]>;
+  getSession(sessionId: string): Promise<Session | null>;
   listSessionMemories(sessionId: string): Promise<MemoryRecord[]>;
   selectSession(sessionId: string): Promise<DesktopSessionSelectionResponse>;
   onMenuAction(listener: (action: DesktopMenuAction) => void): () => void;

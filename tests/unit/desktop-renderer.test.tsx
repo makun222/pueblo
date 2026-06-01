@@ -2,11 +2,12 @@ import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/desktop/renderer/App';
-import type { InputAttachmentManifest, MemoryRecord, ProviderProfile, RendererOutputBlock, Session } from '../../src/shared/schema';
+import type { AgentSessionSummary, InputAttachmentManifest, MemoryRecord, ProviderProfile, RendererOutputBlock, Session } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
 let submitInputMock: ReturnType<typeof vi.fn>;
 let listAgentSessionsMock: ReturnType<typeof vi.fn>;
+let getSessionMock: ReturnType<typeof vi.fn>;
 let listSessionMemoriesMock: ReturnType<typeof vi.fn>;
 let selectSessionMock: ReturnType<typeof vi.fn>;
 let getToolApprovalStateMock: ReturnType<typeof vi.fn>;
@@ -57,6 +58,32 @@ const activeWorkflowStatus = {
   activeRoundNumber: 2,
 };
 
+function toSessionSummary(session: Session): AgentSessionSummary {
+  const lastMessage = [...session.messageHistory]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  const preview = !lastMessage
+    ? 'No messages yet.'
+    : `${lastMessage.role === 'assistant' ? 'Pueblo' : lastMessage.role === 'user' ? 'You' : lastMessage.role}: ${lastMessage.content}`;
+
+  return {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    sessionKind: session.sessionKind,
+    agentInstanceId: session.agentInstanceId ?? null,
+    currentModelId: session.currentModelId,
+    messageCount: session.messageHistory.length,
+    selectedMemoryCount: session.selectedMemoryIds.length,
+    preview,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    startedAt: session.startedAt,
+    completedAt: session.completedAt,
+    failedAt: session.failedAt,
+    archivedAt: session.archivedAt,
+  };
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   outputListener = null;
@@ -101,6 +128,7 @@ beforeEach(() => {
     },
   });
   listAgentSessionsMock = vi.fn().mockResolvedValue([]);
+  getSessionMock = vi.fn().mockResolvedValue(null);
   listSessionMemoriesMock = vi.fn().mockResolvedValue([]);
   getToolApprovalStateMock = vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null });
   respondToolApprovalMock = vi.fn().mockResolvedValue({ activeBatch: null, activeFileReview: null });
@@ -245,6 +273,7 @@ beforeEach(() => {
         workflow: inactiveWorkflowStatus,
       }),
       listAgentSessions: listAgentSessionsMock,
+      getSession: getSessionMock,
       listSessionMemories: listSessionMemoriesMock,
       selectSession: selectSessionMock,
       onMenuAction: vi.fn(() => () => {}),
@@ -286,22 +315,91 @@ describe('Desktop Renderer', () => {
   });
 
   it('shows the context window progress and breakdown popover', async () => {
+    window.electronAPI.getRuntimeStatus = vi.fn().mockResolvedValue({
+      providerId: 'github-copilot',
+      providerName: 'GitHub Copilot',
+      agentProfileId: 'code-master',
+      agentProfileName: 'Code Master',
+      agentInstanceId: 'agent-1',
+      modelId: 'copilot-chat',
+      modelName: 'GPT-5.4',
+      activeSessionId: 'session-1',
+      contextCount: {
+        estimatedTokens: 12,
+        contextWindowLimit: 32000,
+        utilizationRatio: 0.0004,
+        messageCount: 0,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 0,
+        derivedMemoryCount: 0,
+        breakdown: {
+          systemPromptTokens: 9,
+          userInputTokens: 2,
+          toolResultTokens: 1,
+        },
+      },
+      modelMessageCount: 0,
+      modelMessageCharCount: 0,
+      providerUsageStats: emptyProviderUsageStats,
+      providerRequestMetrics: {
+        submittedTokens: 48,
+        bodyBytes: 8192,
+        originalBodyBytes: 24576,
+        messageCount: 4,
+        toolCount: 1,
+        roleCounts: {
+          system: 1,
+          user: 1,
+          assistant: 1,
+          tool: 1,
+        },
+        compacted: true,
+        compactedToolMessages: 1,
+        compactionStage: 'preview',
+      },
+      selectedStepSummaryCount: 2,
+      compactContextMode: true,
+      selectedPromptCount: 0,
+      selectedMemoryCount: 0,
+      availableProviders,
+      backgroundSummaryStatus: {
+        state: 'idle',
+        activeSummarySessionId: null,
+        lastSummaryAt: null,
+        lastSummaryMemoryId: null,
+      },
+      workflow: inactiveWorkflowStatus,
+    });
+
     render(createElement(App));
 
-    expect(await screen.findByText('12 / 32K')).toBeTruthy();
-    expect(screen.getByText('0.0%')).toBeTruthy();
+  expect(await screen.findByText('48 / 32K')).toBeTruthy();
+    expect(screen.getByText('0.1%')).toBeTruthy();
     expect(screen.queryByText('Message Length')).toBeNull();
     expect(screen.queryByText('Total Tokens')).toBeNull();
     expect(screen.queryByText('Cache Hit')).toBeNull();
+    expect(screen.queryByText('Last Request')).toBeNull();
+    expect(screen.queryByText('Request Compaction')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show context window breakdown' }));
 
     expect(await screen.findByLabelText('context-breakdown')).toBeTruthy();
+    expect(screen.getByText('Current Step')).toBeTruthy();
+    expect(screen.getByText('Selected Context Mix')).toBeTruthy();
     expect(screen.getByText('System Prompt')).toBeTruthy();
     expect(screen.getByText('Runtime Stats')).toBeTruthy();
     expect(screen.getByText('Message Length')).toBeTruthy();
+    expect(screen.getByText('Selected Context')).toBeTruthy();
     expect(screen.getByText('Total Tokens')).toBeTruthy();
     expect(screen.getByText('Cache Hit')).toBeTruthy();
+    expect(screen.getByText('Last Request')).toBeTruthy();
+    expect(screen.getByText('8 KB')).toBeTruthy();
+    expect(screen.getByText('Request Compaction')).toBeTruthy();
+    expect(screen.getByText('preview · 1 tool')).toBeTruthy();
+    expect(screen.getByText('Active Step Context')).toBeTruthy();
+    expect(screen.getByText('2 step')).toBeTruthy();
+    expect(screen.getByText('Compact Context')).toBeTruthy();
+    expect(screen.getByText('active')).toBeTruthy();
     expect(screen.getByText('75.0%')).toBeTruthy();
     expect(screen.getByText('16.7%')).toBeTruthy();
     expect(screen.getByText('8.3%')).toBeTruthy();
@@ -393,6 +491,7 @@ describe('Desktop Renderer', () => {
       {
         id: 'memory-todo-older',
         type: 'short-term',
+        memoryKind: 'workflow',
         title: 'Todo Round 1: Older list',
         content: 'workflowId: wf-1\nworkflowType: pueblo-plan\nroundNumber: 1\ntasks:\n- T0: Older task',
         scope: 'session',
@@ -401,6 +500,8 @@ describe('Desktop Renderer', () => {
         parentId: null,
         derivationType: 'manual',
         summaryDepth: 0,
+        weight: 1,
+        lastAccessedAt: '2026-05-03T00:00:00.000Z',
         sourceSessionId: 'session-1',
         createdAt: '2026-05-03T00:00:00.000Z',
         updatedAt: '2026-05-03T00:00:00.000Z',
@@ -408,6 +509,7 @@ describe('Desktop Renderer', () => {
       {
         id: 'memory-todo-latest',
         type: 'short-term',
+        memoryKind: 'workflow',
         title: 'Todo Round 2: Latest list',
         content: 'workflowId: wf-1\nworkflowType: pueblo-plan\nroundNumber: 2\ntasks:\n- T1: Newer task',
         scope: 'session',
@@ -416,6 +518,8 @@ describe('Desktop Renderer', () => {
         parentId: null,
         derivationType: 'manual',
         summaryDepth: 0,
+        weight: 1,
+        lastAccessedAt: '2026-05-04T00:00:00.000Z',
         sourceSessionId: 'session-1',
         createdAt: '2026-05-04T00:00:00.000Z',
         updatedAt: '2026-05-04T00:00:00.000Z',
@@ -436,6 +540,7 @@ describe('Desktop Renderer', () => {
     const todoMemory: MemoryRecord = {
       id: 'memory-todo-stale',
       type: 'short-term',
+      memoryKind: 'workflow',
       title: 'Todo Round 2: Refresh sidebar UX',
       content: [
         'workflowId: workflow-1',
@@ -451,6 +556,8 @@ describe('Desktop Renderer', () => {
       parentId: null,
       derivationType: 'manual',
       summaryDepth: 0,
+      weight: 1,
+      lastAccessedAt: createdAt,
       sourceSessionId: 'session-1',
       createdAt,
       updatedAt: createdAt,
@@ -614,6 +721,7 @@ describe('Desktop Renderer', () => {
     const todoMemory: MemoryRecord = {
       id: 'memory-todo-1',
       type: 'short-term',
+      memoryKind: 'workflow',
       title: 'Todo Round 2: Refresh sidebar UX',
       content: [
         'workflowId: workflow-1',
@@ -629,6 +737,8 @@ describe('Desktop Renderer', () => {
       parentId: null,
       derivationType: 'manual',
       summaryDepth: 0,
+      weight: 1,
+      lastAccessedAt: createdAt,
       sourceSessionId: 'session-1',
       createdAt,
       updatedAt: createdAt,
@@ -751,6 +861,7 @@ describe('Desktop Renderer', () => {
     expect(processInfo?.textContent).toContain('3 messages');
     expect(processInfo?.textContent).toContain('1 steps');
     expect(processInfo?.textContent).toContain('1 tool calls');
+    expect(screen.queryByText('Step 1')).toBeNull();
 
     fireEvent.click(screen.getByText('Process Info'));
     expect(processInfo?.hasAttribute('open')).toBe(true);
@@ -768,6 +879,62 @@ describe('Desktop Renderer', () => {
 
     fireEvent.click(screen.getByText('tool'));
     expect(toolMessage?.hasAttribute('open')).toBe(true);
+  });
+
+  it('pages large process traces instead of rendering every step at once', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Enter command or task...')).toBeTruthy();
+    });
+
+    const largeMessageTrace = Array.from({ length: 1500 }, (_, index) => ({
+      stepNumber: index + 1,
+      messageCount: 2,
+      charCount: 32,
+      messages: [
+        {
+          role: 'system',
+          content: `System content ${index + 1}`,
+          charCount: 16,
+        },
+        {
+          role: 'tool',
+          content: `Tool content ${index + 1}`,
+          toolName: 'grep-search',
+          toolCallId: `call-${index + 1}`,
+          toolArgs: { step: index + 1 },
+          charCount: 16,
+        },
+      ],
+    }));
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'trace-block-large',
+        type: 'task-result',
+        title: 'Trace Output Large',
+        content: 'Completed with a very large trace.',
+        collapsed: false,
+        messageTrace: largeMessageTrace,
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    fireEvent.click(screen.getByText('Process Info'));
+
+    expect(screen.getByText('Step 1')).toBeTruthy();
+    expect(screen.getByText('Step 100')).toBeTruthy();
+    expect(screen.queryByText('Step 101')).toBeNull();
+    expect(screen.getByText('Show next 100 steps (1400 left)')).toBeTruthy();
+    expect(screen.getByText('Large process traces are rendered in batches to keep the desktop renderer stable.')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Show next 100 steps (1400 left)'));
+
+    expect(screen.getByText('Step 101')).toBeTruthy();
+    expect(screen.getByText('Step 200')).toBeTruthy();
   });
 
   it('clears the input immediately, shows a thinking placeholder, and streams the final answer', async () => {
@@ -868,6 +1035,117 @@ describe('Desktop Renderer', () => {
     });
 
     expect(screen.getByText('First line of the answer. Second line of the answer.')).toBeTruthy();
+  });
+
+  it('shows process info only once after submit when the response carries message trace', async () => {
+    let resolveSubmit: ((value: unknown) => void) | null = null;
+    submitInputMock.mockImplementation(() => new Promise((resolve) => {
+      resolveSubmit = resolve;
+    }));
+
+    render(createElement(App));
+
+    const input = await screen.findByPlaceholderText('Enter command or task...');
+    const form = screen.getByLabelText('input-region');
+    const messageTrace = [
+      {
+        stepNumber: 1,
+        messageCount: 2,
+        charCount: 64,
+        messages: [
+          {
+            role: 'system',
+            content: 'System trace content',
+            charCount: 20,
+          },
+          {
+            role: 'tool',
+            content: 'Tool trace content',
+            toolName: 'grep-search',
+            toolCallId: 'call-trace-1',
+            toolArgs: { query: 'Process Info' },
+            charCount: 44,
+          },
+        ],
+      },
+    ];
+
+    vi.useFakeTimers();
+
+    fireEvent.change(input, { target: { value: 'Show a single process info block' } });
+
+    act(() => {
+      fireEvent.submit(form);
+    });
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'task-result-single-trace',
+        type: 'task-result',
+        title: 'Output Summary',
+        content: 'Finished with one trace block.',
+        collapsed: false,
+        messageTrace,
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+      resolveSubmit?.({
+        result: undefined,
+        blocks: [
+          {
+            id: 'task-result-single-trace',
+            type: 'task-result',
+            title: 'Output Summary',
+            content: 'Finished with one trace block.',
+            collapsed: false,
+            messageTrace,
+            fileChanges: [],
+            sourceRefs: [],
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        runtimeStatus: {
+          providerId: 'github-copilot',
+          providerName: 'GitHub Copilot',
+          agentProfileId: 'code-master',
+          agentProfileName: 'Code Master',
+          agentInstanceId: 'agent-1',
+          modelId: 'copilot-chat',
+          modelName: 'GPT-5.4',
+          activeSessionId: 'session-1',
+          contextCount: {
+            estimatedTokens: 12,
+            contextWindowLimit: 32000,
+            utilizationRatio: 0.0004,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          availableProviders,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        },
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(screen.getByText('Show a single process info block')).toBeTruthy();
+    expect(screen.getByText('Finished with one trace block.')).toBeTruthy();
+    expect(screen.getAllByText('Process Info')).toHaveLength(1);
   });
 
   it('shows and freezes the assistant thinking duration beside the answer entry', async () => {
@@ -1307,6 +1585,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1344,6 +1624,8 @@ describe('Desktop Renderer', () => {
           },
         ],
         selectedPromptIds: [],
+        pinnedMemoryIds: ['memory-1'],
+        workingMemoryIds: [],
         selectedMemoryIds: ['memory-1'],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1360,6 +1642,7 @@ describe('Desktop Renderer', () => {
       {
         id: 'memory-1',
         type: 'short-term',
+        memoryKind: 'turn',
         title: 'Recovered memory',
         content: 'Captured decision from the recovered session.',
         scope: 'session',
@@ -1368,12 +1651,14 @@ describe('Desktop Renderer', () => {
         parentId: null,
         derivationType: 'summary',
         summaryDepth: 0,
+        weight: 0.8,
+        lastAccessedAt: new Date().toISOString(),
         sourceSessionId: 'session-2',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
     ];
-    listAgentSessionsMock.mockResolvedValue(sessions);
+    listAgentSessionsMock.mockResolvedValue(sessions.map(toSessionSummary));
     listSessionMemoriesMock.mockResolvedValue(memories);
     selectSessionMock.mockResolvedValue({
       runtimeStatus: {
@@ -1443,6 +1728,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1455,7 +1742,7 @@ describe('Desktop Renderer', () => {
         archivedAt: null,
       },
     ];
-    listAgentSessionsMock.mockResolvedValue(sessions);
+    listAgentSessionsMock.mockResolvedValue(sessions.map(toSessionSummary));
 
     render(createElement(App));
 
@@ -1489,6 +1776,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1509,6 +1798,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1521,7 +1812,7 @@ describe('Desktop Renderer', () => {
         archivedAt: new Date().toISOString(),
       },
     ];
-    listAgentSessionsMock.mockResolvedValue(sessions);
+    listAgentSessionsMock.mockResolvedValue(sessions.map(toSessionSummary));
 
     render(createElement(App));
 
@@ -1563,6 +1854,8 @@ describe('Desktop Renderer', () => {
           },
         ],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1585,6 +1878,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1599,8 +1894,11 @@ describe('Desktop Renderer', () => {
       initialSessions[0],
     ];
     listAgentSessionsMock
-      .mockResolvedValueOnce(initialSessions)
-      .mockResolvedValueOnce(nextSessions);
+      .mockResolvedValueOnce(initialSessions.map(toSessionSummary))
+      .mockResolvedValueOnce(nextSessions.map(toSessionSummary));
+    getSessionMock
+      .mockResolvedValueOnce(initialSessions[0])
+      .mockResolvedValueOnce(nextSessions[0]);
     submitInputMock.mockResolvedValue({
       result: { ok: true, code: 'SESSION_CREATED', message: 'Session created', data: null },
       blocks: [],
@@ -1669,6 +1967,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1691,6 +1991,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1705,8 +2007,8 @@ describe('Desktop Renderer', () => {
       initialSessions[0],
     ];
     listAgentSessionsMock
-      .mockResolvedValueOnce(initialSessions)
-      .mockResolvedValueOnce(nextSessions);
+      .mockResolvedValueOnce(initialSessions.map(toSessionSummary))
+      .mockResolvedValueOnce(nextSessions.map(toSessionSummary));
     submitInputMock.mockResolvedValue({
       result: { ok: true, code: 'SESSION_CREATED', message: 'Session created', data: null },
       blocks: [],
@@ -1773,6 +2075,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [{ id: 'm1', role: 'assistant', content: 'Second newest', createdAt: '2026-05-04T00:00:02.000Z', taskId: null, toolName: null }],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1793,6 +2097,8 @@ describe('Desktop Renderer', () => {
         currentModelId: 'copilot-chat',
         messageHistory: [{ id: 'm2', role: 'user', content: 'Find alpha details', createdAt: '2026-05-04T00:00:01.000Z', taskId: null, toolName: null }],
         selectedPromptIds: [],
+        pinnedMemoryIds: [],
+        workingMemoryIds: [],
         selectedMemoryIds: [],
         providerUsageStats: emptyProviderUsageStats,
         originSessionId: null,
@@ -1805,7 +2111,7 @@ describe('Desktop Renderer', () => {
         archivedAt: '2026-05-04T00:00:01.000Z',
       },
     ];
-    listAgentSessionsMock.mockResolvedValue(sessions);
+    listAgentSessionsMock.mockResolvedValue(sessions.map(toSessionSummary));
 
     render(createElement(App));
 

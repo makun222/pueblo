@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import type { AgentProfileTemplate, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopFileReviewRequest,
   DesktopMenuAction,
@@ -21,6 +21,10 @@ const THINKING_PLACEHOLDER = 'Thinking through the next step...';
 const STREAM_CHUNK_SIZE = 24;
 const STREAM_TICK_MS = 18;
 const VISIBLE_TRANSCRIPT_GROUP_LIMIT = 10;
+const MESSAGE_TRACE_INITIAL_STEP_LIMIT = 100;
+const MESSAGE_TRACE_STEP_PAGE_SIZE = 100;
+const MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT = 25;
+const MESSAGE_TRACE_MESSAGE_PAGE_SIZE = 25;
 const TOOL_APPROVAL_SIDEBAR_MIN_WIDTH = 280;
 const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
 const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
@@ -108,6 +112,9 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
     promptTokensSent: 0,
     cacheHitRatio: null,
   },
+  providerRequestMetrics: null,
+  selectedStepSummaryCount: 0,
+  compactContextMode: false,
   selectedPromptCount: 0,
   selectedMemoryCount: 0,
   availableProviders: [],
@@ -158,7 +165,8 @@ declare global {
       respondTalkContinuation: (response: DesktopTalkContinuationResponse) => Promise<DesktopTalkState>;
       listAgentProfiles: () => Promise<AgentProfileTemplate[]>;
       startAgentSession: (profileId: string) => Promise<DesktopRuntimeStatus>;
-      listAgentSessions: (agentInstanceId: string) => Promise<Session[]>;
+      listAgentSessions: (agentInstanceId: string) => Promise<AgentSessionSummary[]>;
+      getSession: (sessionId: string) => Promise<Session | null>;
       listSessionMemories: (sessionId: string) => Promise<MemoryRecord[]>;
       selectSession: (sessionId: string) => Promise<DesktopSessionSelectionResponse>;
       onMenuAction: (callback: (action: DesktopMenuAction) => void) => (() => void);
@@ -191,14 +199,15 @@ export function App() {
   const [deepSeekBaseUrl, setDeepSeekBaseUrl] = useState('https://api.deepseek.com');
   const [isDeepSeekEditing, setIsDeepSeekEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [agentSessions, setAgentSessions] = useState<Session[]>([]);
+  const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([]);
+  const [activeSessionDetails, setActiveSessionDetails] = useState<Session | null>(null);
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
   const [sessionSearchQuery, setSessionSearchQuery] = useState('');
   const [sessionSortMode, setSessionSortMode] = useState<SessionSortMode>('updated-desc');
   const [isNewSessionComposerOpen, setIsNewSessionComposerOpen] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
   const [sessionPanelError, setSessionPanelError] = useState<string | null>(null);
-  const [sessionInspectorSession, setSessionInspectorSession] = useState<Session | null>(null);
+  const [sessionInspectorSession, setSessionInspectorSession] = useState<AgentSessionSummary | null>(null);
   const [sessionInspectorMemories, setSessionInspectorMemories] = useState<MemoryRecord[]>([]);
   const [activeSessionMemories, setActiveSessionMemories] = useState<MemoryRecord[]>([]);
   const [toolApprovalState, setToolApprovalState] = useState<DesktopToolApprovalState>(EMPTY_TOOL_APPROVAL_STATE);
@@ -281,6 +290,7 @@ export function App() {
       }
 
       if (data.type === 'system' && data.title === 'Agent Activity') {
+        void window.electronAPI.getRuntimeStatus().then(setRuntimeStatus).catch(() => {});
         updatePendingAssistantProgress(data.content);
         return;
       }
@@ -468,6 +478,8 @@ export function App() {
   };
 
   const hydrateSessionTranscript = (session: Session | null) => {
+    setActiveSessionDetails(session);
+
     if (!session) {
       setTranscriptEntries([]);
       return;
@@ -499,8 +511,11 @@ export function App() {
       setSessionPanelError(null);
 
       if (options.hydrateCurrentSession) {
-        const activeSession = sessions.find((session) => session.id === nextRuntimeStatus.activeSessionId) ?? null;
-        setSelectedSidebarSessionId(activeSession?.id ?? null);
+        const activeSessionSummary = sessions.find((session) => session.id === nextRuntimeStatus.activeSessionId) ?? null;
+        setSelectedSidebarSessionId(activeSessionSummary?.id ?? null);
+        const activeSession = activeSessionSummary
+          ? await window.electronAPI.getSession(activeSessionSummary.id)
+          : null;
         hydrateSessionTranscript(activeSession);
       } else if (!sessions.some((session) => session.id === selectedSidebarSessionId)) {
         setSelectedSidebarSessionId(nextRuntimeStatus.activeSessionId ?? sessions[0]?.id ?? null);
@@ -705,20 +720,6 @@ export function App() {
         sessionId: runtimeStatusRef.current.activeSessionId,
         attachments: options.attachments ?? [],
       }));
-      const messageTrace = response.blocks.find((block) => block.messageTrace.length > 0)?.messageTrace ?? [];
-
-      if (options.recordUserEntry) {
-        setTranscriptEntries((previous) => previous.map((entry) => {
-          if ('role' in entry && entry.id === transcriptEntryId) {
-            return {
-              ...entry,
-              messageTrace,
-            };
-          }
-
-          return entry;
-        }));
-      }
 
       if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
         pendingAssistantEntryIdRef.current = null;
@@ -811,7 +812,7 @@ export function App() {
     }
   };
 
-  const handleOpenSessionInspector = async (session: Session) => {
+  const handleOpenSessionInspector = async (session: AgentSessionSummary) => {
     setSessionInspectorSession(session);
     setSessionInspectorMemories([]);
     setSessionInspectorError(null);
@@ -968,9 +969,8 @@ export function App() {
   const activeFileReview = toolApprovalState.activeFileReview;
   const activeTalkConversation = talkState.activeConversation;
   const activeTalkContinuationPrompt = activeTalkConversation?.continuationPrompt ?? null;
-  const activeSession = agentSessions.find((session) => session.id === runtimeStatus.activeSessionId) ?? null;
   const hasActiveWorkflow = runtimeStatus.workflow?.hasActiveWorkflow ?? false;
-  const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSession?.selectedMemoryIds ?? [], hasActiveWorkflow);
+  const todoMemory = selectSelectedTodoMemory(activeSessionMemories, activeSessionDetails?.selectedMemoryIds ?? [], hasActiveWorkflow);
   const todoItems = parseTodoMemoryItems(todoMemory);
   const staleTodoMemory = !hasActiveWorkflow ? selectLatestTodoMemory(activeSessionMemories) : null;
   const staleTodoItems = parseTodoMemoryItems(staleTodoMemory);
@@ -986,16 +986,20 @@ export function App() {
     : filteredTranscriptGroups.slice(-VISIBLE_TRANSCRIPT_GROUP_LIMIT);
   const displayedProviderUsageStats = selectDisplayedProviderUsageStats(
     runtimeStatus.providerUsageStats,
-    activeSession?.providerUsageStats,
+    activeSessionDetails?.providerUsageStats,
   );
   const totalTokens = displayedProviderUsageStats.totalTokens;
   const cacheHitRatio = displayedProviderUsageStats.cacheHitRatio;
+  const providerRequestMetrics = runtimeStatus.providerRequestMetrics ?? null;
+  const selectedStepSummaryCount = runtimeStatus.selectedStepSummaryCount ?? 0;
+  const compactContextMode = runtimeStatus.compactContextMode ?? false;
+  const submittedContextTokens = providerRequestMetrics?.submittedTokens ?? runtimeStatus.contextCount.estimatedTokens;
   const contextWindowSummary = formatContextWindowSummary(
-    runtimeStatus.contextCount.estimatedTokens,
+    submittedContextTokens,
     runtimeStatus.contextCount.contextWindowLimit,
   );
   const contextUtilizationRatio = resolveContextUtilizationRatio(
-    runtimeStatus.contextCount.estimatedTokens,
+    submittedContextTokens,
     runtimeStatus.contextCount.contextWindowLimit,
     runtimeStatus.contextCount.utilizationRatio,
   );
@@ -1496,7 +1500,11 @@ export function App() {
             {isContextBreakdownOpen ? (
               <div className="context-breakdown-popover" role="dialog" aria-label="context-breakdown">
                 <div className="context-breakdown-header">
-                  <span className="status-chip-label">Context Mix</span>
+                  <span className="status-chip-label">Current Step</span>
+                  <span className="context-breakdown-total">{formatCompactInteger(submittedContextTokens)} tokens</span>
+                </div>
+                <div className="context-breakdown-header">
+                  <span className="status-chip-label">Selected Context Mix</span>
                   <span className="context-breakdown-total">{formatCompactInteger(runtimeStatus.contextCount.estimatedTokens)} tokens</span>
                 </div>
                 <div className="context-breakdown-list">
@@ -1525,12 +1533,32 @@ export function App() {
                       <span className="context-breakdown-total">{runtimeStatus.modelMessageCharCount} chars</span>
                     </div>
                     <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Selected Context</span>
+                      <span className="context-breakdown-total">{formatCompactInteger(runtimeStatus.contextCount.estimatedTokens)} tokens</span>
+                    </div>
+                    <div className="context-breakdown-stat">
                       <span className="context-breakdown-name">Total Tokens</span>
                       <span className="context-breakdown-total">{formatCompactInteger(totalTokens)} tokens</span>
                     </div>
                     <div className="context-breakdown-stat">
                       <span className="context-breakdown-name">Cache Hit</span>
                       <span className="context-breakdown-total">{formatCacheHitRatio(cacheHitRatio)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Last Request</span>
+                      <span className="context-breakdown-total">{formatRequestSize(providerRequestMetrics?.bodyBytes)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Request Compaction</span>
+                      <span className="context-breakdown-total">{formatRequestCompaction(providerRequestMetrics)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Active Step Context</span>
+                      <span className="context-breakdown-total">{formatStepSummaryHits(selectedStepSummaryCount)}</span>
+                    </div>
+                    <div className="context-breakdown-stat">
+                      <span className="context-breakdown-name">Compact Context</span>
+                      <span className="context-breakdown-total">{formatCompactContextMode(compactContextMode)}</span>
                     </div>
                   </div>
                 </div>
@@ -1754,6 +1782,42 @@ function formatCacheHitRatio(value: number | null): string {
 
   const percentage = Number((value * 100).toFixed(1));
   return `${percentage}%`;
+}
+
+function formatRequestSize(value: number | null | undefined): string {
+  if (!value || value <= 0) {
+    return 'n/a';
+  }
+
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 102.4) / 10} KB`;
+  }
+
+  return `${value} B`;
+}
+
+function formatRequestCompaction(metrics: DesktopRuntimeStatus['providerRequestMetrics']): string {
+  if (!metrics) {
+    return 'n/a';
+  }
+
+  if (!metrics.compacted) {
+    return 'none';
+  }
+
+  return `${metrics.compactionStage} · ${metrics.compactedToolMessages} tool`;
+}
+
+function formatStepSummaryHits(value: number): string {
+  return `${value} step`;
+}
+
+function formatCompactContextMode(value: boolean): string {
+  return value ? 'active' : 'inactive';
 }
 
 function formatWorkspaceLabel(value: string | null | undefined): string {
@@ -2533,7 +2597,7 @@ function renderAgentPicker(
 }
 
 function renderSessionSidebar(args: {
-  sessions: Session[];
+  sessions: AgentSessionSummary[];
   activeSessionId: string | null;
   selectedSessionId: string | null;
   agentProfileName: string | null;
@@ -2550,8 +2614,8 @@ function renderSessionSidebar(args: {
   onNewSessionTitleChange: (value: string) => void;
   onSessionSearchQueryChange: (value: string) => void;
   onSessionSortModeChange: (value: SessionSortMode) => void;
-  onSelectSession: (session: Session) => void;
-  onInspectSession: (session: Session) => void;
+  onSelectSession: (session: AgentSessionSummary) => void;
+  onInspectSession: (session: AgentSessionSummary) => void;
 }) {
   return (
     <section className="session-panel">
@@ -2648,7 +2712,7 @@ function renderSessionSidebar(args: {
                 {session.id === args.activeSessionId ? <span className="session-card-badge">Current</span> : null}
               </header>
               <p className="session-card-meta">{formatSessionState(session.status)} · {formatTimestamp(session.updatedAt)}</p>
-              <p className="session-card-meta">{session.messageHistory.length} messages · {session.selectedMemoryIds.length} selected memories</p>
+              <p className="session-card-meta">{session.messageCount} messages · {session.selectedMemoryCount} selected memories</p>
               <p className="session-card-preview">{getSessionPreview(session)}</p>
             </article>
           ))}
@@ -2659,7 +2723,7 @@ function renderSessionSidebar(args: {
 }
 
 function renderSessionInspectorModal(args: {
-  session: Session;
+  session: AgentSessionSummary;
   memories: MemoryRecord[];
   activeSessionId: string | null;
   error: string | null;
@@ -2675,7 +2739,7 @@ function renderSessionInspectorModal(args: {
           <div>
             <p className="session-panel-eyebrow">Session Memories</p>
             <h2>{args.session.title}</h2>
-            <p className="session-panel-copy">{formatSessionState(args.session.status)} · {args.session.messageHistory.length} messages · Updated {formatTimestamp(args.session.updatedAt)}</p>
+            <p className="session-panel-copy">{formatSessionState(args.session.status)} · {args.session.messageCount} messages · Updated {formatTimestamp(args.session.updatedAt)}</p>
           </div>
         </header>
         {args.error ? <p className="session-panel-error">{args.error}</p> : null}
@@ -2997,24 +3061,11 @@ function formatTimestamp(value: string): string {
   }
 }
 
-function getSessionPreview(session: Session): string {
-  const lastMessage = [...session.messageHistory]
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
-
-  if (!lastMessage) {
-    return 'No messages yet.';
-  }
-
-  const prefix = lastMessage.role === 'assistant'
-    ? 'Pueblo'
-    : lastMessage.role === 'user'
-      ? 'You'
-      : lastMessage.role;
-
-  return `${prefix}: ${lastMessage.content}`;
+function getSessionPreview(session: AgentSessionSummary): string {
+  return session.preview;
 }
 
-function filterSessions(sessions: Session[], query: string): Session[] {
+function filterSessions(sessions: AgentSessionSummary[], query: string): AgentSessionSummary[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
     return sessions;
@@ -3023,14 +3074,14 @@ function filterSessions(sessions: Session[], query: string): Session[] {
   return sessions.filter((session) => {
     const haystacks = [
       session.title,
-      ...session.messageHistory.map((message) => message.content),
+      session.preview,
     ];
 
     return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
   });
 }
 
-function sortSessions(sessions: Session[], mode: SessionSortMode): Session[] {
+function sortSessions(sessions: AgentSessionSummary[], mode: SessionSortMode): AgentSessionSummary[] {
   const nextSessions = [...sessions];
   nextSessions.sort((left, right) => {
     const comparison = left.updatedAt.localeCompare(right.updatedAt) || left.createdAt.localeCompare(right.createdAt);
@@ -3337,6 +3388,178 @@ function formatFileChangeType(changeType: RendererFileChange['changeType']): str
   }
 }
 
+function summarizeRendererMessageTrace(messageTrace: RendererMessageTraceStep[]): {
+  readonly messageCount: number;
+  readonly charCount: number;
+  readonly toolCallCount: number;
+} {
+  let messageCount = 0;
+  let charCount = 0;
+  let toolCallCount = 0;
+
+  for (const step of messageTrace) {
+    messageCount += step.messageCount;
+    charCount += step.charCount;
+
+    for (const message of step.messages) {
+      if (message.toolName || message.toolCallId) {
+        toolCallCount += 1;
+      }
+    }
+  }
+
+  return {
+    messageCount,
+    charCount,
+    toolCallCount,
+  };
+}
+
+const MessageTraceMessageDetails = React.memo(function MessageTraceMessageDetails(args: {
+  readonly message: RendererMessageTraceStep['messages'][number];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details className="message-item" open={isOpen}>
+      <summary
+        className="message-item-header message-item-summary"
+        onClick={(event) => {
+          event.preventDefault();
+          setIsOpen((previous) => !previous);
+        }}
+      >
+        <span className="message-item-role">{args.message.role}</span>
+        <span className="message-item-meta">{args.message.charCount} chars</span>
+        {args.message.toolName ? <span className="message-item-meta">tool={args.message.toolName}</span> : null}
+        {args.message.toolCallId ? <span className="message-item-meta">call={args.message.toolCallId}</span> : null}
+      </summary>
+      {isOpen ? (
+        <div className="message-item-details">
+          <pre className="message-item-content">{args.message.content}</pre>
+          {args.message.toolArgs !== undefined ? (
+            <pre className="message-item-args">{JSON.stringify(args.message.toolArgs, null, 2)}</pre>
+          ) : null}
+        </div>
+      ) : null}
+    </details>
+  );
+});
+
+const MessageTraceStepDetails = React.memo(function MessageTraceStepDetails(args: {
+  readonly id: string;
+  readonly step: RendererMessageTraceStep;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(() => Math.min(args.step.messages.length, MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT));
+  const visibleMessages = useMemo(
+    () => args.step.messages.slice(0, visibleMessageCount),
+    [args.step.messages, visibleMessageCount],
+  );
+  const hiddenMessageCount = Math.max(0, args.step.messages.length - visibleMessageCount);
+
+  useEffect(() => {
+    setVisibleMessageCount(Math.min(args.step.messages.length, MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT));
+  }, [args.step.messages.length]);
+
+  return (
+    <details className="message-step" open={isOpen}>
+      <summary
+        className="message-step-header message-step-summary"
+        onClick={(event) => {
+          event.preventDefault();
+          setIsOpen((previous) => !previous);
+        }}
+      >
+        <span className="message-step-title">Step {args.step.stepNumber}</span>
+        <span className="message-step-meta">{args.step.messageCount} messages</span>
+        <span className="message-step-meta">{args.step.charCount} chars</span>
+      </summary>
+      {isOpen ? (
+        <div className="message-step-list">
+          {visibleMessages.map((message, index) => (
+            <MessageTraceMessageDetails
+              key={`${args.id}-step-${args.step.stepNumber}-message-${index + 1}`}
+              message={message}
+            />
+          ))}
+          {hiddenMessageCount > 0 ? (
+            <button
+              type="button"
+              className="provider-config-secondary message-trace-load-more"
+              onClick={() => {
+                setVisibleMessageCount((previous) => Math.min(args.step.messages.length, previous + MESSAGE_TRACE_MESSAGE_PAGE_SIZE));
+              }}
+            >
+              Show next {Math.min(MESSAGE_TRACE_MESSAGE_PAGE_SIZE, hiddenMessageCount)} messages ({hiddenMessageCount} left)
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </details>
+  );
+});
+
+const MessageTraceDetails = React.memo(function MessageTraceDetails(args: {
+  readonly id: string;
+  readonly messageTrace: RendererMessageTraceStep[];
+  readonly scrollable: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleStepCount, setVisibleStepCount] = useState(() => Math.min(args.messageTrace.length, MESSAGE_TRACE_INITIAL_STEP_LIMIT));
+  const traceTotals = useMemo(() => summarizeRendererMessageTrace(args.messageTrace), [args.messageTrace]);
+  const visibleSteps = useMemo(
+    () => args.messageTrace.slice(0, visibleStepCount),
+    [args.messageTrace, visibleStepCount],
+  );
+  const hiddenStepCount = Math.max(0, args.messageTrace.length - visibleStepCount);
+
+  useEffect(() => {
+    setVisibleStepCount(Math.min(args.messageTrace.length, MESSAGE_TRACE_INITIAL_STEP_LIMIT));
+  }, [args.messageTrace.length]);
+
+  return (
+    <details key={args.id} className={`message-details ${args.scrollable ? 'message-details-scrollable' : ''}`} open={isOpen}>
+      <summary
+        className="message-details-summary"
+        onClick={(event) => {
+          event.preventDefault();
+          setIsOpen((previous) => !previous);
+        }}
+      >
+        <span className="message-details-title">Process Info</span>
+        <span className="message-details-meta">{traceTotals.messageCount} messages</span>
+        <span className="message-details-meta">{args.messageTrace.length} steps</span>
+        {traceTotals.toolCallCount > 0 ? <span className="message-details-meta">{traceTotals.toolCallCount} tool calls</span> : null}
+        <span className="message-details-meta">{traceTotals.charCount} chars</span>
+      </summary>
+      {isOpen ? (
+        <div className="message-trace">
+          {hiddenStepCount > 0 ? (
+            <p className="message-trace-summary">
+              Large process traces are rendered in batches to keep the desktop renderer stable.
+            </p>
+          ) : null}
+          {visibleSteps.map((step) => (
+            <MessageTraceStepDetails key={`${args.id}-step-${step.stepNumber}`} id={args.id} step={step} />
+          ))}
+          {hiddenStepCount > 0 ? (
+            <button
+              type="button"
+              className="provider-config-secondary message-trace-load-more"
+              onClick={() => {
+                setVisibleStepCount((previous) => Math.min(args.messageTrace.length, previous + MESSAGE_TRACE_STEP_PAGE_SIZE));
+              }}
+            >
+              Show next {Math.min(MESSAGE_TRACE_STEP_PAGE_SIZE, hiddenStepCount)} steps ({hiddenStepCount} left)
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </details>
+  );
+});
+
 function renderMessageTrace(
   id: string,
   messageTrace: RendererMessageTraceStep[] | null | undefined,
@@ -3346,48 +3569,5 @@ function renderMessageTrace(
     return null;
   }
 
-  const totalMessages = messageTrace.reduce((sum, step) => sum + step.messageCount, 0);
-  const totalChars = messageTrace.reduce((sum, step) => sum + step.charCount, 0);
-  const totalToolCalls = messageTrace.reduce((sum, step) => sum + step.messages.filter((message) => message.toolName || message.toolCallId).length, 0);
-
-  return (
-    <details key={id} className={`message-details ${options.scrollable ? 'message-details-scrollable' : ''}`}>
-      <summary className="message-details-summary">
-        <span className="message-details-title">Process Info</span>
-        <span className="message-details-meta">{totalMessages} messages</span>
-        <span className="message-details-meta">{messageTrace.length} steps</span>
-        {totalToolCalls > 0 ? <span className="message-details-meta">{totalToolCalls} tool calls</span> : null}
-        <span className="message-details-meta">{totalChars} chars</span>
-      </summary>
-      <div className="message-trace">
-        {messageTrace.map((step) => (
-          <details key={`${id}-step-${step.stepNumber}`} className="message-step">
-            <summary className="message-step-header message-step-summary">
-              <span className="message-step-title">Step {step.stepNumber}</span>
-              <span className="message-step-meta">{step.messageCount} messages</span>
-              <span className="message-step-meta">{step.charCount} chars</span>
-            </summary>
-            <div className="message-step-list">
-              {step.messages.map((message, index) => (
-                <details key={`${id}-step-${step.stepNumber}-message-${index + 1}`} className="message-item">
-                  <summary className="message-item-header message-item-summary">
-                    <span className="message-item-role">{message.role}</span>
-                    <span className="message-item-meta">{message.charCount} chars</span>
-                    {message.toolName ? <span className="message-item-meta">tool={message.toolName}</span> : null}
-                    {message.toolCallId ? <span className="message-item-meta">call={message.toolCallId}</span> : null}
-                  </summary>
-                  <div className="message-item-details">
-                    <pre className="message-item-content">{message.content}</pre>
-                    {message.toolArgs !== undefined ? (
-                      <pre className="message-item-args">{JSON.stringify(message.toolArgs, null, 2)}</pre>
-                    ) : null}
-                  </div>
-                </details>
-              ))}
-            </div>
-          </details>
-        ))}
-      </div>
-    </details>
-  );
+  return <MessageTraceDetails id={id} messageTrace={messageTrace} scrollable={options.scrollable} />;
 }

@@ -152,9 +152,14 @@ describe('DeepSeek Provider Contract', () => {
       },
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       type: 'final',
       outputSummary: 'Hello world',
+    });
+    expect(result.requestMetrics).toMatchObject({
+      compacted: false,
+      compactionStage: 'none',
+      messageCount: 1,
     });
     expect(streamedText).toEqual(['Hello', ' world']);
   });
@@ -310,14 +315,242 @@ describe('DeepSeek Provider Contract', () => {
     const logContent = JSON.parse(fs.readFileSync(path.join(logDir, logFiles[0] ?? ''), 'utf8')) as {
       providerId?: string;
       category?: string;
+      requestBody?: string;
+      promptMessages?: Array<{ role?: string; content?: string }>;
+      requestMetrics?: {
+        bodyBytes?: number;
+        originalBodyBytes?: number;
+        messageCount?: number;
+        roleCounts?: Record<string, number>;
+        compacted?: boolean;
+        compactedToolMessages?: number;
+        compactionStage?: string;
+      };
       status?: number;
       responseText?: string;
     };
 
     expect(logContent.providerId).toBe('deepseek');
     expect(logContent.category).toBe('http-error');
+    expect(logContent.requestBody).toContain('Task execution test');
+    expect(logContent.requestBody).toContain('Inspect repository state');
+    expect(logContent.promptMessages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'system', content: 'Task execution test' }),
+      expect.objectContaining({ role: 'user', content: 'Inspect repository state' }),
+    ]));
+    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(0);
+    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(0);
+    expect(logContent.requestMetrics?.messageCount).toBe(2);
+    expect(logContent.requestMetrics?.roleCounts?.system).toBe(1);
+    expect(logContent.requestMetrics?.roleCounts?.user).toBe(1);
+    expect(logContent.requestMetrics?.compacted).toBe(false);
+    expect(logContent.requestMetrics?.compactionStage).toBe('none');
     expect(logContent.status).toBe(400);
     expect(logContent.responseText).toContain('invalid_request_error');
+  });
+
+  it('should compact oversized tool results before sending a DeepSeek request', async () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-deepseek-compacted-'));
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'Compacted request accepted.',
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      logDir,
+      fetchImpl,
+    });
+
+    const oversizedToolOutput = JSON.stringify({
+      status: 'succeeded',
+      summary: `Large repository search result ${'x'.repeat(800)}`,
+      output: Array.from({ length: 320 }, (_, index) => `result-${index}: ${'x'.repeat(1000)}`),
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: 'Summarize the latest search result.' },
+        {
+          role: 'assistant',
+          content: 'Requesting grep',
+          toolCallId: 'tool-1',
+          toolName: 'grep',
+          toolArgs: { pattern: 'task', include: '*.ts' },
+        },
+        {
+          role: 'tool',
+          content: oversizedToolOutput,
+          toolCallId: 'tool-1',
+          toolName: 'grep',
+        },
+      ],
+      availableTools: [],
+    });
+
+    expect(result).toMatchObject({
+      type: 'final',
+      outputSummary: 'Compacted request accepted.',
+    });
+    expect(result.requestMetrics).toMatchObject({
+      compacted: true,
+      compactedToolMessages: 1,
+    });
+
+    const requestPayload = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as {
+      messages?: Array<{ role?: string; content?: string }>;
+    };
+    const toolMessage = requestPayload.messages?.find((message) => message.role === 'tool');
+    const compactedToolPayload = JSON.parse(String(toolMessage?.content)) as {
+      summary?: string;
+      outputPreview?: string[];
+      outputCount?: number;
+      outputTruncated?: boolean;
+      compression?: string;
+      compactionStage?: string;
+    };
+
+    expect(String(fetchImpl.mock.calls[0]?.[1]?.body).length).toBeLessThan(256000);
+    expect(compactedToolPayload.outputCount).toBe(320);
+    expect(compactedToolPayload.outputTruncated).toBe(true);
+    expect(compactedToolPayload.compression).toBe('deepseek-request-compacted');
+    expect(compactedToolPayload.compactionStage).toBeDefined();
+    expect(compactedToolPayload.summary?.length).toBe(320);
+    expect(compactedToolPayload.summary?.endsWith('...')).toBe(true);
+    expect(compactedToolPayload.outputPreview?.length ?? 0).toBeLessThan(320);
+
+    const logFiles = fs.readdirSync(logDir);
+    expect(logFiles.length).toBe(1);
+
+    const logContent = JSON.parse(fs.readFileSync(path.join(logDir, logFiles[0] ?? ''), 'utf8')) as {
+      category?: string;
+      requestMetrics?: {
+        bodyBytes?: number;
+        originalBodyBytes?: number;
+        compacted?: boolean;
+        compactedToolMessages?: number;
+        compactionStage?: string;
+      };
+      details?: {
+        limitBytes?: number;
+        savedBytes?: number;
+      };
+    };
+
+    expect(logContent.category).toBe('request-compacted');
+    expect(logContent.requestMetrics?.bodyBytes).toBeLessThan(256000);
+    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.compacted).toBe(true);
+    expect(logContent.requestMetrics?.compactedToolMessages).toBe(1);
+    expect(logContent.requestMetrics?.compactionStage).toBeDefined();
+    expect(logContent.details?.limitBytes).toBe(256000);
+    expect(logContent.details?.savedBytes).toBeGreaterThan(0);
+  });
+
+  it('should fail locally when the DeepSeek request is still too large after compaction', async () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-deepseek-too-large-'));
+    const fetchImpl = vi.fn();
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      logDir,
+      fetchImpl,
+    });
+
+    await expect(adapter.runStep({
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: `Analyze this oversized prompt: ${'y'.repeat(300000)}` },
+      ],
+      availableTools: [],
+    })).rejects.toThrow('DeepSeek request body remained too large after local compaction');
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const logFiles = fs.readdirSync(logDir);
+    expect(logFiles.length).toBe(1);
+
+    const logContent = JSON.parse(fs.readFileSync(path.join(logDir, logFiles[0] ?? ''), 'utf8')) as {
+      category?: string;
+      requestMetrics?: {
+        bodyBytes?: number;
+        originalBodyBytes?: number;
+        compacted?: boolean;
+      };
+    };
+
+    expect(logContent.category).toBe('request-too-large');
+    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.compacted).toBe(false);
+  });
+
+  it('should keep the smallest oversized attempt when compaction makes the request larger', async () => {
+    const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-deepseek-too-large-'));
+    const fetchImpl = vi.fn();
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      logDir,
+      fetchImpl,
+    });
+
+    await expect(adapter.runStep({
+      modelId: 'deepseek-v4-pro',
+      messages: [
+        { role: 'system', content: 'You are a coding assistant' },
+        { role: 'user', content: `Analyze this oversized prompt: ${'y'.repeat(300000)}` },
+        {
+          role: 'tool',
+          content: JSON.stringify({
+            status: 'succeeded',
+            summary: 'Already minimal tool result',
+            output: [],
+          }),
+          toolCallId: 'tool-1',
+          toolName: 'grep',
+        },
+      ],
+      availableTools: [],
+    })).rejects.toThrow('DeepSeek request body remained too large after local compaction');
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const logFiles = fs.readdirSync(logDir);
+    expect(logFiles.length).toBe(1);
+
+    const logContent = JSON.parse(fs.readFileSync(path.join(logDir, logFiles[0] ?? ''), 'utf8')) as {
+      category?: string;
+      requestMetrics?: {
+        bodyBytes?: number;
+        originalBodyBytes?: number;
+        compacted?: boolean;
+        compactedToolMessages?: number;
+        compactionStage?: string;
+      };
+    };
+
+    expect(logContent.category).toBe('request-too-large');
+    expect(logContent.requestMetrics?.bodyBytes).toBe(logContent.requestMetrics?.originalBodyBytes);
+    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.compacted).toBe(false);
+    expect(logContent.requestMetrics?.compactedToolMessages).toBe(0);
+    expect(logContent.requestMetrics?.compactionStage).toBe('none');
   });
 
   it('should replay reasoning_content for tool-call follow-up requests', async () => {
@@ -898,13 +1131,17 @@ describe('DeepSeek Provider Contract', () => {
       ],
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       type: 'tool-call',
       toolCallId: 'tool-read-1',
       toolName: 'read',
       args: { path: 'src/agent/task-runner.ts' },
       rationale: undefined,
       reasoningContent: undefined,
+    });
+    expect(result.requestMetrics).toMatchObject({
+      compacted: false,
+      toolCount: 1,
     });
   });
 
@@ -954,13 +1191,17 @@ describe('DeepSeek Provider Contract', () => {
       ],
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       type: 'tool-call',
       toolCallId: 'tool-read-start-1',
       toolName: 'read',
       args: { path: 'src/agent/task-runner.ts', startLine: 200 },
       rationale: undefined,
       reasoningContent: undefined,
+    });
+    expect(result.requestMetrics).toMatchObject({
+      compacted: false,
+      toolCount: 1,
     });
   });
 });

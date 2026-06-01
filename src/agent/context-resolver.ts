@@ -4,6 +4,7 @@ import { mergeAgentTemplateWithPuebloProfile } from './agent-profile-templates';
 import { PepeResultService } from './pepe-result-service';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { AgentTaskRepository } from './task-repository';
 import type { MemoryService } from '../memory/memory-service';
 import type { PromptService } from '../prompts/prompt-service';
 import type { ProviderRegistry } from '../providers/provider-registry';
@@ -19,8 +20,14 @@ import {
   type Session,
   type SessionMessage,
 } from '../shared/schema';
+import { extractTaskOutputSummaryPayload, summarizeTaskStepTrace } from '../shared/result';
 import { buildSkillSystemMessage, resolveSkillContext } from './skill-context';
-import { compactRecentMessageForPrompt, RECENT_CONTEXT_MESSAGE_LIMIT, selectRecentMessagesForPrompt } from './task-message-builder';
+import {
+  compactRecentMessageForPrompt,
+  isCompactContextModeEnabled,
+  RECENT_CONTEXT_MESSAGE_LIMIT,
+  selectRecentMessagesForPrompt,
+} from './task-message-builder';
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
@@ -47,6 +54,8 @@ export interface ResolvedContext {
     modelName: string | null;
     activeSessionId: string | null;
     contextCount: ContextCount;
+    selectedStepSummaryCount: number;
+    compactContextMode: boolean;
     selectedPromptCount: number;
     selectedMemoryCount: number;
     backgroundSummaryStatus: BackgroundSummaryStatus;
@@ -61,6 +70,7 @@ export interface ContextResolverDependencies {
   readonly agentInstanceService: AgentInstanceService;
   readonly providerRegistry: ProviderRegistry;
   readonly pepeResultService?: PepeResultService;
+  readonly taskRepository?: Pick<AgentTaskRepository, 'listBySession'>;
   readonly workflowService?: Pick<WorkflowService, 'getWorkflowContext'>;
   readonly resolveBackgroundSummaryStatus?: (sessionId: string | null) => BackgroundSummaryStatus;
   readonly puebloProfileLoader?: PuebloProfileLoader;
@@ -71,16 +81,19 @@ export class ContextBudgetService {
     readonly puebloTexts: string[];
     readonly promptTexts: string[];
     readonly memoryTexts: string[];
+    readonly transientTexts: string[];
     readonly recentMessages: string[];
     readonly pendingUserInput?: string;
     readonly modelContextWindow: number | null;
     readonly derivedMemoryCount: number;
     readonly contextBreakdown?: ContextCountBreakdown;
   }): ContextCount {
+    const nonEmptyMemoryTexts = args.memoryTexts.filter(Boolean);
     const textParts = [
       ...args.puebloTexts,
       ...args.promptTexts,
-      ...args.memoryTexts,
+      ...nonEmptyMemoryTexts,
+      ...args.transientTexts.filter(Boolean),
       ...args.recentMessages,
       args.pendingUserInput ?? '',
     ].filter(Boolean);
@@ -95,7 +108,7 @@ export class ContextBudgetService {
       utilizationRatio,
       messageCount: args.recentMessages.length,
       selectedPromptCount: args.promptTexts.length,
-      selectedMemoryCount: args.memoryTexts.length,
+      selectedMemoryCount: nonEmptyMemoryTexts.length,
       derivedMemoryCount: args.derivedMemoryCount,
       breakdown: args.contextBreakdown,
     });
@@ -157,11 +170,35 @@ export class ContextResolver {
       : null;
     const uploadedAttachments = input.uploadedAttachments ?? [];
     const attachmentContextTexts = uploadedAttachments.map((attachment) => summarizeAttachmentForContext(attachment));
+    const latestTaskPayload = session?.id ? extractLatestTaskPayload(this.dependencies.taskRepository, session.id) : null;
+    const activeTurnStepSummaries = summarizeTaskStepTrace(latestTaskPayload?.stepTrace);
+    const activeTurnStepContext = activeTurnStepSummaries.length > 0
+      ? ['Active turn step context:', ...activeTurnStepSummaries.map((entry) => entry.content)].join('\n')
+      : null;
     const filteredResultItems = filterPinnedWorkflowResultItems(resolvedPepeResult.resultItems, workflowContext);
+    const selectedMemories = this.dependencies.memoryService.resolveMemorySelection(session?.selectedMemoryIds ?? [])
+      .filter((memory) => !memory.tags.includes('task-step-summary'));
+    const sessionSummaryMemory = selectedMemories.find((memory) => memory.tags.includes('pepe-session-summary')) ?? null;
+    const resultItemMemories = this.dependencies.memoryService.resolveMemorySelection(filteredResultItems.map((item) => item.memoryId));
+    const legacyStepSummaryMemoryIds = new Set(
+      resultItemMemories
+        .filter((memory) => memory.tags.includes('task-step-summary'))
+        .map((memory) => memory.id),
+    );
+    const filteredResultItemsWithoutLegacySteps = filteredResultItems.filter((item) => !legacyStepSummaryMemoryIds.has(item.memoryId));
+    const nonLegacyResultItemMemories = resultItemMemories.filter((memory) => !legacyStepSummaryMemoryIds.has(memory.id));
+    const overshadowedResultMemoryIds = sessionSummaryMemory
+      ? new Set(
+        nonLegacyResultItemMemories
+          .filter((memory) => memory.tags.includes('pepe-summary'))
+          .map((memory) => memory.id),
+      )
+      : new Set<string>();
+    const prioritizedResultItems = filteredResultItemsWithoutLegacySteps.filter((item) => !overshadowedResultMemoryIds.has(item.memoryId));
     const filteredResultSet = resolvedPepeResult.resultSet
       ? {
         ...resolvedPepeResult.resultSet,
-        items: filteredResultItems,
+        items: prioritizedResultItems,
       }
       : null;
     const contextBreakdown = buildContextCountBreakdown({
@@ -179,11 +216,13 @@ export class ContextResolver {
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
       memoryTexts: [
-        ...filteredResultItems.map((item) => item.summary),
+        sessionSummaryMemory?.content ?? '',
+        ...prioritizedResultItems.map((item) => item.summary),
         workflowContext?.planSummary ?? '',
         workflowContext?.todoSummary ?? '',
         ...attachmentContextTexts,
       ],
+      transientTexts: [activeTurnStepContext ?? ''],
       sessionMessages,
       pendingUserInput: input.pendingUserInput,
     });
@@ -202,15 +241,19 @@ export class ContextResolver {
       ],
       promptTexts: prompts.map((prompt) => prompt.content),
       memoryTexts: [
-        ...filteredResultItems.map((item) => item.summary),
+        sessionSummaryMemory?.content ?? '',
+        ...prioritizedResultItems.map((item) => item.summary),
         workflowContext?.planSummary ?? '',
         workflowContext?.todoSummary ?? '',
         ...attachmentContextTexts,
       ],
+      transientTexts: [activeTurnStepContext ?? ''],
       recentMessages: promptRecentMessages,
       pendingUserInput: input.pendingUserInput,
       modelContextWindow: selection.model?.contextWindow ?? null,
-      derivedMemoryCount: resolvedPepeResult.sourceMemories.filter((memory) => memory.derivationType === 'summary' || memory.summaryDepth > 0).length,
+      derivedMemoryCount: resolvedPepeResult.sourceMemories.filter(
+        (memory) => !memory.tags.includes('task-step-summary') && (memory.derivationType === 'summary' || memory.summaryDepth > 0),
+      ).length,
       contextBreakdown,
     });
     const backgroundSummaryStatus = this.dependencies.resolveBackgroundSummaryStatus?.(session?.id ?? input.activeSessionId ?? null) ?? {
@@ -219,6 +262,8 @@ export class ContextResolver {
       lastSummaryAt: null,
       lastSummaryMemoryId: null,
     };
+    const selectedStepSummaryCount = activeTurnStepSummaries.length;
+    const compactContextMode = isCompactContextModeEnabled(contextCount);
     const taskContext = createTaskContext({
       config: this.dependencies.config,
       session,
@@ -230,11 +275,12 @@ export class ContextResolver {
       selectedModelName: selection.model?.name ?? selection.model?.id ?? null,
       prompts,
       resultSet: filteredResultSet,
-      resultItems: filteredResultItems,
+      resultItems: prioritizedResultItems,
       workflowContext,
       skillContext,
       sessionMessages,
       recentMessages,
+      activeTurnStepContext,
       puebloProfile,
       contextCount,
       uploadedAttachments,
@@ -253,8 +299,10 @@ export class ContextResolver {
         modelName: taskContext.selectedModelName,
         activeSessionId: taskContext.sessionId,
         contextCount,
+        selectedStepSummaryCount,
+        compactContextMode,
         selectedPromptCount: prompts.length,
-        selectedMemoryCount: resolvedPepeResult.resultItems.length,
+        selectedMemoryCount: contextCount.selectedMemoryCount,
         backgroundSummaryStatus,
       },
     };
@@ -393,12 +441,14 @@ function buildContextCountBreakdown(args: {
   readonly puebloTexts: readonly string[];
   readonly promptTexts: readonly string[];
   readonly memoryTexts: readonly string[];
+  readonly transientTexts: readonly string[];
   readonly sessionMessages: readonly SessionMessage[];
   readonly pendingUserInput?: string;
 }): ContextCountBreakdown {
   let systemPromptTokens = estimateTokens(args.puebloTexts.filter(Boolean).join('\n'))
     + estimateTokens(args.promptTexts.filter(Boolean).join('\n'))
-    + estimateTokens(args.memoryTexts.filter(Boolean).join('\n'));
+    + estimateTokens(args.memoryTexts.filter(Boolean).join('\n'))
+    + estimateTokens(args.transientTexts.filter(Boolean).join('\n'));
   let userInputTokens = estimateTokens(args.pendingUserInput ?? '');
   let toolResultTokens = 0;
 
@@ -442,4 +492,16 @@ function summarizeAttachmentForContext(attachment: InputAttachmentManifest): str
     metrics.length > 0 ? `metrics=${metrics.join(', ')}` : null,
     attachment.summary.previewText ? `preview=${attachment.summary.previewText}` : null,
   ].filter((value): value is string => Boolean(value)).join(' | ');
+}
+
+function extractLatestTaskPayload(
+  taskRepository: Pick<AgentTaskRepository, 'listBySession'> | undefined,
+  sessionId: string,
+) {
+  if (!taskRepository) {
+    return null;
+  }
+
+  const latestTask = taskRepository.listBySession(sessionId).at(-1);
+  return extractTaskOutputSummaryPayload(latestTask?.outputSummary ?? null);
 }

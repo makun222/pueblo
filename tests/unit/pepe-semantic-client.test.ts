@@ -14,6 +14,7 @@ describe('pepe semantic client', () => {
       memory: {
         id: 'memory-1',
         type: 'short-term',
+        memoryKind: 'turn',
         title: 'Turn 1',
         content: 'User: inspect issue\n\nAssistant: issue inspected',
         scope: 'session',
@@ -22,6 +23,8 @@ describe('pepe semantic client', () => {
         parentId: null,
         derivationType: 'summary',
         summaryDepth: 0,
+        weight: 0.8,
+        lastAccessedAt: new Date().toISOString(),
         sourceSessionId: 'session-1',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -58,6 +61,7 @@ describe('pepe semantic client', () => {
       memory: {
         id: 'memory-1',
         type: 'short-term',
+        memoryKind: 'generic',
         title: 'Repo fact',
         content: 'Repository uses sqlite persistence.',
         scope: 'project',
@@ -66,6 +70,8 @@ describe('pepe semantic client', () => {
         parentId: null,
         derivationType: 'manual',
         summaryDepth: 0,
+        weight: 0,
+        lastAccessedAt: new Date().toISOString(),
         sourceSessionId: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

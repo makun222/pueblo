@@ -43,6 +43,26 @@ const deepseekSchema = z.object({
   baseUrl: z.string().url().default('https://api.deepseek.com'),
 });
 
+export const DEFAULT_PEPE_RANKING_CONFIG = {
+  recentStickyWindow: 6,
+  stickyMemoryBonus: 0.08,
+  stepSummaryMemoryBonus: 0.03,
+  stickyRetentionDelta: 0.2,
+  minRetentionSimilarity: 0.35,
+  stickyDecayFactor: 0.6,
+  relatedMemoryWeightFactor: 0.75,
+} as const;
+
+const pepeRankingSchema = z.object({
+  recentStickyWindow: z.number().int().positive().default(DEFAULT_PEPE_RANKING_CONFIG.recentStickyWindow),
+  stickyMemoryBonus: z.number().min(0).default(DEFAULT_PEPE_RANKING_CONFIG.stickyMemoryBonus),
+  stepSummaryMemoryBonus: z.number().min(0).default(DEFAULT_PEPE_RANKING_CONFIG.stepSummaryMemoryBonus),
+  stickyRetentionDelta: z.number().min(0).default(DEFAULT_PEPE_RANKING_CONFIG.stickyRetentionDelta),
+  minRetentionSimilarity: z.number().min(0).max(1).default(DEFAULT_PEPE_RANKING_CONFIG.minRetentionSimilarity),
+  stickyDecayFactor: z.number().min(0).max(1).default(DEFAULT_PEPE_RANKING_CONFIG.stickyDecayFactor),
+  relatedMemoryWeightFactor: z.number().min(0).max(1).default(DEFAULT_PEPE_RANKING_CONFIG.relatedMemoryWeightFactor),
+});
+
 const pepeSchema = z.object({
   enabled: z.boolean().default(true),
   providerId: z.string().trim().min(1).nullable().default(null),
@@ -56,6 +76,7 @@ const pepeSchema = z.object({
   summaryIntervalMs: z.number().int().positive().default(5_000),
   resultTopK: z.number().int().positive().default(8),
   similarityThreshold: z.number().min(0).max(1).default(0.2),
+  ranking: pepeRankingSchema.default(DEFAULT_PEPE_RANKING_CONFIG),
   workingDirectoryPattern: z.string().min(1).default('agent-{agentInstanceId}'),
   skillDirectoryName: z.string().trim().min(1).default('skills'),
 });
@@ -67,6 +88,92 @@ const workflowSchema = z.object({
   deliverableFilePattern: z.string().min(1).default('{slug}.plan.md'),
   maxDirectTaskSteps: z.number().int().positive().default(30),
   routeKeywords: z.array(z.string().min(1)).default(['plan.md', '.plan.md', 'workflow']),
+});
+
+export const DEFAULT_MEMORY_WEIGHT_POLICY = {
+  initialWeight: 0.8,
+  minWeight: 0,
+  maxWeight: 1,
+  decayPerTurn: 0.1,
+  mergeThreshold: 0.3,
+  defaultAdjustmentDelta: 0.1,
+} as const;
+
+const memoryWeightPolicySchema = z.object({
+  initialWeight: z.number().min(0).default(DEFAULT_MEMORY_WEIGHT_POLICY.initialWeight),
+  minWeight: z.number().min(0).default(DEFAULT_MEMORY_WEIGHT_POLICY.minWeight),
+  maxWeight: z.number().positive().default(DEFAULT_MEMORY_WEIGHT_POLICY.maxWeight),
+  decayPerTurn: z.number().min(0).default(DEFAULT_MEMORY_WEIGHT_POLICY.decayPerTurn),
+  mergeThreshold: z.number().min(0).default(DEFAULT_MEMORY_WEIGHT_POLICY.mergeThreshold),
+  defaultAdjustmentDelta: z.number().min(0).default(DEFAULT_MEMORY_WEIGHT_POLICY.defaultAdjustmentDelta),
+}).superRefine((policy, ctx) => {
+  if (policy.minWeight > policy.maxWeight) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['minWeight'],
+      message: 'minWeight must be less than or equal to maxWeight',
+    });
+  }
+
+  if (policy.initialWeight < policy.minWeight || policy.initialWeight > policy.maxWeight) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['initialWeight'],
+      message: 'initialWeight must be within the minWeight and maxWeight range',
+    });
+  }
+
+  if (policy.mergeThreshold < policy.minWeight || policy.mergeThreshold > policy.maxWeight) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['mergeThreshold'],
+      message: 'mergeThreshold must be within the minWeight and maxWeight range',
+    });
+  }
+});
+
+export const DEFAULT_MEMORY_CONFIG = {
+  turn: DEFAULT_MEMORY_WEIGHT_POLICY,
+  derivedSummary: {
+    initialWeight: 0.65,
+    minWeight: 0,
+    maxWeight: 1,
+    decayPerTurn: 0.08,
+    mergeThreshold: 0.25,
+    defaultAdjustmentDelta: 0.08,
+  },
+  sessionSummary: {
+    initialWeight: 0.9,
+    minWeight: 0.2,
+    maxWeight: 1,
+    decayPerTurn: 0.05,
+    mergeThreshold: 0.35,
+    defaultAdjustmentDelta: 0.05,
+  },
+  knowledge: {
+    initialWeight: 1,
+    minWeight: 0.4,
+    maxWeight: 1,
+    decayPerTurn: 0.02,
+    mergeThreshold: 0.4,
+    defaultAdjustmentDelta: 0.05,
+  },
+  workflow: {
+    initialWeight: 1,
+    minWeight: 0.4,
+    maxWeight: 1,
+    decayPerTurn: 0.02,
+    mergeThreshold: 0.4,
+    defaultAdjustmentDelta: 0.05,
+  },
+} as const;
+
+const memorySchema = z.object({
+  turn: memoryWeightPolicySchema.default(DEFAULT_MEMORY_CONFIG.turn),
+  derivedSummary: memoryWeightPolicySchema.default(DEFAULT_MEMORY_CONFIG.derivedSummary),
+  sessionSummary: memoryWeightPolicySchema.default(DEFAULT_MEMORY_CONFIG.sessionSummary),
+  knowledge: memoryWeightPolicySchema.default(DEFAULT_MEMORY_CONFIG.knowledge),
+  workflow: memoryWeightPolicySchema.default(DEFAULT_MEMORY_CONFIG.workflow),
 });
 
 const appConfigSchema = z.object({
@@ -97,9 +204,11 @@ const appConfigSchema = z.object({
     summaryIntervalMs: 5_000,
     resultTopK: 50,
     similarityThreshold: 0.8,
+    ranking: DEFAULT_PEPE_RANKING_CONFIG,
     workingDirectoryPattern: 'agent-{agentInstanceId}',
     skillDirectoryName: 'skills',
   }),
+  memory: memorySchema.default(DEFAULT_MEMORY_CONFIG),
   workflow: workflowSchema.default({
     enabled: true,
     defaultWorkflowType: 'pueblo-plan',
@@ -124,7 +233,10 @@ const appConfigSchema = z.object({
 export type ProviderSetting = z.infer<typeof providerSettingSchema>;
 export type DesktopWindowConfig = z.infer<typeof desktopWindowSchema>;
 export type DeepSeekConfig = z.infer<typeof deepseekSchema>;
+export type PepeRankingConfig = z.infer<typeof pepeRankingSchema>;
 export type PepeConfig = z.infer<typeof pepeSchema>;
+export type MemoryWeightPolicyConfig = z.infer<typeof memoryWeightPolicySchema>;
+export type MemoryConfig = z.infer<typeof memorySchema>;
 export type WorkflowConfig = z.infer<typeof workflowSchema>;
 export type GitHubCopilotConfig = z.infer<typeof githubCopilotSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;

@@ -271,6 +271,10 @@ describe('Desktop Output Summary Rendering', () => {
     expect(screen.getByText('Short visible answer')).toBeTruthy();
     expect(screen.queryByText('grep: succeeded - found files')).toBeNull();
     expect(screen.getAllByText('Process Info')).toHaveLength(1);
+    expect(screen.queryByText('Step 1')).toBeNull();
+
+    fireEvent.click(screen.getByText('Process Info'));
+
     expect(screen.getAllByText('Step 1')).toHaveLength(1);
     expect(screen.queryByText('Model Output')).toBeNull();
   });
@@ -405,6 +409,8 @@ describe('Desktop Output Summary Rendering', () => {
       currentModelId: 'copilot-chat',
       messageHistory: [],
       selectedPromptIds: [],
+      pinnedMemoryIds: [],
+      workingMemoryIds: [],
       selectedMemoryIds: [],
       providerUsageStats,
       originSessionId: null,

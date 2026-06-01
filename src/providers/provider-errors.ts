@@ -1,7 +1,12 @@
+import type { ProviderRequestMetrics } from './provider-adapter';
+
 export class ProviderError extends Error {
-  constructor(message: string) {
+  readonly requestMetrics?: ProviderRequestMetrics;
+
+  constructor(message: string, options: { readonly requestMetrics?: ProviderRequestMetrics } = {}) {
     super(message);
     this.name = 'ProviderError';
+    this.requestMetrics = options.requestMetrics;
   }
 }
 

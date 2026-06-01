@@ -274,11 +274,24 @@ export interface ProviderUsage {
   readonly completionTokensDetails?: ProviderCompletionUsageDetails;
 }
 
+export interface ProviderRequestMetrics {
+  readonly submittedTokens: number;
+  readonly bodyBytes: number;
+  readonly originalBodyBytes: number;
+  readonly messageCount: number;
+  readonly toolCount: number;
+  readonly roleCounts: Record<ProviderMessage['role'], number>;
+  readonly compacted: boolean;
+  readonly compactedToolMessages: number;
+  readonly compactionStage: string;
+}
+
 export type ProviderStepResult =
   | {
       readonly type: 'final';
       readonly outputSummary: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -288,6 +301,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -297,6 +311,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -306,6 +321,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -315,6 +331,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-call';
@@ -324,6 +341,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
       readonly type: 'tool-calls';
@@ -331,6 +349,7 @@ export type ProviderStepResult =
       readonly rationale?: string;
       readonly reasoningContent?: string;
       readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
     };
 
 export interface ProviderRunRequest {
@@ -342,6 +361,7 @@ export interface ProviderRunRequest {
 export interface ProviderRunResult {
   readonly outputSummary: string;
   readonly usage?: ProviderUsage;
+  readonly requestMetrics?: ProviderRequestMetrics;
 }
 
 export interface ProviderAdapter {

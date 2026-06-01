@@ -38,6 +38,7 @@ const DESKTOP_IPC_CHANNELS = [
   'list-agent-profiles',
   'start-agent-session',
   'list-agent-sessions',
+  'get-session',
   'list-session-memories',
   'select-session',
   'select-input-files',
@@ -283,6 +284,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
   ipcMain.handle('start-agent-session', async (_event, profileId: string) => cli.startAgentSession(profileId));
 
   ipcMain.handle('list-agent-sessions', async (_event, agentInstanceId: string) => cli.listAgentSessions(agentInstanceId));
+
+  ipcMain.handle('get-session', async (_event, sessionId: string) => cli.getSession(sessionId));
 
   ipcMain.handle('list-session-memories', async (_event, sessionId: string) => cli.listSessionMemories(sessionId));
 

@@ -27,6 +27,7 @@ import { createWorkflowInstanceModel } from '../../src/workflow/workflow-model';
 import { createInitialPuebloPlanOutline } from '../../src/workflow/pueblo-plan/pueblo-plan-planner';
 import { applyTodoRound, selectNextTodoRound } from '../../src/workflow/pueblo-plan/pueblo-plan-rounds';
 import { createInitialPuebloPlanDocument, renderPuebloPlanMarkdown } from '../../src/workflow/pueblo-plan/pueblo-plan-markdown';
+import type { AgentTask } from '../../src/shared/schema';
 
 const tempDirs: string[] = [];
 
@@ -153,9 +154,159 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.agentProfileId).toBe('code-master');
     expect(resolved.runtimeStatus.selectedPromptCount).toBe(1);
     expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);
+    expect(resolved.runtimeStatus.selectedStepSummaryCount).toBe(0);
+    expect(resolved.runtimeStatus.compactContextMode).toBe(false);
     expect(resolved.runtimeStatus.contextCount.messageCount).toBe(2);
     expect(resolved.runtimeStatus.contextCount.estimatedTokens).toBeGreaterThan(0);
     expect(resolved.runtimeStatus.contextCount.contextWindowLimit).toBe(16000);
+  });
+
+  it('surfaces active turn step context and compact mode in runtime status', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-step-summary-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 80 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Resolver session', 'gpt-4.1-mini');
+    const pepeResultService = new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'openai' }).pepe);
+    const taskRepository = {
+      listBySession: () => [{
+        id: 'task-1',
+        goal: 'Inspect the failure',
+        status: 'completed',
+        sessionId: session.id,
+        providerId: 'openai',
+        modelId: 'gpt-4.1-mini',
+        inputContextSummary: '{}',
+        outputSummary: JSON.stringify({
+          outputSummary: 'Task completed',
+          stepTrace: [{
+            stepNumber: 1,
+            type: 'tool-result',
+            summary: `Read succeeded: ${'A'.repeat(60_000)}`,
+            toolName: 'read',
+            toolCallId: 'call-1',
+          }],
+        }),
+        toolInvocationIds: [],
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }] satisfies AgentTask[],
+    };
+
+    const resolver = new ContextResolver({
+      config: createTestAppConfig({ defaultProviderId: 'openai' }),
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+      taskRepository,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Inspect the failure',
+      cwd: tempDir,
+    });
+
+    expect(resolved.runtimeStatus.selectedStepSummaryCount).toBe(1);
+    expect(resolved.taskContext.activeTurnStepContext).toContain('Active turn step context:');
+    expect(resolved.taskContext.activeTurnStepContext).toContain('tool-result / read / call-1');
+    expect(resolved.runtimeStatus.compactContextMode).toBe(true);
+  });
+
+  it('prioritizes the selected session summary over per-turn Pepe summaries', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-session-summary-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({ defaultProviderId: 'openai' });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Resolver session', 'gpt-4.1-mini');
+    const turnMemory = memoryService.createConversationTurnMemory({
+      sessionId: session.id,
+      turnNumber: 1,
+      userInput: 'Inspect sqlite persistence',
+      assistantOutput: 'SQLite is the source of truth.',
+    });
+    const turnSummary = memoryService.createDerivedSummaryMemory({
+      sessionId: session.id,
+      parentMemory: turnMemory,
+      summary: 'Turn summary: sqlite remains authoritative.',
+    });
+    const sessionSummary = memoryService.upsertSessionSummaryMemory({
+      sessionId: session.id,
+      summaries: [turnSummary],
+    });
+    sessionService.addSelectedMemory(session.id, turnMemory.id);
+    sessionService.addSelectedMemory(session.id, sessionSummary!.id);
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [turnMemory.id, sessionSummary!.id],
+      pendingUserInput: 'Inspect sqlite persistence',
+      resultItems: [
+        {
+          memoryId: turnSummary.id,
+          summary: 'Per-turn Pepe summary that should be superseded.',
+          similarity: 0.99,
+          sourceSessionId: session.id,
+          vectorVersion: 'pepe-local-v1',
+        },
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Inspect sqlite persistence',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems).toHaveLength(0);
+    expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);
+    expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(1);
   });
 
   it('extracts the target directory from the latest user path when the new turn omits it', () => {

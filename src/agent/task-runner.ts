@@ -5,6 +5,7 @@ import {
   getToolExecutionPolicy,
   type ProviderToolArgs,
   ProviderMessage,
+  type ProviderRequestMetrics,
   ProviderRunResult,
   ProviderStepResult,
   type ProviderToolDefinition,
@@ -12,7 +13,7 @@ import {
   ProviderToolCall,
   type ProviderUsage,
 } from '../providers/provider-adapter';
-import { ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../providers/provider-errors';
+import { ProviderError, ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../providers/provider-errors';
 import { ProviderRegistry } from '../providers/provider-registry';
 import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
@@ -40,6 +41,7 @@ export interface AgentTaskRunnerOptions {
   readonly requestToolApprovalBatch?: ToolApprovalBatchHandler;
   readonly reportProgress?: (message: string) => void;
   readonly reportAssistantDelta?: (text: string) => void;
+  readonly reportRequestMetrics?: (metrics: ProviderRequestMetrics) => void;
 }
 
 export interface ToolApprovalRequest {
@@ -58,29 +60,27 @@ export type ToolApprovalHandler = (request: ToolApprovalRequest) => Promise<Tool
 
 export type ToolApprovalBatchHandler = (requests: readonly ToolApprovalRequest[]) => Promise<readonly ToolApprovalDecision[]>;
 
+const TOOL_RESULT_SUMMARY_CHAR_LIMIT = 640;
 const DEFAULT_MAX_AGENT_STEPS = 48;
 const DEFAULT_TOOL_PREVIEW_ITEM_LIMIT = 12;
 const READ_TOOL_PREVIEW_ITEM_LIMIT = 24;
 const REPEATED_TOOL_LOOP_LIMIT = 6;
 const STEP_BUDGET_FINALIZATION_BUFFER = 6;
 const CLARIFICATION_FALLBACK_PROMPT = [
-  'You have spent many reasoning steps on this task without reaching a reliable final answer.',
-  'Do not call any more tools.',
-  'Write a short clarification request to the user in the same language as the latest user message.',
-  'First acknowledge that the current goal is still too broad or ambiguous to finish reliably.',
-  'Then provide 1 to 3 concrete options that help the user restate the task with a narrower, executable scope.',
-  'Each option must be specific and action-oriented, such as narrowing to a file, module, bug, expected output, or validation target.',
-  'Keep the response concise and directly usable.',
+  '你已经花费了很多推理步骤，但仍未能得出可靠的最终答案。',
+  '你需要跟用户进行需求澄清：首先承认当前目标过于宽泛或模糊，无法可靠地完成。',
+  '然后提供几个具体选项，帮助用户进一步明确需求。',
+  '每个选项尽量具体且可操作。',
+  '保持回应简洁且可直接使用。',
 ].join(' ');
 const STEP_BUDGET_HANDOFF_PROMPT = [
-  'You have reached the task step budget for this round.',
-  'Do not call any more tools.',
-  'Write a concise progress handoff in the same language as the latest user message.',
-  'Use exactly these three section headings: Completed this round, Remaining work, Recommended next request.',
-  'Under Completed this round, summarize only the work already completed or verified in this round.',
-  'Under Remaining work, list the most important unfinished tasks that should be continued in later turns.',
-  'Under Recommended next request, suggest one concrete next-turn request the user can send to continue without repeating finished work.',
-  'Be honest about what is incomplete and keep the response concise and actionable.',
+  '你已经达到了本轮任务步骤的预算。',
+  '停止调用工具。',
+  '写一个简洁的进度报告：本轮完成、剩余工作、推荐的下一步请求。',
+  '在本轮完成部分，仅总结本轮已完成或已验证的工作。',
+  '在剩余工作部分，列出最重要的未完成任务，这些任务应在后续回合中继续进行。',
+  '在推荐的下一步请求部分，建议用户发送一个具体的下一回合请求，以便在不重复已完成工作的情况下继续。',
+  '对未完成的工作保持诚实，并保持回应简洁且可操作。',
 ].join(' ');
 
 interface AgentStepTraceEntry {
@@ -102,6 +102,7 @@ export class AgentTaskRunner {
   private readonly requestToolApprovalBatch?: ToolApprovalBatchHandler;
   private readonly reportProgress?: (message: string) => void;
   private readonly reportAssistantDelta?: (text: string) => void;
+  private readonly reportRequestMetrics?: (metrics: ProviderRequestMetrics) => void;
   private readonly approvalCache = new Set<string>();
 
   constructor(
@@ -115,6 +116,7 @@ export class AgentTaskRunner {
     this.requestToolApprovalBatch = options.requestToolApprovalBatch;
     this.reportProgress = options.reportProgress;
     this.reportAssistantDelta = options.reportAssistantDelta;
+    this.reportRequestMetrics = options.reportRequestMetrics;
   }
 
   async run(input: RunAgentTaskInput): Promise<AgentTask> {
@@ -154,6 +156,7 @@ export class AgentTaskRunner {
     const stepTrace: AgentStepTraceEntry[] = [];
     const modelMessageTrace: ModelMessageTraceEntry[] = [];
     const providerUsageRef: { current?: ProviderUsage } = {};
+    const providerRequestMetricsRef: { current?: ProviderRequestMetrics } = {};
 
     try {
       this.emitProgress(`Started task: ${truncateProgressMessage(input.goal)}`);
@@ -169,6 +172,7 @@ export class AgentTaskRunner {
         stepTrace,
         modelMessageTrace,
         providerUsageRef,
+        providerRequestMetricsRef,
         signal: input.signal,
       });
       const enrichedOutput = this.createCompletedOutputSummary(
@@ -179,6 +183,7 @@ export class AgentTaskRunner {
         stepTrace,
         modelMessageTrace,
         providerUsageRef.current,
+        providerRequestMetricsRef.current,
       );
 
       return this.repository.update(task.id, {
@@ -192,6 +197,14 @@ export class AgentTaskRunner {
         toolInvocationIds,
       });
     } catch (error) {
+      if (error instanceof ProviderError && error.requestMetrics) {
+        providerRequestMetricsRef.current = mergeProviderRequestMetrics(
+          providerRequestMetricsRef.current,
+          error.requestMetrics,
+        );
+        this.reportRequestMetrics?.(error.requestMetrics);
+      }
+
       this.tryPersistFailure(
         task,
         input,
@@ -202,6 +215,7 @@ export class AgentTaskRunner {
         stepTrace,
         modelMessageTrace,
         providerUsageRef.current,
+        providerRequestMetricsRef.current,
         error,
       );
       throw error;
@@ -230,6 +244,7 @@ export class AgentTaskRunner {
     readonly stepTrace: AgentStepTraceEntry[];
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly providerUsageRef: { current?: ProviderUsage };
+    readonly providerRequestMetricsRef: { current?: ProviderRequestMetrics };
     readonly signal?: AbortSignal;
   }): Promise<ProviderRunResult> {
     const messages = [...args.executionMessages];
@@ -286,6 +301,14 @@ export class AgentTaskRunner {
       throwIfTaskCancelled(args.signal, 'Task cancelled during agent execution.');
 
       args.providerUsageRef.current = mergeProviderUsage(args.providerUsageRef.current, result.usage);
+      args.providerRequestMetricsRef.current = mergeProviderRequestMetrics(
+        args.providerRequestMetricsRef.current,
+        result.requestMetrics,
+      );
+
+      if (result.requestMetrics) {
+        this.reportRequestMetrics?.(result.requestMetrics);
+      }
 
       if (result.type === 'final') {
         this.emitProgress(`Step ${stepIndex + 1}: final response ready`);
@@ -297,6 +320,7 @@ export class AgentTaskRunner {
         return {
           outputSummary: result.outputSummary,
           usage: args.providerUsageRef.current,
+          requestMetrics: args.providerRequestMetricsRef.current,
         };
       }
 
@@ -395,6 +419,7 @@ export class AgentTaskRunner {
         return {
           outputSummary: clarificationResult.outputSummary,
           usage: args.providerUsageRef.current,
+          requestMetrics: clarificationResult.requestMetrics ?? args.providerRequestMetricsRef.current,
         };
       }
     }
@@ -414,6 +439,7 @@ export class AgentTaskRunner {
     return {
       outputSummary: handoffResult.outputSummary,
       usage: args.providerUsageRef.current,
+      requestMetrics: handoffResult.requestMetrics ?? args.providerRequestMetricsRef.current,
     };
   }
 
@@ -466,6 +492,7 @@ export class AgentTaskRunner {
         return {
           outputSummary: result.outputSummary,
           usage: result.usage,
+          requestMetrics: result.requestMetrics,
         };
       }
     } catch {
@@ -501,7 +528,7 @@ export class AgentTaskRunner {
       },
     ];
 
-    const stepMessages = prepareMessagesForModel(clarificationMessages);
+    const stepMessages = prepareMessagesForModel(clarificationMessages);//
     args.modelMessageTrace.push({
       stepNumber: args.stepNumber,
       messages: stepMessages.map((message) => ({
@@ -531,6 +558,7 @@ export class AgentTaskRunner {
         return {
           outputSummary: result.outputSummary,
           usage: result.usage,
+          requestMetrics: result.requestMetrics,
         };
       }
     } catch {
@@ -560,9 +588,9 @@ export class AgentTaskRunner {
       : 'No tools are available in this runtime. Continue without tool calls and answer directly.';
 
     return [
-      `The tool "${error.requestedToolName}" is not available in this runtime. Do not call it again.`,
-      'Use only the exact tool names listed below, or reply with a final answer if no tool is needed.',
-      'Available tools:',
+      `这个工具 "${error.requestedToolName}" 在此运行时不可用。请勿再次调用。`,
+      '仅使用下列工具名称，或者如果不需要工具，请直接回复最终答案。',
+      '可用工具:',
       toolCatalog,
     ].join('\n');
   }
@@ -579,11 +607,11 @@ export class AgentTaskRunner {
       : '- Invalid tool arguments.';
 
     return [
-      `The arguments for tool "${error.toolName}" were invalid. Do not repeat the same invalid call.`,
-      'Validation errors:',
+      `工具 "${error.toolName}" 的参数无效。请勿再次调用相同的无效工具。`,
+      '验证错误:',
       validationDetails,
-      'Fix the arguments and use only the exact tool names and schemas listed below, or reply with a final answer if no tool is needed.',
-      'Available tools:',
+      '修正参数并仅使用下列工具名称和模式，或者如果不需要工具，请直接回复最终答案。',
+      '可用工具:',
       toolCatalog,
     ].join('\n');
   }
@@ -883,6 +911,7 @@ export class AgentTaskRunner {
     stepTrace: AgentStepTraceEntry[],
     modelMessageTrace: ModelMessageTraceEntry[],
     providerUsage: ProviderUsage | undefined,
+    providerRequestMetrics: ProviderRequestMetrics | undefined,
   ) {
     const targetDirectory = input.taskContext?.targetDirectory ?? null;
     const toolExecutionCwd = this.resolveTaskExecutionCwd(input);
@@ -891,6 +920,7 @@ export class AgentTaskRunner {
       {
         outputSummary: response.outputSummary,
         providerUsage,
+        providerRequestMetrics,
         targetDirectory,
         toolExecutionCwd,
         workflow: this.getWorkflowMetadata(input),
@@ -927,6 +957,7 @@ export class AgentTaskRunner {
     stepTrace: AgentStepTraceEntry[],
     modelMessageTrace: ModelMessageTraceEntry[],
     providerUsage: ProviderUsage | undefined,
+    providerRequestMetrics: ProviderRequestMetrics | undefined,
     error: unknown,
   ): void {
     const targetDirectory = input.taskContext?.targetDirectory ?? null;
@@ -935,6 +966,7 @@ export class AgentTaskRunner {
       {
         outputSummary: `Task failed: ${this.getErrorMessage(error)}`,
         providerUsage,
+        providerRequestMetrics,
         targetDirectory,
         toolExecutionCwd,
         workflow: this.getWorkflowMetadata(input),
@@ -1015,6 +1047,20 @@ function mergeProviderUsage(current: ProviderUsage | undefined, next: ProviderUs
     promptCacheMissTokens: sumProviderUsageNumber(current.promptCacheMissTokens, next.promptCacheMissTokens),
     promptTokensDetails: mergePromptUsageDetails(current, next),
     completionTokensDetails: mergeCompletionUsageDetails(current, next),
+  };
+}
+
+function mergeProviderRequestMetrics(
+  current: ProviderRequestMetrics | undefined,
+  next: ProviderRequestMetrics | undefined,
+): ProviderRequestMetrics | undefined {
+  if (!next) {
+    return current ? { ...current, roleCounts: { ...current.roleCounts } } : undefined;
+  }
+
+  return {
+    ...next,
+    roleCounts: { ...next.roleCounts },
   };
 }
 
@@ -1110,10 +1156,10 @@ function createStepBudgetExecutionMessage(maxSteps: number): string {
   const finalizationThreshold = Math.max(1, maxSteps - STEP_BUDGET_FINALIZATION_BUFFER);
   return [
     '执行预算政策：',
-    `- 本轮有 ${maxSteps} 步的硬性模型调用限制。`,
+    `- 每轮交互有 ${maxSteps} 步的硬性模型调用限制。`,
     `- 在任务开始前，先评估请求能否在 ${maxSteps} 步内完成。`,
-    '- 如果超过步数限制，就对工作进行切分，划分为多个子任务，并进行任务排序。',
-    `- 按照顺序选择几个子任务，这些子任务应该能在大约 ${finalizationThreshold} 步内完成。先完成这些子任务，并把剩余的工作留到后续轮次继续。`,
+    '- 如果超过步数限制，就对工作进行切分，划分为多个子任务，进行任务排序并列出计划。',
+    `- 按照顺序选择几个能在 ${finalizationThreshold} 步内完成的子任务。先完成这些子任务，并把剩余的工作留到后续轮次继续。`,
     '- 每当你把工作交给后续轮次时，反馈：（本轮已完成、剩余工作、推荐下一步）。',
     `- 如果在 ${finalizationThreshold} 步数内仍无法得到对工作的有效评估或规划，则先引导用户进一步明确其目标。`,
   ].join('\n');
@@ -1220,7 +1266,25 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Set([
   'grep',
   'rev-parse',
 ]);
+/*
+function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[] {
+  let firstTrailingToolIndex = messages.length;
+  while (firstTrailingToolIndex > 0 && messages[firstTrailingToolIndex - 1]?.role === 'tool') {
+    firstTrailingToolIndex -= 1;
+  }
 
+  return messages.map((message, index) => {
+    if (message.role !== 'tool' || index >= firstTrailingToolIndex) {
+      return message;
+    }
+
+    return {
+      ...message,
+      content: compactSerializedToolMessage(message),
+    };
+  });
+}
+*/
 function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[] {
   let firstTrailingToolIndex = messages.length;
   while (firstTrailingToolIndex > 0 && messages[firstTrailingToolIndex - 1]?.role === 'tool') {
@@ -1242,7 +1306,7 @@ function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[]
 function serializeToolResultForModel(output: ToolExecutionResult): string {
   return JSON.stringify({
     status: output.status,
-    summary: output.summary,
+    summary: truncateToolSummaryForModel(output.summary),
     output: output.output,
   });
 }
@@ -1306,15 +1370,17 @@ function compactSerializedToolMessage(message: ProviderMessage): string {
   const previewLimit = message.toolName === 'read' ? READ_TOOL_PREVIEW_ITEM_LIMIT : DEFAULT_TOOL_PREVIEW_ITEM_LIMIT;
   const preview = parsed.output.slice(0, previewLimit);
 
-  return JSON.stringify({
+  return '执行结果已压缩：'+truncateToolSummaryForModel(parsed.summary);
+  /*JSON.stringify({
     status: parsed.status,
-    summary: parsed.summary,
-    outputPreview: preview,
-    outputCount: parsed.output.length,
-    outputTruncated: preview.length < parsed.output.length,
-    compression: 'older-tool-result-compacted',
-    guidance: 'Older tool result was compacted to reduce prompt size. Re-run the tool with narrower arguments if exact full output is needed again.',
+    summary: truncateToolSummaryForModel(parsed.summary),
+    outputPreview: '执行结果已压缩：' + preview.join('\n'),
+   // outputCount: parsed.output.length,
+    //outputTruncated: preview.length < parsed.output.length,
+   // compression: 'older-tool-result-compacted',
+   // guidance: 'Older tool result was compacted to reduce prompt size. Re-run the tool with narrower arguments if exact full output is needed again.',
   });
+   */
 }
 
 function parseSerializedToolContent(content: string): { status: string; summary: string; output: string[] } | null {
@@ -1338,6 +1404,16 @@ function parseSerializedToolContent(content: string): { status: string; summary:
   } catch {
     return null;
   }
+}
+
+
+
+function truncateToolSummaryForModel(summary: string): string {
+  if (summary.length <= TOOL_RESULT_SUMMARY_CHAR_LIMIT) {
+    return summary;
+  }
+
+  return `${summary.slice(0, TOOL_RESULT_SUMMARY_CHAR_LIMIT - 3)}...`;
 }
 
 function resolveAgentTaskStepLimit(maxSteps?: number): number {

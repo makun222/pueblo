@@ -1,13 +1,8 @@
+import { DEFAULT_PEPE_RANKING_CONFIG, type PepeRankingConfig } from '../shared/config';
 import type { MemoryRecord, PepeResultItem } from '../shared/schema';
 
 export const LOCAL_VECTOR_VERSION = 'pepe-local-v1';
 const VECTOR_DIMENSION = 256;
-const RECENT_STICKY_WINDOW = 6;
-const STICKY_MEMORY_BONUS = 0.08;
-const STICKY_RETENTION_DELTA = 0.2;
-const MIN_RETENTION_SIMILARITY = 0.35;
-const STICKY_DECAY_FACTOR = 0.6;
-const RELATED_MEMORY_WEIGHT_FACTOR = 0.75;
 
 export interface RankedMemoryCandidate {
   readonly memoryId: string | null;
@@ -23,6 +18,7 @@ export interface RankMemoryCandidatesInput {
   readonly pendingUserInput?: string;
   readonly resultTopK: number;
   readonly similarityThreshold: number;
+  readonly ranking?: PepeRankingConfig;
   readonly summaryOverrides?: ReadonlyMap<string, string>;
   readonly selectedMemoryIds?: string[];
 }
@@ -87,6 +83,7 @@ export async function rankMemoryCandidatesWithVectors(args: {
   readonly pendingUserInput?: string;
   readonly resultTopK: number;
   readonly similarityThreshold: number;
+  readonly ranking?: PepeRankingConfig;
   readonly summaryOverrides?: ReadonlyMap<string, string>;
   readonly selectedMemoryIds?: string[];
   readonly vectors: number[][];
@@ -123,20 +120,25 @@ function finalizeRankedCandidates(args: {
   readonly memories: MemoryRecord[];
   readonly resultTopK: number;
   readonly similarityThreshold: number;
+  readonly ranking?: PepeRankingConfig;
   readonly selectedMemoryIds?: string[];
   readonly vectorVersion: string;
 }): RankedMemoryCandidate[] {
-  const stickyWeights = buildStickyMemoryWeights(args.memories, args.selectedMemoryIds ?? []);
+  const ranking = args.ranking ?? DEFAULT_PEPE_RANKING_CONFIG;
+  const stickyWeights = buildStickyMemoryWeights(args.memories, args.selectedMemoryIds ?? [], ranking);
   const scoredEntries = args.entries
     .map((entry) => ({
       ...entry,
       stickyWeight: stickyWeights.get(entry.memory.id) ?? 0,
       isSticky: (stickyWeights.get(entry.memory.id) ?? 0) > 0,
+      isTaskStepSummary: isTaskStepSummaryMemory(entry.memory),
       retentionFloor: Math.max(
-        MIN_RETENTION_SIMILARITY,
-        args.similarityThreshold - (STICKY_RETENTION_DELTA * (stickyWeights.get(entry.memory.id) ?? 0)),
+        ranking.minRetentionSimilarity,
+        args.similarityThreshold - (ranking.stickyRetentionDelta * (stickyWeights.get(entry.memory.id) ?? 0)),
       ),
-      rankingScore: entry.similarity + ((stickyWeights.get(entry.memory.id) ?? 0) * STICKY_MEMORY_BONUS),
+      rankingScore: entry.similarity
+        + ((stickyWeights.get(entry.memory.id) ?? 0) * ranking.stickyMemoryBonus)
+        + (isTaskStepSummaryMemory(entry.memory) ? ranking.stepSummaryMemoryBonus : 0),
     }))
     .sort((left, right) => right.rankingScore - left.rankingScore);
 
@@ -174,16 +176,20 @@ function dedupeEntries<T extends { readonly memory: MemoryRecord }>(entries: T[]
   return deduped;
 }
 
-function buildStickyMemoryWeights(memories: MemoryRecord[], selectedMemoryIds: string[]): Map<string, number> {
+function buildStickyMemoryWeights(
+  memories: MemoryRecord[],
+  selectedMemoryIds: string[],
+  ranking: PepeRankingConfig,
+): Map<string, number> {
   const memoryIds = new Set(memories.map((memory) => memory.id));
   const recentSelectedIds = selectedMemoryIds
     .filter((memoryId) => memoryIds.has(memoryId))
-    .slice(-RECENT_STICKY_WINDOW)
+    .slice(-ranking.recentStickyWindow)
     .reverse();
   const stickyWeights = new Map<string, number>();
 
   recentSelectedIds.forEach((memoryId, index) => {
-    mergeStickyWeight(stickyWeights, memoryId, Math.pow(STICKY_DECAY_FACTOR, index));
+    mergeStickyWeight(stickyWeights, memoryId, Math.pow(ranking.stickyDecayFactor, index));
   });
 
   for (const memory of memories) {
@@ -191,7 +197,7 @@ function buildStickyMemoryWeights(memories: MemoryRecord[], selectedMemoryIds: s
       mergeStickyWeight(
         stickyWeights,
         memory.id,
-        (stickyWeights.get(memory.parentId) ?? 0) * RELATED_MEMORY_WEIGHT_FACTOR,
+        (stickyWeights.get(memory.parentId) ?? 0) * ranking.relatedMemoryWeightFactor,
       );
     }
 
@@ -199,7 +205,7 @@ function buildStickyMemoryWeights(memories: MemoryRecord[], selectedMemoryIds: s
       mergeStickyWeight(
         stickyWeights,
         memory.parentId,
-        (stickyWeights.get(memory.id) ?? 0) * RELATED_MEMORY_WEIGHT_FACTOR,
+        (stickyWeights.get(memory.id) ?? 0) * ranking.relatedMemoryWeightFactor,
       );
     }
   }
@@ -212,6 +218,10 @@ function mergeStickyWeight(weights: Map<string, number>, memoryId: string, weigh
   if (weight > existingWeight) {
     weights.set(memoryId, weight);
   }
+}
+
+function isTaskStepSummaryMemory(memory: MemoryRecord): boolean {
+  return memory.tags.includes('task-step-summary');
 }
 
 export function vectorizeWithLocalHash(text: string): number[] {

@@ -58,6 +58,9 @@ describe('interactive cli session', () => {
       listAgentSessions() {
         return [];
       },
+      getSession() {
+        return null;
+      },
       listSessionMemories() {
         return [];
       },
@@ -153,6 +156,7 @@ describe('interactive cli session', () => {
       listAgentProfiles() { return []; },
       startAgentSession() { throw new Error('not implemented for interactive test'); },
       listAgentSessions() { return []; },
+      getSession() { return null; },
       listSessionMemories() { return []; },
       selectSession() { throw new Error('not implemented for interactive test'); },
       setProgressReporter() {},
