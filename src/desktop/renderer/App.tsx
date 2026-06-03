@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
+import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererExecCommand, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopFileReviewRequest,
   DesktopMenuAction,
@@ -2821,6 +2821,15 @@ function renderTranscriptEntry(
     );
   }
 
+  if (entry.type === 'tool-result' && entry.execCommand) {
+    return (
+      <div key={entry.id} className="output-block-stack">
+        <ExecCommandBlock entryId={entry.id} execCommand={entry.execCommand} content={entry.content} collapsed={entry.collapsed} />
+        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: false })}
+      </div>
+    );
+  }
+
   if (entry.collapsed) {
     return (
       <div key={entry.id} className="output-block-stack">
@@ -2857,6 +2866,61 @@ function renderTranscriptEntry(
     </div>
   );
 }
+
+const ExecCommandBlock = React.memo(function ExecCommandBlock(args: {
+  readonly entryId: string;
+  readonly execCommand: RendererExecCommand;
+  readonly content: string;
+  readonly collapsed: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(() => !args.collapsed);
+  const [hasLoadedBody, setHasLoadedBody] = useState(() => !args.collapsed);
+  const argsText = args.execCommand.args.length > 0 ? args.execCommand.args.join(' ') : '(no arguments)';
+
+  useEffect(() => {
+    if (!args.collapsed) {
+      setIsExpanded(true);
+      setHasLoadedBody(true);
+    }
+  }, [args.collapsed]);
+
+  return (
+    <section className="exec-output-block" aria-label={`Command execution ${args.execCommand.command}`}>
+      <button
+        type="button"
+        className="exec-output-trigger"
+        aria-expanded={isExpanded}
+        aria-controls={`${args.entryId}-exec-output`}
+        onClick={() => {
+          setIsExpanded((previous) => {
+            const next = !previous;
+            if (next) {
+              setHasLoadedBody(true);
+            }
+            return next;
+          });
+        }}
+      >
+        <span className="exec-output-trigger-text">{args.execCommand.command}</span>
+      </button>
+      {hasLoadedBody && isExpanded ? (
+        <div className="exec-output-body" id={`${args.entryId}-exec-output`}>
+          <div className="exec-output-meta">
+            <p className="exec-output-meta-row">
+              <span className="exec-output-meta-label">Command</span>
+              <span className="exec-output-meta-value">{args.execCommand.rawCommand}</span>
+            </p>
+            <p className="exec-output-meta-row">
+              <span className="exec-output-meta-label">Args</span>
+              <span className="exec-output-meta-value">{argsText}</span>
+            </p>
+          </div>
+          <pre className="exec-output-content">{args.content}</pre>
+        </div>
+      ) : null}
+    </section>
+  );
+});
 
 function createTranscriptEntriesFromSession(session: Session): TranscriptEntry[] {
   return session.messageHistory
@@ -3118,6 +3182,7 @@ function shouldDisplayRendererBlock(block: RendererOutputBlock): boolean {
   return block.type === 'task-result'
     || block.type === 'command-result'
     || block.type === 'error'
+    || (block.type === 'tool-result' && Boolean(block.execCommand))
     || (block.type === 'system' && !block.collapsed);
 }
 

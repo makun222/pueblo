@@ -1,5 +1,6 @@
 import type { AppConfig, PepeConfig, ProviderSetting } from '../shared/config';
 import type { MemoryRecord } from '../shared/schema';
+import { ProviderError } from '../providers/provider-errors';
 import type { ProviderRegistry } from '../providers/provider-registry';
 import { resolveDeepSeekModelId } from '../providers/deepseek-profile';
 
@@ -46,33 +47,50 @@ export class PepeSemanticClient {
   }
 
   isConfigured(): boolean {
-    return this.getSummaryTarget() !== null;
+    const target = this.getSummaryTarget();
+    return target !== null && this.canRunTarget(target);
   }
 
   async summarizeMemory(input: SummarizePepeMemoryInput): Promise<string | null> {
     const target = this.getSummaryTarget();
-    if (!target) {
+    if (!target || !this.canRunTarget(target)) {
       return null;
     }
 
-    this.providerRegistry.ensureModel(target.providerId, target.modelId);
-    const adapter = this.providerRegistry.getAdapter(target.providerId);
-    const summaryPrompt = buildSummaryPrompt(input.memory, input.currentInput);
-    const result = await adapter.runTask({
-      modelId: target.modelId,
-      inputContextSummary: [
+    try {
+      const adapter = this.providerRegistry.getAdapter(target.providerId);
+      const summaryPrompt = buildSummaryPrompt(input.memory, input.currentInput);
+      const result = await adapter.runTask({
+        modelId: target.modelId,
+        inputContextSummary: [
 /*         'You are Pepe, a memory distillation service.',
         'Summarize the memory into a concise technical note for future retrieval.',
         'Prefer one or two sentences. Keep important entities and decisions.', */
-        '你是Pepe，一个记忆提炼服务。',
-        '将记忆总结为简明的技术笔记以便将来检索。',
-        '最好使用一到两句话。保留重要的实体和决策，路径及文件名。',
-      ].join('\n'),
-      goal: summaryPrompt,
-    });
+          '你是Pepe，一个记忆提炼服务。',
+          '将记忆总结为简明的技术笔记以便将来检索。',
+          '最好使用一到两句话。保留重要的实体和决策，路径及文件名。',
+        ].join('\n'),
+        goal: summaryPrompt,
+      });
 
-    const normalized = result.outputSummary.trim();
-    return normalized.length > 0 ? normalized : null;
+      const normalized = result.outputSummary.trim();
+      return normalized.length > 0 ? normalized : null;
+    } catch (error) {
+      if (error instanceof ProviderError) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  private canRunTarget(target: PepeSemanticTarget): boolean {
+    try {
+      this.providerRegistry.ensureModel(target.providerId, target.modelId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

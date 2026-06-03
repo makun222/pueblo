@@ -679,6 +679,50 @@ describe('Desktop Renderer', () => {
     expect(screen.getByText('No output yet.')).toBeTruthy();
   });
 
+  it('renders exec tool results as a collapsible command execution block', async () => {
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Enter command or task...')).toBeTruthy();
+    });
+
+    act(() => {
+      outputListener?.({}, {
+        id: 'exec-block',
+        type: 'tool-result',
+        title: 'Command Execution',
+        content: 'src\n\npackage.json',
+        collapsed: true,
+        messageTrace: [],
+        fileChanges: [],
+        execCommand: {
+          rawCommand: 'dir src',
+          command: 'dir',
+          args: ['src'],
+          result: 'src\n\npackage.json',
+        },
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    expect(screen.getByText('dir')).toBeTruthy();
+    expect(screen.queryByText('dir src')).toBeNull();
+    expect(screen.queryByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'dir' }));
+
+    expect(screen.getByText('dir src')).toBeTruthy();
+    expect(screen.getByText('src', { selector: '.exec-output-meta-value' })).toBeTruthy();
+    expect(screen.getByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'dir' }));
+    expect(screen.queryByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'dir' }));
+    expect(screen.getByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeTruthy();
+  });
+
   it('renders the sidebar approval queue and current todo list', async () => {
     window.electronAPI.getRuntimeStatus = vi.fn().mockResolvedValue({
       providerId: 'github-copilot',

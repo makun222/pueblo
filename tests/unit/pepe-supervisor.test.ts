@@ -231,6 +231,59 @@ describe('pepe supervisor', () => {
     expect(result.summaries[0]?.parentMemoryId).toBe(regularMemory.id);
     expect(result.resultCandidates.map((candidate) => candidate.memoryId ?? candidate.parentMemoryId)).toEqual([regularMemory.id]);
   });
+
+  it('marks background summaries failed instead of leaking a rejection when the worker errors', async () => {
+    const config = createTestAppConfig({
+      pepe: {
+        providerId: 'openai',
+        modelId: 'gpt-4.1-mini',
+        embeddingBackend: 'local-hash',
+      },
+    });
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const sessionService = new SessionService(new InMemorySessionRepository(), memoryService);
+    const session = sessionService.createSession('Summary failure session', 'gpt-4.1-mini', 'agent-1');
+    memoryService.createConversationTurnMemory({
+      sessionId: session.id,
+      turnNumber: 1,
+      userInput: 'Inspect sqlite persistence',
+      assistantOutput: 'SQLite remains the source of truth.',
+    });
+
+    const supervisor = new PepeSupervisor({
+      config: config.pepe,
+      memoryService,
+      sessionService,
+      appConfig: config,
+      agentInstanceService: {
+        getAgentInstance: () => ({
+          id: 'agent-1',
+          profileId: 'code-master',
+          profileName: 'Code Master',
+          status: 'active',
+          isDefaultForProfile: true,
+          workspaceRoot: process.cwd(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          terminatedAt: null,
+        }),
+      },
+      resultService: new PepeResultService(memoryService, config.pepe),
+      workerFactory: () => createRejectingPepeWorker('background summary failed'),
+    });
+
+    supervisor.startSession(session.id);
+    await flushMicrotasks();
+
+    expect(supervisor.getBackgroundSummaryStatus(session.id)).toEqual({
+      state: 'failed',
+      activeSummarySessionId: session.id,
+      lastSummaryAt: null,
+      lastSummaryMemoryId: null,
+    });
+
+    supervisor.stopAll();
+  });
 });
 
 function createFakePepeWorker(
@@ -297,4 +350,37 @@ function createStaticEmbeddingClient(): Pick<PepeLocalEmbeddingClient, 'embedTex
       };
     },
   };
+}
+
+function createRejectingPepeWorker(errorMessage: string) {
+  let messageHandler: ((message: PepeWorkerResponse) => void) | null = null;
+
+  return {
+    postMessage(message: PepeWorkerRequest) {
+      if (message.type === 'shutdown') {
+        return;
+      }
+
+      messageHandler?.({
+        type: 'process-error',
+        requestId: message.requestId,
+        errorMessage,
+      });
+    },
+    on(event: 'message' | 'error', listener: ((message: PepeWorkerResponse) => void) | ((error: Error) => void)) {
+      if (event === 'message') {
+        messageHandler = listener as (message: PepeWorkerResponse) => void;
+      }
+
+      return this;
+    },
+    async terminate() {
+      return 0;
+    },
+  };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }

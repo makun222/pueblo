@@ -164,6 +164,60 @@ describe('Result Block Rendering', () => {
     expect(blocks.slice(1).every((block) => block.messageTrace.length === 0)).toBe(true);
   });
 
+  it('should extract structured exec command blocks from the model message trace', () => {
+    const result = successResult('TASK_COMPLETED', 'Agent task completed', {
+      outputSummary: JSON.stringify({
+        outputSummary: 'Ran workspace command',
+        toolResults: [
+          {
+            toolName: 'exec',
+            status: 'succeeded',
+            summary: 'src\npackage.json',
+          },
+        ],
+        modelMessageTrace: [
+          {
+            stepNumber: 1,
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                toolName: 'exec',
+                toolCallId: 'call-exec-1',
+                toolArgs: {
+                  command: 'dir src',
+                },
+              },
+              {
+                role: 'tool',
+                content: JSON.stringify({
+                  status: 'succeeded',
+                  summary: 'src\npackage.json',
+                  output: ['src', 'package.json'],
+                }),
+                toolName: 'exec',
+                toolCallId: 'call-exec-1',
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const blocks = createResultBlocks(result);
+    const execBlock = blocks[1];
+
+    expect(execBlock?.title).toBe('Command Execution');
+    expect(execBlock?.content).toBe('src\n\npackage.json');
+    expect(execBlock?.collapsed).toBe(true);
+    expect(execBlock?.execCommand).toEqual({
+      rawCommand: 'dir src',
+      command: 'dir',
+      args: ['src'],
+      result: 'src\n\npackage.json',
+    });
+  });
+
   it('should render workflow and export metadata for completed workflow task results', () => {
     const result = successResult('TASK_COMPLETED', 'Agent task completed', {
       outputSummary: JSON.stringify({

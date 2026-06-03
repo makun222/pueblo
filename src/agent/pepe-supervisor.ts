@@ -22,6 +22,7 @@ interface PepeSessionMonitor {
   readonly sessionId: string;
   readonly agentInstanceId: string;
   readonly intervalId: NodeJS.Timeout;
+  status: BackgroundSummaryStatus['state'];
   lastInput: string | null;
   lastSummaryAt: string | null;
   lastSummaryMemoryId: string | null;
@@ -88,19 +89,20 @@ export class PepeSupervisor {
     }
 
     const intervalId = setInterval(() => {
-      void this.flushSession(sessionId);
+      this.queueBackgroundFlush(sessionId);
     }, this.dependencies.config.flushIntervalMs);
 
     this.monitors.set(sessionId, {
       sessionId,
       agentInstanceId: agentInstance.id,
       intervalId,
+      status: 'running',
       lastInput: null,
       lastSummaryAt: null,
       lastSummaryMemoryId: null,
     });
 
-    void this.flushSession(sessionId);
+    this.queueBackgroundFlush(sessionId);
   }
 
   recordInput(sessionId: string | null | undefined, input: string): void {
@@ -137,6 +139,16 @@ export class PepeSupervisor {
 
     try {
       await flushPromise;
+      const monitor = this.monitors.get(sessionId);
+      if (monitor) {
+        monitor.status = 'running';
+      }
+    } catch (error) {
+      const monitor = this.monitors.get(sessionId);
+      if (monitor) {
+        monitor.status = 'failed';
+      }
+      throw error;
     } finally {
       this.pendingFlushes.delete(sessionId);
     }
@@ -214,11 +226,17 @@ export class PepeSupervisor {
     }
 
     return {
-      state: 'running',
+      state: monitor.status,
       activeSummarySessionId: monitor.sessionId,
       lastSummaryAt: monitor.lastSummaryAt,
       lastSummaryMemoryId: monitor.lastSummaryMemoryId,
     };
+  }
+
+  private queueBackgroundFlush(sessionId: string): void {
+    void this.flushSession(sessionId).catch(() => {
+      // Background summaries are best-effort; foreground execution must keep running.
+    });
   }
 
   stopSession(sessionId: string | null | undefined): void {

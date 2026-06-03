@@ -50,6 +50,13 @@ interface TaskResultPayload {
   readonly fileChanges?: RendererFileChange[];
 }
 
+interface ExecCommandBlockData {
+  readonly rawCommand: string;
+  readonly command: string;
+  readonly args: string[];
+  readonly result: string;
+}
+
 interface WorkflowBlockData {
   readonly workflowId?: string;
   readonly workflowType?: string;
@@ -76,6 +83,7 @@ export interface OutputBlockInput {
   readonly collapsed?: boolean;
   readonly messageTrace?: TaskModelMessageTraceEntry[];
   readonly fileChanges?: RendererFileChange[];
+  readonly execCommand?: ExecCommandBlockData;
   readonly sourceRefs?: string[];
 }
 
@@ -214,6 +222,7 @@ export function createOutputBlock(input: OutputBlockInput) {
     collapsed: input.collapsed ?? false,
     messageTrace: toRendererMessageTrace(input.messageTrace),
     fileChanges: input.fileChanges ?? [],
+    execCommand: input.execCommand,
     sourceRefs: input.sourceRefs ?? [],
     createdAt: now,
   };
@@ -251,6 +260,8 @@ export function createResultBlocks(result: CommandResult<unknown>) {
   const payload = result.data !== undefined ? extractTaskResultPayload(result.data) : null;
   const blocks = [] as ReturnType<typeof createOutputBlock>[];
   const messageTrace = payload?.modelMessageTrace ?? [];
+  const execCommandBlocks = extractExecCommandBlocks(messageTrace);
+  let execCommandBlockIndex = 0;
   let didAttachMessageTrace = false;
 
   const consumeMessageTrace = () => {
@@ -364,12 +375,17 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       }
 
       for (const toolResult of payload.toolResults ?? []) {
+        const execCommand = toolResult.toolName === 'exec'
+          ? execCommandBlocks[execCommandBlockIndex++]
+          : undefined;
         blocks.push(
           createOutputBlock({
             type: 'tool-result',
-            title: `${result.code}-${toolResult.toolName}`,
-            content: `${toolResult.toolName}: ${toolResult.status} - ${toolResult.summary}`,
+            title: execCommand ? 'Command Execution' : `${result.code}-${toolResult.toolName}`,
+            content: execCommand?.result || `${toolResult.toolName}: ${toolResult.status} - ${toolResult.summary}`,
+            collapsed: Boolean(execCommand),
             messageTrace: consumeMessageTrace(),
+            execCommand,
           }),
         );
       }
@@ -590,4 +606,149 @@ function toRendererMessageTrace(trace: ParsedTaskOutputSummary['modelMessageTrac
       charCount: message.content.length,
     })),
   }));
+}
+
+function extractExecCommandBlocks(trace: ParsedTaskOutputSummary['modelMessageTrace'] | null | undefined): ExecCommandBlockData[] {
+  if (!trace || trace.length === 0) {
+    return [];
+  }
+
+  const pendingByCallId = new Map<string, Omit<ExecCommandBlockData, 'result'>>();
+  const pendingQueue: string[] = [];
+  const blocks: ExecCommandBlockData[] = [];
+
+  for (const step of trace) {
+    for (const message of step.messages) {
+      if (message.toolName !== 'exec') {
+        continue;
+      }
+
+      if (message.role !== 'tool') {
+        const commandText = extractExecCommandText(message.toolArgs);
+        if (!commandText) {
+          continue;
+        }
+
+        const pending = createPendingExecCommandBlock(commandText);
+        const key = message.toolCallId ?? `exec-${pendingQueue.length}`;
+        pendingByCallId.set(key, pending);
+        pendingQueue.push(key);
+        continue;
+      }
+
+      const parsed = parseSerializedToolContent(message.content);
+      const matchedPending = message.toolCallId ? consumePendingExecCommand(message.toolCallId, pendingByCallId, pendingQueue) : undefined;
+      const fallbackPending = matchedPending ?? consumeNextPendingExecCommand(pendingByCallId, pendingQueue);
+      if (!fallbackPending) {
+        continue;
+      }
+
+      blocks.push({
+        ...fallbackPending,
+        result: formatExecCommandResult(parsed),
+      });
+    }
+  }
+
+  return blocks;
+}
+
+function createPendingExecCommandBlock(commandText: string): Omit<ExecCommandBlockData, 'result'> {
+  const [command, ...args] = splitExecCommandText(commandText);
+
+  return {
+    rawCommand: commandText,
+    command: command || commandText.trim(),
+    args,
+  };
+}
+
+function consumePendingExecCommand(
+  key: string,
+  pendingByCallId: Map<string, Omit<ExecCommandBlockData, 'result'>>,
+  pendingQueue: string[],
+): Omit<ExecCommandBlockData, 'result'> | undefined {
+  const pending = pendingByCallId.get(key);
+  if (!pending) {
+    return undefined;
+  }
+
+  pendingByCallId.delete(key);
+  const queueIndex = pendingQueue.indexOf(key);
+  if (queueIndex >= 0) {
+    pendingQueue.splice(queueIndex, 1);
+  }
+
+  return pending;
+}
+
+function consumeNextPendingExecCommand(
+  pendingByCallId: Map<string, Omit<ExecCommandBlockData, 'result'>>,
+  pendingQueue: string[],
+): Omit<ExecCommandBlockData, 'result'> | undefined {
+  while (pendingQueue.length > 0) {
+    const key = pendingQueue.shift();
+    if (!key) {
+      continue;
+    }
+
+    const pending = pendingByCallId.get(key);
+    if (!pending) {
+      continue;
+    }
+
+    pendingByCallId.delete(key);
+    return pending;
+  }
+
+  return undefined;
+}
+
+function extractExecCommandText(toolArgs: unknown): string | null {
+  if (!toolArgs || typeof toolArgs !== 'object') {
+    return null;
+  }
+
+  const maybeCommand = (toolArgs as { command?: unknown }).command;
+  return typeof maybeCommand === 'string' && maybeCommand.trim().length > 0 ? maybeCommand.trim() : null;
+}
+
+function splitExecCommandText(commandText: string): string[] {
+  const matches = commandText.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  return matches.map((part) => part.replace(/^['"]|['"]$/g, ''));
+}
+
+function parseSerializedToolContent(content: string): { status: string; summary: string; output: string[] } | null {
+  try {
+    const parsed = JSON.parse(content) as {
+      status?: unknown;
+      summary?: unknown;
+      output?: unknown;
+    };
+
+    if (typeof parsed.status !== 'string' || typeof parsed.summary !== 'string' || !Array.isArray(parsed.output)) {
+      return null;
+    }
+
+    const output = parsed.output.filter((entry): entry is string => typeof entry === 'string');
+    return {
+      status: parsed.status,
+      summary: parsed.summary,
+      output,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatExecCommandResult(parsed: { status: string; summary: string; output: string[] } | null): string {
+  if (!parsed) {
+    return 'No command output captured.';
+  }
+
+  if (parsed.output.length > 0) {
+    return parsed.output.join('\n\n');
+  }
+
+  return parsed.summary.trim().length > 0 ? parsed.summary : 'No command output captured.';
 }

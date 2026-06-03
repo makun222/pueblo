@@ -58,11 +58,11 @@ export function buildSkillSystemMessage(skillContext: SkillContextSnapshot | nul
     `- workspace目录: ${skillContext.agentWorkingDirectory}`,
     `- Pueblo Skill目录: ${skillContext.skillDirectory}`,
     '- 如果任务完成过程是一个稳定的、可重用的多步骤过程时，建议将该过程转化为Skill。',
-    '- 一个有用的Skill应总结其目的、使用时机、所需输入、具体步骤、验证和限制。',
-    `- Skill保存为： <Pueblo Skill>/<skill-id>/${SKILL_INSTRUCTION_FILE_NAME}.`,
     '- 在创建、更新或覆盖Skill之前，需要用户的明确批准。',
+    '- 一个有用的Skill应总结其目的、使用时机、所需输入、具体步骤、验证和限制。',
     '- 一般，Skill处理的数据和创建的文件存储在workspace目录，除非用户另有说明。',
-    `- 要重用Skill，请阅读其 ${SKILL_INSTRUCTION_FILE_NAME} 文件，并按照其中的说明作为内部流程使用现有工具。`,
+    `- Skill保存为： <Pueblo Skill>/<skill-id>/${SKILL_INSTRUCTION_FILE_NAME}.`,
+    `- 用Skill，请阅读其 ${SKILL_INSTRUCTION_FILE_NAME} 文件，并按照其中的说明作为内部流程使用现有工具。`,
   ];
 
   if (skillContext.skills.length === 0) {

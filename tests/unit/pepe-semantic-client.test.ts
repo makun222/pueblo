@@ -121,4 +121,59 @@ describe('pepe semantic client', () => {
       modelId: 'deepseek-v4-pro',
     });
   });
+
+  it('treats an auth-missing fallback provider as unavailable for summaries', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(
+      createProviderProfile({
+        id: 'deepseek',
+        name: 'DeepSeek',
+        authState: 'missing',
+        defaultModelId: 'deepseek-v4-pro',
+        models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', supportsTools: true }],
+      }),
+      new InMemoryProviderAdapter('deepseek', 'DeepSeek semantic summary'),
+    );
+
+    const client = new PepeSemanticClient(
+      registry,
+      createTestAppConfig({
+        providers: [
+          {
+            providerId: 'deepseek',
+            defaultModelId: 'deepseek-v4-pro',
+            enabled: true,
+            credentialSource: 'windows-credential-manager',
+          },
+        ],
+        pepe: {
+          providerId: null,
+          modelId: null,
+        },
+      }),
+    );
+
+    expect(client.isConfigured()).toBe(false);
+    await expect(client.summarizeMemory({
+      memory: {
+        id: 'memory-1',
+        type: 'short-term',
+        memoryKind: 'turn',
+        title: 'Turn 1',
+        content: 'User: inspect issue\n\nAssistant: issue inspected',
+        scope: 'session',
+        status: 'active',
+        tags: ['conversation-turn'],
+        parentId: null,
+        derivationType: 'summary',
+        summaryDepth: 0,
+        weight: 0.8,
+        lastAccessedAt: new Date().toISOString(),
+        sourceSessionId: 'session-1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      currentInput: 'inspect issue',
+    })).resolves.toBeNull();
+  });
 });
