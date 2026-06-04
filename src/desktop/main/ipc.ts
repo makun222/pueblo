@@ -6,7 +6,7 @@ import { createCliDependencies } from '../../cli/index';
 import { tokenizeCommandInput } from '../../commands/dispatcher';
 import { routeInput } from '../../commands/input-router';
 import { loadAppConfig } from '../../shared/config';
-import { createOutputBlock, createResultBlocks } from '../../shared/result';
+import { createOutputBlock, createPhasedResultBlocks, createResultBlocks } from '../../shared/result';
 import { ipcInputEnvelopeSchema, type IpcInputEnvelope } from '../../shared/schema';
 import { createTaskCancellationError, isTaskCancellationError } from '../../shared/task-cancellation';
 import type { EditReviewRequest } from '../../tools/edit-tool';
@@ -142,15 +142,24 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
     readonly runtimeStatus: DesktopRuntimeStatus;
   }> => {
     const result = await routeInput({ input: envelope, runtime, signal });
-    const blocks = createResultBlocks(result);
+    const { primaryBlock, supplementalBlocks } = createPhasedResultBlocks(result);
+    const blocks = primaryBlock ? [primaryBlock, ...supplementalBlocks] : supplementalBlocks;
 
-    for (const block of blocks) {
-      runtime.publish({ block });
+    if (primaryBlock) {
+      runtime.publish({ block: primaryBlock });
+    }
+
+    if (supplementalBlocks.length > 0) {
+      setImmediate(() => {
+        for (const block of supplementalBlocks) {
+          runtime.publish({ block });
+        }
+      });
     }
 
     return {
       result,
-      blocks,
+      blocks: primaryBlock ? [primaryBlock] : [],
       runtimeStatus: resolveRuntimeStatus(cli),
     };
   };

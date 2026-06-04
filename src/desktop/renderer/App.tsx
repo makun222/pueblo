@@ -302,6 +302,7 @@ export function App() {
 
       if (isAnswerBlock(data) && pendingAssistantEntryIdRef.current) {
         streamAssistantResponse(data);
+        setIsSubmitting(false);
         return;
       }
 

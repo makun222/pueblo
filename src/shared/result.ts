@@ -257,12 +257,21 @@ export function summarizeTaskStepTrace(stepTrace: readonly TaskStepTraceEntry[] 
 }
 
 export function createResultBlocks(result: CommandResult<unknown>) {
+  const phasedBlocks = createPhasedResultBlocks(result);
+  return phasedBlocks.primaryBlock ? [phasedBlocks.primaryBlock, ...phasedBlocks.supplementalBlocks] : phasedBlocks.supplementalBlocks;
+}
+
+export function createPhasedResultBlocks(result: CommandResult<unknown>): {
+  readonly primaryBlock: ReturnType<typeof createOutputBlock> | null;
+  readonly supplementalBlocks: ReturnType<typeof createOutputBlock>[];
+} {
   const payload = result.data !== undefined ? extractTaskResultPayload(result.data) : null;
-  const blocks = [] as ReturnType<typeof createOutputBlock>[];
+  const supplementalBlocks = [] as ReturnType<typeof createOutputBlock>[];
   const messageTrace = payload?.modelMessageTrace ?? [];
   const execCommandBlocks = extractExecCommandBlocks(messageTrace);
   let execCommandBlockIndex = 0;
   let didAttachMessageTrace = false;
+  let primaryBlock: ReturnType<typeof createOutputBlock> | null = null;
 
   const consumeMessageTrace = () => {
     if (didAttachMessageTrace) {
@@ -274,14 +283,12 @@ export function createResultBlocks(result: CommandResult<unknown>) {
   };
 
   if (!result.ok || !payload) {
-    blocks.push(
-      createOutputBlock({
-        type: result.ok ? 'command-result' : 'error',
-        title: result.code,
-        content: result.message,
-        messageTrace: consumeMessageTrace(),
-      }),
-    );
+    primaryBlock = createOutputBlock({
+      type: result.ok ? 'command-result' : 'error',
+      title: result.code,
+      content: result.message,
+      messageTrace: consumeMessageTrace(),
+    });
   }
 
   if (result.data !== undefined) {
@@ -290,18 +297,18 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       const modelOutput = payload.attribution?.modelOutput?.trim();
       const shouldShowModelOutput = Boolean(modelOutput) && modelOutput !== outputSummary.trim();
 
-      blocks.push(
-        createOutputBlock({
+      if (!primaryBlock) {
+        primaryBlock = createOutputBlock({
           type: result.ok ? 'task-result' : 'error',
           title: 'Output Summary',
           content: outputSummary,
           messageTrace: consumeMessageTrace(),
           fileChanges: payload.fileChanges,
-        }),
-      );
+        });
+      }
 
       if (shouldShowModelOutput && modelOutput) {
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'system',
             title: 'Model Output',
@@ -313,7 +320,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       }
 
       if ((payload.attribution?.promptIds?.length ?? 0) > 0) {
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'system',
             title: `${result.code}-prompts`,
@@ -324,7 +331,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       }
 
       if ((payload.attribution?.memoryIds?.length ?? 0) > 0) {
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'system',
             title: `${result.code}-memories`,
@@ -335,7 +342,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       }
 
       if ((payload.stepTrace?.length ?? 0) > 0) {
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'system',
             title: 'Step Trace',
@@ -348,7 +355,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
 
       const workflowBlockData = extractWorkflowBlockData(result.data, payload);
       if (workflowBlockData) {
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'system',
             title: 'Workflow',
@@ -362,7 +369,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         );
 
         if (workflowBlockData.exportResult) {
-          blocks.push(
+          supplementalBlocks.push(
             createOutputBlock({
               type: 'system',
               title: 'Workflow Export',
@@ -378,7 +385,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         const execCommand = toolResult.toolName === 'exec' || toolResult.toolName === 'shell_exec'
           ? execCommandBlocks[execCommandBlockIndex++]
           : undefined;
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'tool-result',
             title: execCommand ? 'Command Execution' : `${result.code}-${toolResult.toolName}`,
@@ -391,17 +398,17 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       }
     } else {
       const workflowBlockData = extractWorkflowBlockData(result.data, null);
-      blocks.push(
-        createOutputBlock({
+      if (!primaryBlock) {
+        primaryBlock = createOutputBlock({
           type: result.ok ? 'task-result' : 'error',
           title: `${result.code}-data`,
           content: JSON.stringify(result.data, null, 2),
           messageTrace: consumeMessageTrace(),
-        }),
-      );
+        });
+      }
 
       if (workflowBlockData) {
-        blocks.push(
+        supplementalBlocks.push(
           createOutputBlock({
             type: 'system',
             title: 'Workflow',
@@ -415,7 +422,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
         );
 
         if (workflowBlockData.exportResult) {
-          blocks.push(
+          supplementalBlocks.push(
             createOutputBlock({
               type: 'system',
               title: 'Workflow Export',
@@ -430,7 +437,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
   }
 
   if (result.suggestions.length > 0) {
-    blocks.push(
+    supplementalBlocks.push(
       createOutputBlock({
         type: 'system',
         title: `${result.code}-suggestions`,
@@ -440,7 +447,10 @@ export function createResultBlocks(result: CommandResult<unknown>) {
     );
   }
 
-  return blocks;
+  return {
+    primaryBlock,
+    supplementalBlocks,
+  };
 }
 
 function extractTaskResultPayload(data: unknown): TaskResultPayload | null {
