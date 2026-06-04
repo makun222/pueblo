@@ -580,6 +580,12 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
         toolName,
         args: parseProviderToolArgsOrThrow('github-copilot', 'exec', parsedArguments),
       };
+    case 'shell_exec':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('github-copilot', 'shell_exec', parsedArguments),
+      };
     case 'read':
       return {
         toolCallId,

@@ -841,6 +841,12 @@ function parseDeepSeekToolCall(
         toolName,
         args: parseProviderToolArgsOrThrow('deepseek', 'exec', parsedArguments),
       };
+    case 'shell_exec':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('deepseek', 'shell_exec', parsedArguments),
+      };
     case 'read':
       return {
         toolCallId,

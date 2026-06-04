@@ -4,6 +4,7 @@ import { createExecTool } from './exec-tool';
 import { createGlobTool, type ToolExecutionResult } from './glob-tool';
 import { createGrepTool } from './grep-tool';
 import { createReadTool } from './read-tool';
+import { createShellExecTool } from './shell-exec-tool';
 import { createWriteTool, type WriteToolRequest } from './write-tool';
 import {
   getToolExecutionPolicy,
@@ -12,6 +13,7 @@ import {
   providerGlobToolInputSchema,
   providerGrepToolInputSchema,
   providerReadToolInputSchema,
+  providerShellExecToolInputSchema,
   providerWriteToolInputSchema,
   parseProviderToolArgs,
   type ProviderEditToolArgs,
@@ -19,6 +21,7 @@ import {
   type ProviderGlobToolArgs,
   type ProviderGrepToolArgs,
   type ProviderReadToolArgs,
+  type ProviderShellExecToolArgs,
   type ProviderToolCall,
   type ProviderToolDefinition,
   type ProviderToolName,
@@ -60,6 +63,10 @@ export type ExecuteToolRequest =
       readonly args: ProviderExecToolArgs;
     })
   | (ExecuteToolInput & {
+      readonly toolName: 'shell_exec';
+      readonly args: ProviderShellExecToolArgs;
+    })
+  | (ExecuteToolInput & {
       readonly toolName: 'read';
       readonly args: ProviderReadToolArgs;
     })
@@ -77,6 +84,7 @@ export class ToolService {
   private readonly globTool = createGlobTool();
   private readonly grepTool = createGrepTool();
   private readonly execTool = createExecTool();
+  private readonly shellExecTool = createShellExecTool();
   private readonly readTool = createReadTool();
   private readonly writeTool = createWriteTool();
 
@@ -116,6 +124,12 @@ export class ToolService {
         description: `Run a local executable command without a shell using the current task root as cwd. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerExecToolInputSchema,
         executionPolicy: getToolExecutionPolicy('exec'),
+      },
+      {
+        name: 'shell_exec',
+        description: `Run a shell command string using cmd or powershell with the current task root as cwd. Use this when shell features like pipes, redirection, built-in commands, or shell-specific syntax are required. ${taskRootExplanation} Requires user approval before execution.`,
+        inputSchema: providerShellExecToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('shell_exec'),
       },
       {
         name: 'read',
@@ -177,6 +191,16 @@ export class ToolService {
           title: 'Allow command execution in the workspace?',
           summary: `Command: ${input.args.command}`,
           detail: [
+            `Command: ${input.args.command}`,
+            `Workspace: ${this.resolveDefaultExecutionCwd()}`,
+          ].join('\n'),
+        };
+      case 'shell_exec':
+        return {
+          title: `Allow ${input.args.mode} shell execution in the workspace?`,
+          summary: `${input.args.mode}: ${input.args.command}`,
+          detail: [
+            `Mode: ${input.args.mode}`,
             `Command: ${input.args.command}`,
             `Workspace: ${this.resolveDefaultExecutionCwd()}`,
           ].join('\n'),
@@ -259,6 +283,8 @@ export class ToolService {
         return this.runGrep(parseProviderToolArgs('grep', input.args), executionCwd);
       case 'exec':
         return this.runExec(parseProviderToolArgs('exec', input.args), executionCwd, input.signal);
+      case 'shell_exec':
+        return this.runShellExec(parseProviderToolArgs('shell_exec', input.args), executionCwd, input.signal);
       case 'read':
         return this.runRead(parseProviderToolArgs('read', input.args), executionCwd);
       case 'edit':
@@ -284,6 +310,10 @@ export class ToolService {
 
   private runExec(args: ProviderExecToolArgs, executionCwd: string, signal?: AbortSignal): Promise<ToolExecutionResult> {
     return this.execTool({ command: args.command, cwd: executionCwd, signal });
+  }
+
+  private runShellExec(args: ProviderShellExecToolArgs, executionCwd: string, signal?: AbortSignal): Promise<ToolExecutionResult> {
+    return this.shellExecTool({ mode: args.mode, command: args.command, cwd: executionCwd, signal });
   }
 
   private runRead(args: ProviderReadToolArgs, executionCwd: string): Promise<ToolExecutionResult> {

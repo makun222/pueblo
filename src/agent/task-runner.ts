@@ -808,6 +808,15 @@ export class AgentTaskRunner {
           executionCwd: args.executionCwd,
           signal: args.signal,
         });
+      case 'shell_exec':
+        return this.toolService.execute({
+          taskId: args.taskId,
+          toolName: 'shell_exec',
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
+          signal: args.signal,
+        });
       case 'read':
         return this.toolService.execute({
           taskId: args.taskId,
@@ -853,6 +862,12 @@ export class AgentTaskRunner {
           args: result.args,
         };
       case 'exec':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'shell_exec':
         return {
           toolCallId: result.toolCallId,
           toolName: result.toolName,
@@ -1205,6 +1220,10 @@ function insertSystemMessageBeforeLatestUser(messages: readonly ProviderMessage[
 }
 
 function requiresInteractiveApproval(toolCall: ProviderToolCall): boolean {
+  if (toolCall.toolName === 'shell_exec') {
+    return true;
+  }
+
   if (toolCall.toolName !== 'exec') {
     return true;
   }
@@ -1220,6 +1239,8 @@ function createApprovalCacheKey(toolCall: ProviderToolCall): string | null {
       return `write:${normalizeApprovalCacheToken(toolCall.args.path)}`;
     case 'exec':
       return `exec:${normalizeApprovalCacheToken(toolCall.args.command)}`;
+    case 'shell_exec':
+      return `shell_exec:${toolCall.args.mode}:${normalizeApprovalCacheToken(toolCall.args.command)}`;
     case 'glob':
     case 'grep':
     case 'read':
@@ -1347,6 +1368,11 @@ function formatProgressToolCall(toolCall: ProviderToolCall): string {
     case 'exec': {
       const command = 'command' in toolCall.args ? String(toolCall.args.command) : toolCall.toolName;
       return `${toolCall.toolName} ${truncateProgressMessage(command)}`;
+    }
+    case 'shell_exec': {
+      const mode = 'mode' in toolCall.args ? String(toolCall.args.mode) : 'shell';
+      const command = 'command' in toolCall.args ? String(toolCall.args.command) : toolCall.toolName;
+      return `${toolCall.toolName} ${truncateProgressMessage(`${mode}: ${command}`)}`;
     }
   }
 }

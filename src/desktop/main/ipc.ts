@@ -430,8 +430,8 @@ function mapToolApprovalRequest(request: ToolApprovalRequest): DesktopToolApprov
     };
   }
 
-  if (request.toolName === 'exec') {
-    const args = request.args as Extract<ToolApprovalRequest['args'], { command: string }>;
+  if (request.toolName === 'exec' || request.toolName === 'shell_exec') {
+    const args = request.args as Extract<ToolApprovalRequest['args'], { command: string }> & { mode?: string };
     const primaryText = args.command.trim() || 'workspace command';
     return {
       id: request.toolCallId,
@@ -443,7 +443,7 @@ function mapToolApprovalRequest(request: ToolApprovalRequest): DesktopToolApprov
       detail: request.detail,
       primaryText,
       targetLabel: normalizeApprovalTarget(args.command),
-      operationLabel: 'exec',
+      operationLabel: request.toolName === 'shell_exec' ? args.mode ?? 'shell_exec' : 'exec',
     };
   }
 

@@ -375,7 +375,7 @@ export function createResultBlocks(result: CommandResult<unknown>) {
       }
 
       for (const toolResult of payload.toolResults ?? []) {
-        const execCommand = toolResult.toolName === 'exec'
+        const execCommand = toolResult.toolName === 'exec' || toolResult.toolName === 'shell_exec'
           ? execCommandBlocks[execCommandBlockIndex++]
           : undefined;
         blocks.push(
@@ -619,7 +619,7 @@ function extractExecCommandBlocks(trace: ParsedTaskOutputSummary['modelMessageTr
 
   for (const step of trace) {
     for (const message of step.messages) {
-      if (message.toolName !== 'exec') {
+      if (message.toolName !== 'exec' && message.toolName !== 'shell_exec') {
         continue;
       }
 

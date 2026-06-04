@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'read' | 'edit' | 'write';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write';
 export type ToolExecutionPolicy = 'free' | 'approval-required';
 
 interface ProviderJsonSchemaStringProperty {
   readonly type: 'string';
   readonly description?: string;
+  readonly enum?: readonly string[];
 }
 
 interface ProviderJsonSchemaIntegerProperty {
@@ -32,6 +33,11 @@ export const providerGrepToolArgsSchema = z.object({
 });
 
 export const providerExecToolArgsSchema = z.object({
+  command: z.string().trim().min(1),
+});
+
+export const providerShellExecToolArgsSchema = z.object({
+  mode: z.enum(['cmd', 'powershell']),
   command: z.string().trim().min(1),
 });
 
@@ -112,17 +118,19 @@ const providerLegacyWriteTextToolArgsSchema = z.object({
 export type ProviderGlobToolArgs = z.infer<typeof providerGlobToolArgsSchema>;
 export type ProviderGrepToolArgs = z.infer<typeof providerGrepToolArgsSchema>;
 export type ProviderExecToolArgs = z.infer<typeof providerExecToolArgsSchema>;
+export type ProviderShellExecToolArgs = z.infer<typeof providerShellExecToolArgsSchema>;
 export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
 export type ProviderEditToolArgs = z.infer<typeof providerEditToolArgsSchema>;
 export type ProviderWriteToolArgs = z.infer<typeof providerWriteToolArgsSchema>;
-export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs;
+export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderShellExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs;
 export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
   TToolName extends 'glob' ? ProviderGlobToolArgs :
     TToolName extends 'grep' ? ProviderGrepToolArgs :
       TToolName extends 'exec' ? ProviderExecToolArgs :
-        TToolName extends 'read' ? ProviderReadToolArgs :
-          TToolName extends 'edit' ? ProviderEditToolArgs :
-            ProviderWriteToolArgs;
+        TToolName extends 'shell_exec' ? ProviderShellExecToolArgs :
+          TToolName extends 'read' ? ProviderReadToolArgs :
+            TToolName extends 'edit' ? ProviderEditToolArgs :
+              ProviderWriteToolArgs;
 export type ProviderToolCall =
   | {
       readonly toolCallId: string;
@@ -138,6 +146,11 @@ export type ProviderToolCall =
       readonly toolCallId: string;
       readonly toolName: 'exec';
       readonly args: ProviderExecToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'shell_exec';
+      readonly args: ProviderShellExecToolArgs;
     }
   | {
       readonly toolCallId: string;
@@ -192,6 +205,23 @@ export const providerExecToolInputSchema: ProviderToolInputSchema = {
     },
   },
   required: ['command'],
+  additionalProperties: false,
+};
+
+export const providerShellExecToolInputSchema: ProviderToolInputSchema = {
+  type: 'object',
+  properties: {
+    mode: {
+      type: 'string',
+      enum: ['cmd', 'powershell'],
+      description: 'Shell mode to use for command execution.',
+    },
+    command: {
+      type: 'string',
+      description: 'Command string to execute via the selected shell from the workspace root.',
+    },
+  },
+  required: ['mode', 'command'],
   additionalProperties: false,
 };
 
@@ -354,6 +384,16 @@ export type ProviderStepResult =
   | {
       readonly type: 'tool-call';
       readonly toolCallId: string;
+      readonly toolName: 'shell_exec';
+      readonly args: ProviderShellExecToolArgs;
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
+      readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
+    }
+  | {
+      readonly type: 'tool-call';
+      readonly toolCallId: string;
       readonly toolName: 'read';
       readonly args: ProviderReadToolArgs;
       readonly rationale?: string;
@@ -461,6 +501,8 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
       return providerGrepToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'exec':
       return providerExecToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
+    case 'shell_exec':
+      return providerShellExecToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'read':
       return providerReadToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'edit':
@@ -503,6 +545,7 @@ export function normalizeProviderToolName(value: string | undefined): ProviderTo
     case 'glob':
     case 'grep':
     case 'exec':
+    case 'shell_exec':
     case 'read':
     case 'edit':
     case 'write':
@@ -515,6 +558,7 @@ export function normalizeProviderToolName(value: string | undefined): ProviderTo
 export function getToolExecutionPolicy(toolName: ProviderToolName): ToolExecutionPolicy {
   switch (toolName) {
     case 'exec':
+    case 'shell_exec':
     case 'edit':
     case 'write':
       return 'approval-required';
