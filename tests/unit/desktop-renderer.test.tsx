@@ -679,6 +679,64 @@ describe('Desktop Renderer', () => {
     expect(screen.getByText('No output yet.')).toBeTruthy();
   });
 
+  it('hydrates large session history into collapsed earlier interactions and recent visible transcript groups', async () => {
+    const timestampBase = Date.parse('2026-05-04T00:00:00.000Z');
+    const messageHistory = Array.from({ length: 12 }, (_, index) => {
+      const step = index + 1;
+      const askedAt = new Date(timestampBase + step * 1000).toISOString();
+      const answeredAt = new Date(timestampBase + step * 1000 + 500).toISOString();
+
+      return [
+        { id: `user-${step}`, role: 'user' as const, content: `Question ${step}`, createdAt: askedAt, taskId: null, toolName: null },
+        { id: `assistant-${step}`, role: 'assistant' as const, content: `Answer ${step}`, createdAt: answeredAt, taskId: null, toolName: null },
+      ];
+    }).flat();
+    const session: Session = {
+      id: 'session-1',
+      title: 'Large session',
+      status: 'active',
+      sessionKind: 'user',
+      agentInstanceId: 'agent-1',
+      currentModelId: 'copilot-chat',
+      messageHistory,
+      selectedPromptIds: [],
+      pinnedMemoryIds: [],
+      workingMemoryIds: [],
+      selectedMemoryIds: [],
+      providerUsageStats: emptyProviderUsageStats,
+      originSessionId: null,
+      triggerReason: null,
+      createdAt: '2026-05-04T00:00:00.000Z',
+      updatedAt: '2026-05-04T00:00:12.500Z',
+      startedAt: '2026-05-04T00:00:00.000Z',
+      completedAt: null,
+      failedAt: null,
+      archivedAt: null,
+    };
+    listAgentSessionsMock.mockResolvedValue([toSessionSummary(session)]);
+    getSessionMock.mockResolvedValue(session);
+
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByText('Answer 12')).toBeTruthy();
+    });
+
+    expect(screen.getByText('Earlier interactions')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
+    expect(screen.queryByText('Question 1')).toBeNull();
+    expect(screen.queryByText('Answer 1')).toBeNull();
+    expect(screen.getByText('Question 12')).toBeTruthy();
+    expect(screen.getByText('Answer 12')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Earlier interactions'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Question 1')).toBeTruthy();
+      expect(screen.getByText('Answer 1')).toBeTruthy();
+    });
+  });
+
   it('renders exec tool results as a collapsible command execution block', async () => {
     render(createElement(App));
 

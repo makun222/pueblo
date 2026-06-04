@@ -382,6 +382,40 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     database.close();
   });
 
+  it('appends additional session messages in sqlite without losing earlier history', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-message-append-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+    runMigrations(database.connection);
+
+    const repository = new SessionRepository({ connection: database.connection });
+    const service = new SessionService(repository);
+
+    const created = service.createSession('Append session');
+    service.addUserMessage(created.id, 'Question 1');
+    service.addAssistantMessage(created.id, 'Answer 1');
+    service.addToolMessage(created.id, 'read_file', 'Loaded context', 'task-1');
+    service.addUserMessage(created.id, 'Question 2');
+
+    const restoredService = new SessionService(new SessionRepository({ connection: database.connection }));
+    const restored = restoredService.getSession(created.id);
+
+    expect(restored?.messageHistory.map((message) => ({
+      role: message.role,
+      content: message.content,
+      toolName: message.toolName,
+      taskId: message.taskId,
+    }))).toEqual([
+      { role: 'user', content: 'Question 1', toolName: null, taskId: null },
+      { role: 'assistant', content: 'Answer 1', toolName: null, taskId: null },
+      { role: 'tool', content: 'Loaded context', toolName: 'read_file', taskId: 'task-1' },
+      { role: 'user', content: 'Question 2', toolName: null, taskId: null },
+    ]);
+
+    database.close();
+  });
+
   it('lists session summaries from sqlite without hydrating full message history', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-summaries-'));
     tempDirs.push(tempDir);

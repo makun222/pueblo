@@ -4,6 +4,7 @@ import { createExecTool } from './exec-tool';
 import { createGlobTool, type ToolExecutionResult } from './glob-tool';
 import { createGrepTool } from './grep-tool';
 import { createReadTool } from './read-tool';
+import { createWriteTool, type WriteToolRequest } from './write-tool';
 import {
   getToolExecutionPolicy,
   providerEditToolInputSchema,
@@ -11,6 +12,7 @@ import {
   providerGlobToolInputSchema,
   providerGrepToolInputSchema,
   providerReadToolInputSchema,
+  providerWriteToolInputSchema,
   parseProviderToolArgs,
   type ProviderEditToolArgs,
   type ProviderExecToolArgs,
@@ -20,6 +22,7 @@ import {
   type ProviderToolCall,
   type ProviderToolDefinition,
   type ProviderToolName,
+  type ProviderWriteToolArgs,
 } from '../providers/provider-adapter';
 import { throwIfTaskCancelled } from '../shared/task-cancellation';
 
@@ -63,6 +66,10 @@ export type ExecuteToolRequest =
   | (ExecuteToolInput & {
       readonly toolName: 'edit';
       readonly args: ProviderEditToolArgs;
+    })
+  | (ExecuteToolInput & {
+      readonly toolName: 'write';
+      readonly args: ProviderWriteToolArgs;
     });
 
 export class ToolService {
@@ -71,6 +78,7 @@ export class ToolService {
   private readonly grepTool = createGrepTool();
   private readonly execTool = createExecTool();
   private readonly readTool = createReadTool();
+  private readonly writeTool = createWriteTool();
 
   constructor(private readonly dependencies: ToolServiceDependencies) {
     this.editTool = createEditTool({
@@ -120,6 +128,12 @@ export class ToolService {
         description: `Edit a text file within the current task root by replacing one exact text match, optionally constrained to a line range. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerEditToolInputSchema,
         executionPolicy: getToolExecutionPolicy('edit'),
+      },
+      {
+        name: 'write',
+        description: `Writes content to a file within the current task root, creating or overwriting it. ${taskRootExplanation} Requires user approval before execution.`,
+        inputSchema: providerWriteToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('write'),
       },
     ];
   }
@@ -176,6 +190,12 @@ export class ToolService {
           startLine: input.args.startLine,
           endLine: input.args.endLine,
         });
+      case 'write':
+        return {
+          title: 'Allow file write in the workspace?',
+          summary: `write: ${input.args.path}`,
+          detail: JSON.stringify(input.args, null, 2),
+        };
       case 'glob':
       case 'grep':
       case 'read':
@@ -243,6 +263,8 @@ export class ToolService {
         return this.runRead(parseProviderToolArgs('read', input.args), executionCwd);
       case 'edit':
         return this.runEdit(parseProviderToolArgs('edit', input.args), executionCwd);
+      case 'write':
+        return this.runWrite(parseProviderToolArgs('write', input.args), executionCwd);
     }
   }
 
@@ -280,6 +302,14 @@ export class ToolService {
       newText: args.newText,
       startLine: args.startLine,
       endLine: args.endLine,
+      cwd: executionCwd,
+    });
+  }
+
+  private runWrite(args: ProviderWriteToolArgs, executionCwd: string): Promise<ToolExecutionResult> {
+    return this.writeTool({
+      path: args.path,
+      text: args.text,
       cwd: executionCwd,
     });
   }

@@ -50,6 +50,7 @@ export interface SessionStore {
   list(): Session[];
   listSummaries(): AgentSessionSummary[];
   getById(sessionId: string): Session | null;
+  appendMessage(sessionId: string, message: SessionMessage, updatedAt: string): Session | null;
   save(session: Session): Session;
   setCurrentSession(sessionId: string | null): void;
   getCurrentSession(): Session | null;
@@ -82,6 +83,20 @@ export class InMemorySessionRepository implements SessionStore {
 
   getById(sessionId: string): Session | null {
     return this.sessions.get(sessionId) ?? null;
+  }
+
+  appendMessage(sessionId: string, message: SessionMessage, updatedAt: string): Session | null {
+    const session = this.sessions.get(sessionId);
+
+    if (!session) {
+      return null;
+    }
+
+    return this.save({
+      ...session,
+      messageHistory: [...session.messageHistory, message],
+      updatedAt,
+    });
   }
 
   save(session: Session): Session {
@@ -170,6 +185,28 @@ export class SessionRepository extends RepositoryBase implements SessionStore {
   getById(sessionId: string): Session | null {
     const row = this.get<SessionRow>('SELECT * FROM sessions WHERE id = ?', [sessionId]);
     return row ? this.mapRow(row) : null;
+  }
+
+  appendMessage(sessionId: string, message: SessionMessage, updatedAt: string): Session | null {
+    const result = this.run(
+      `
+      UPDATE sessions
+      SET message_history_json = json_insert(COALESCE(message_history_json, '[]'), '$[#]', json(@message_json)),
+          updated_at = @updated_at
+      WHERE id = @id
+      `,
+      {
+        id: sessionId,
+        message_json: toJson(message),
+        updated_at: updatedAt,
+      },
+    );
+
+    if (result.changes === 0) {
+      return null;
+    }
+
+    return this.getById(sessionId);
   }
 
   save(session: Session): Session {

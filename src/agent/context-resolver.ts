@@ -28,6 +28,8 @@ import {
   RECENT_CONTEXT_MESSAGE_LIMIT,
   selectRecentMessagesForPrompt,
 } from './task-message-builder';
+
+const TARGET_DIRECTORY_USER_MESSAGE_SCAN_LIMIT = 32;
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
@@ -152,11 +154,12 @@ export class ContextResolver {
     });
     const skillContextText = buildSkillSystemMessage(skillContext);
     const sessionMessages = session?.messageHistory ?? [];
-    const recentMessages = sessionMessages.map(formatSessionMessageForContext);
+    const recentContextMessages = selectRecentContextMessages(sessionMessages);
+    const recentMessages = recentContextMessages.map(formatSessionMessageForContext);
     const promptRecentMessages = selectRecentMessagesForPrompt(recentMessages);
     const targetDirectory = resolveTargetDirectory({
       pendingUserInput: input.pendingUserInput,
-      sessionMessages,
+      recentUserMessages: selectRecentUserMessagesForTargetDirectory(sessionMessages),
       workspace: input.workspace ?? input.cwd ?? null,
     });
     const resolvedPepeResult = this.pepeResultService.resolve({
@@ -223,7 +226,7 @@ export class ContextResolver {
         ...attachmentContextTexts,
       ],
       transientTexts: [activeTurnStepContext ?? ''],
-      sessionMessages,
+      sessionMessages: recentContextMessages,
       pendingUserInput: input.pendingUserInput,
     });
     const contextCount = this.budgetService.compute({
@@ -278,7 +281,7 @@ export class ContextResolver {
       resultItems: prioritizedResultItems,
       workflowContext,
       skillContext,
-      sessionMessages,
+      sessionMessages: recentContextMessages,
       recentMessages,
       activeTurnStepContext,
       puebloProfile,
@@ -371,15 +374,12 @@ function estimateTokens(input: string): number {
 
 function resolveTargetDirectory(args: {
   readonly pendingUserInput?: string;
-  readonly sessionMessages: Session['messageHistory'];
+  readonly recentUserMessages: readonly SessionMessage[];
   readonly workspace: string | null;
 }): string | null {
   const candidateInputs = [
     args.pendingUserInput ?? '',
-    ...[...args.sessionMessages]
-      .reverse()
-      .filter((message) => message.role === 'user')
-      .map((message) => message.content),
+    ...args.recentUserMessages.map((message) => message.content),
   ];
 
   for (const inputText of candidateInputs) {
@@ -504,4 +504,26 @@ function extractLatestTaskPayload(
 
   const latestTask = taskRepository.listBySession(sessionId).at(-1);
   return extractTaskOutputSummaryPayload(latestTask?.outputSummary ?? null);
+}
+
+function selectRecentContextMessages(sessionMessages: readonly SessionMessage[]): SessionMessage[] {
+  return sessionMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT);
+}
+
+function selectRecentUserMessagesForTargetDirectory(sessionMessages: readonly SessionMessage[]): SessionMessage[] {
+  const recentUserMessages: SessionMessage[] = [];
+
+  for (let index = sessionMessages.length - 1; index >= 0; index -= 1) {
+    const message = sessionMessages[index];
+    if (message?.role !== 'user') {
+      continue;
+    }
+
+    recentUserMessages.push(message);
+    if (recentUserMessages.length >= TARGET_DIRECTORY_USER_MESSAGE_SCAN_LIMIT) {
+      break;
+    }
+  }
+
+  return recentUserMessages;
 }

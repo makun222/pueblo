@@ -115,7 +115,6 @@ export class SessionService {
   }
 
   appendMessage(sessionId: string, input: AppendSessionMessageInput): Session {
-    const session = this.requireSession(sessionId);
     const normalizedContent = input.content.trim();
 
     if (!normalizedContent) {
@@ -131,9 +130,14 @@ export class SessionService {
       toolName: input.toolName ?? null,
     };
 
-    return this.updateSession(session, {
-      messageHistory: [...session.messageHistory, message],
-    });
+    const updatedAt = new Date().toISOString();
+    const updatedSession = this.repository.appendMessage(sessionId, message, updatedAt);
+
+    if (!updatedSession) {
+      throw new SessionCommandError(`Session not found: ${sessionId}`);
+    }
+
+    return updatedSession;
   }
 
   addUserMessage(sessionId: string, content: string, taskId?: string | null): Session {

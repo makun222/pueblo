@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'read' | 'edit';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'read' | 'edit' | 'write';
 export type ToolExecutionPolicy = 'free' | 'approval-required';
 
 interface ProviderJsonSchemaStringProperty {
@@ -94,6 +94,11 @@ export const providerEditToolArgsSchema = z.object({
   }
 });
 
+export const providerWriteToolArgsSchema = z.object({
+  path: z.string().trim().min(1),
+  text: z.string(),
+});
+
 const providerLegacyWriteToolArgsSchema = z.object({
   path: z.string().trim().min(1),
   content: z.string(),
@@ -109,13 +114,15 @@ export type ProviderGrepToolArgs = z.infer<typeof providerGrepToolArgsSchema>;
 export type ProviderExecToolArgs = z.infer<typeof providerExecToolArgsSchema>;
 export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
 export type ProviderEditToolArgs = z.infer<typeof providerEditToolArgsSchema>;
-export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs;
+export type ProviderWriteToolArgs = z.infer<typeof providerWriteToolArgsSchema>;
+export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs;
 export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
   TToolName extends 'glob' ? ProviderGlobToolArgs :
     TToolName extends 'grep' ? ProviderGrepToolArgs :
       TToolName extends 'exec' ? ProviderExecToolArgs :
         TToolName extends 'read' ? ProviderReadToolArgs :
-          ProviderEditToolArgs;
+          TToolName extends 'edit' ? ProviderEditToolArgs :
+            ProviderWriteToolArgs;
 export type ProviderToolCall =
   | {
       readonly toolCallId: string;
@@ -141,6 +148,11 @@ export type ProviderToolCall =
       readonly toolCallId: string;
       readonly toolName: 'edit';
       readonly args: ProviderEditToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'write';
+      readonly args: ProviderWriteToolArgs;
     };
 
 export const providerGlobToolInputSchema: ProviderToolInputSchema = {
@@ -228,6 +240,22 @@ export const providerEditToolInputSchema: ProviderToolInputSchema = {
     },
   },
   required: ['path', 'oldText', 'newText'],
+  additionalProperties: false,
+};
+
+export const providerWriteToolInputSchema: ProviderToolInputSchema = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Workspace-relative file path or absolute file path within the workspace to create or overwrite.',
+    },
+    text: {
+      type: 'string',
+      description: 'Text content to write to the target file.',
+    },
+  },
+  required: ['path', 'text'],
   additionalProperties: false,
 };
 
@@ -344,6 +372,16 @@ export type ProviderStepResult =
       readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
+      readonly type: 'tool-call';
+      readonly toolCallId: string;
+      readonly toolName: 'write';
+      readonly args: ProviderWriteToolArgs;
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
+      readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
+    }
+  | {
       readonly type: 'tool-calls';
       readonly toolCalls: readonly ProviderToolCall[];
       readonly rationale?: string;
@@ -427,6 +465,8 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
       return providerReadToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'edit':
       return providerEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
+    case 'write':
+      return providerWriteToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
   }
 }
 
@@ -465,9 +505,8 @@ export function normalizeProviderToolName(value: string | undefined): ProviderTo
     case 'exec':
     case 'read':
     case 'edit':
-      return normalizedValue;
     case 'write':
-      return 'edit';
+      return normalizedValue;
     default:
       return undefined;
   }
@@ -477,6 +516,7 @@ export function getToolExecutionPolicy(toolName: ProviderToolName): ToolExecutio
   switch (toolName) {
     case 'exec':
     case 'edit':
+    case 'write':
       return 'approval-required';
     case 'glob':
     case 'grep':

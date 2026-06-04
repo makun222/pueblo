@@ -354,6 +354,68 @@ describe('context resolver', () => {
     expect(resolved.taskContext.targetDirectory).toBe(externalRepoDir);
   });
 
+  it('keeps only the recent context window from large session histories', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-recent-window-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', contextWindow: 16000, supportsTools: true }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Large resolver session', 'gpt-4.1-mini');
+    for (let index = 1; index <= 12; index += 1) {
+      sessionService.addUserMessage(session.id, `Question ${index}`);
+      sessionService.addAssistantMessage(session.id, `Answer ${index}`);
+    }
+
+    const resolver = new ContextResolver({
+      config: createTestAppConfig({ defaultProviderId: 'openai' }),
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'openai' }).pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Continue the latest investigation',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.sessionMessages).toHaveLength(6);
+    expect(resolved.taskContext.sessionMessages.map((message) => message.content)).toEqual([
+      'Question 10',
+      'Answer 10',
+      'Question 11',
+      'Answer 11',
+      'Question 12',
+      'Answer 12',
+    ]);
+    expect(resolved.taskContext.recentMessages).toEqual([
+      'User: Question 10',
+      'Assistant: Answer 10',
+      'User: Question 11',
+      'Assistant: Answer 11',
+      'User: Question 12',
+      'Assistant: Answer 12',
+    ]);
+    expect(resolved.runtimeStatus.contextCount.messageCount).toBe(6);
+  });
+
   it('resolves the Pueblo skill directory from the agent working directory and lists installed skills', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-skills-'));
     const startupDir = path.join(tempDir, 'pueblo-home');

@@ -853,6 +853,12 @@ function parseDeepSeekToolCall(
         toolName,
         args: parseProviderEditCompatibleToolArgsOrThrow('deepseek', parsedArguments),
       };
+    case 'write':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('deepseek', 'write', parsedArguments),
+      };
   }
 }
 

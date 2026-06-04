@@ -182,6 +182,7 @@ export function App() {
   const [input, setInput] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<InputAttachmentManifest[]>([]);
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  const [archivedTranscriptGroups, setArchivedTranscriptGroups] = useState<TranscriptGroup[]>([]);
   const [runtimeStatus, setRuntimeStatus] = useState<DesktopRuntimeStatus>(EMPTY_RUNTIME_STATUS);
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileTemplate[]>([]);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -304,7 +305,7 @@ export function App() {
         return;
       }
 
-      setTranscriptEntries((previous) => upsertRendererBlock(previous, data));
+      updateTranscriptEntries((previous) => upsertRendererBlock(previous, data));
     });
 
     return () => {
@@ -461,7 +462,7 @@ export function App() {
   }, []);
 
   const appendErrorBlock = (title: string, message: string) => {
-    setTranscriptEntries((previous) => [
+    updateTranscriptEntries((previous) => [
       ...previous,
       {
         id: `${new Date().toISOString()}-${Math.random().toString(16).slice(2)}`,
@@ -477,15 +478,31 @@ export function App() {
     ]);
   };
 
+  const updateTranscriptEntries = (updater: (previous: TranscriptEntry[]) => TranscriptEntry[]) => {
+    setTranscriptEntries((previous) => {
+      const nextEntries = updater(previous);
+      const nextPartition = partitionTranscriptEntries(nextEntries);
+
+      if (nextPartition.archivedGroups.length > 0) {
+        setArchivedTranscriptGroups((previousGroups) => [...previousGroups, ...nextPartition.archivedGroups]);
+      }
+
+      return nextPartition.visibleEntries;
+    });
+  };
+
   const hydrateSessionTranscript = (session: Session | null) => {
     setActiveSessionDetails(session);
 
     if (!session) {
+      setArchivedTranscriptGroups([]);
       setTranscriptEntries([]);
       return;
     }
 
-    setTranscriptEntries(createTranscriptEntriesFromSession(session));
+    const nextTranscript = partitionTranscriptEntries(createTranscriptEntriesFromSession(session));
+    setArchivedTranscriptGroups(nextTranscript.archivedGroups);
+    setTranscriptEntries(nextTranscript.visibleEntries);
   };
 
   const refreshAgentSessions = async (
@@ -532,7 +549,7 @@ export function App() {
     pendingAssistantEntryIdRef.current = assistantEntryId;
     pendingAssistantDraftRef.current = '';
     setActiveAnswerTimer({ entryId: assistantEntryId, startedAtMs });
-    setTranscriptEntries((previous) => [
+    updateTranscriptEntries((previous) => [
       ...previous,
       {
         id: assistantEntryId,
@@ -558,7 +575,7 @@ export function App() {
 
     pendingAssistantDraftRef.current += delta;
 
-    setTranscriptEntries((previous) => previous.map((entry) => {
+    updateTranscriptEntries((previous) => previous.map((entry) => {
       if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
         return entry;
       }
@@ -577,7 +594,7 @@ export function App() {
       return;
     }
 
-    setTranscriptEntries((previous) => previous.map((entry) => {
+    updateTranscriptEntries((previous) => previous.map((entry) => {
       if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId || entry.status !== 'pending') {
         return entry;
       }
@@ -592,12 +609,12 @@ export function App() {
   const streamAssistantResponse = (block: RendererOutputBlock) => {
     const assistantEntryId = pendingAssistantEntryIdRef.current;
     if (!assistantEntryId) {
-      setTranscriptEntries((previous) => upsertRendererBlock(previous, block));
+      updateTranscriptEntries((previous) => upsertRendererBlock(previous, block));
       return;
     }
 
     if (!isAnswerBlock(block)) {
-      setTranscriptEntries((previous) => upsertRendererBlock(previous, block));
+      updateTranscriptEntries((previous) => upsertRendererBlock(previous, block));
       return;
     }
 
@@ -627,7 +644,7 @@ export function App() {
       const nextContent = block.content.slice(0, nextCursor);
       pendingAssistantDraftRef.current = nextContent;
 
-      setTranscriptEntries((previous) => previous.map((entry) => {
+      updateTranscriptEntries((previous) => previous.map((entry) => {
         if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
           return entry;
         }
@@ -657,7 +674,7 @@ export function App() {
     };
 
     if (initialCursor >= block.content.length) {
-      setTranscriptEntries((previous) => previous.map((entry) => {
+      updateTranscriptEntries((previous) => previous.map((entry) => {
         if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
           return entry;
         }
@@ -698,7 +715,7 @@ export function App() {
 
     try {
       if (options.recordUserEntry) {
-        setTranscriptEntries((previous) => [
+        updateTranscriptEntries((previous) => [
           ...previous,
           {
             id: transcriptEntryId,
@@ -725,7 +742,7 @@ export function App() {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
         setActiveAnswerTimer(null);
-        setTranscriptEntries((previous) => previous.filter((entry) => !('role' in entry) || entry.id !== assistantEntryId));
+        updateTranscriptEntries((previous) => previous.filter((entry) => !('role' in entry) || entry.id !== assistantEntryId));
       }
 
       const shouldHydrateCurrentSession = response.runtimeStatus.activeSessionId !== runtimeStatusRef.current.activeSessionId;
@@ -743,7 +760,7 @@ export function App() {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
         setActiveAnswerTimer(null);
-        setTranscriptEntries((previous) => previous.map((entry) => {
+        updateTranscriptEntries((previous) => previous.map((entry) => {
           if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
             return entry;
           }
@@ -758,7 +775,7 @@ export function App() {
         }));
       }
 
-      setTranscriptEntries((previous) => [
+      updateTranscriptEntries((previous) => [
         ...previous,
         {
           id: `${createdAt}-${Math.random().toString(16).slice(2)}`,
@@ -974,16 +991,17 @@ export function App() {
   const todoItems = parseTodoMemoryItems(todoMemory);
   const staleTodoMemory = !hasActiveWorkflow ? selectLatestTodoMemory(activeSessionMemories) : null;
   const staleTodoItems = parseTodoMemoryItems(staleTodoMemory);
-  const transcriptGroups = createTranscriptGroups(transcriptEntries);
+  const transcriptGroups = useMemo(() => createTranscriptGroups(transcriptEntries), [transcriptEntries]);
+  const allTranscriptGroups = useMemo(() => [...archivedTranscriptGroups, ...transcriptGroups], [archivedTranscriptGroups, transcriptGroups]);
   const filteredTranscriptGroups = transcriptSearchTerm.trim().length > 0
-    ? transcriptGroups.filter((group) => doesTranscriptGroupMatch(group, transcriptSearchTerm))
+    ? allTranscriptGroups.filter((group) => doesTranscriptGroupMatch(group, transcriptSearchTerm))
     : transcriptGroups;
   const hiddenTranscriptGroups = transcriptSearchTerm.trim().length > 0
     ? []
-    : filteredTranscriptGroups.slice(0, Math.max(0, filteredTranscriptGroups.length - VISIBLE_TRANSCRIPT_GROUP_LIMIT));
+    : archivedTranscriptGroups;
   const visibleTranscriptGroups = transcriptSearchTerm.trim().length > 0
     ? filteredTranscriptGroups
-    : filteredTranscriptGroups.slice(-VISIBLE_TRANSCRIPT_GROUP_LIMIT);
+    : transcriptGroups;
   const displayedProviderUsageStats = selectDisplayedProviderUsageStats(
     runtimeStatus.providerUsageStats,
     activeSessionDetails?.providerUsageStats,
@@ -2928,6 +2946,24 @@ function createTranscriptEntriesFromSession(session: Session): TranscriptEntry[]
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message) => mapSessionMessageToTranscriptEntry(message));
+}
+
+function partitionTranscriptEntries(entries: TranscriptEntry[]): {
+  readonly archivedGroups: TranscriptGroup[];
+  readonly visibleEntries: TranscriptEntry[];
+} {
+  const groups = createTranscriptGroups(entries);
+  if (groups.length <= VISIBLE_TRANSCRIPT_GROUP_LIMIT) {
+    return {
+      archivedGroups: [],
+      visibleEntries: entries,
+    };
+  }
+
+  return {
+    archivedGroups: groups.slice(0, groups.length - VISIBLE_TRANSCRIPT_GROUP_LIMIT),
+    visibleEntries: groups.slice(-VISIBLE_TRANSCRIPT_GROUP_LIMIT).flatMap((group) => group.entries),
+  };
 }
 
 function createTranscriptGroups(entries: TranscriptEntry[]): TranscriptGroup[] {

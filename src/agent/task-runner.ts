@@ -826,6 +826,15 @@ export class AgentTaskRunner {
           executionCwd: args.executionCwd,
           signal: args.signal,
         });
+      case 'write':
+        return this.toolService.execute({
+          taskId: args.taskId,
+          toolName: 'write',
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
+          signal: args.signal,
+        });
     }
   }
 
@@ -856,6 +865,12 @@ export class AgentTaskRunner {
           args: result.args,
         };
       case 'edit':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'write':
         return {
           toolCallId: result.toolCallId,
           toolName: result.toolName,
@@ -1201,6 +1216,8 @@ function createApprovalCacheKey(toolCall: ProviderToolCall): string | null {
   switch (toolCall.toolName) {
     case 'edit':
       return `edit:${normalizeApprovalCacheToken(toolCall.args.path)}`;
+    case 'write':
+      return `write:${normalizeApprovalCacheToken(toolCall.args.path)}`;
     case 'exec':
       return `exec:${normalizeApprovalCacheToken(toolCall.args.command)}`;
     case 'glob':
@@ -1314,7 +1331,8 @@ function serializeToolResultForModel(output: ToolExecutionResult): string {
 function formatProgressToolCall(toolCall: ProviderToolCall): string {
   switch (toolCall.toolName) {
     case 'read':
-    case 'edit': {
+    case 'edit':
+    case 'write': {
       const path = 'path' in toolCall.args ? String(toolCall.args.path) : toolCall.toolName;
       return `${toolCall.toolName} ${truncateProgressMessage(path)}`;
     }
