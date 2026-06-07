@@ -931,6 +931,16 @@ select {
   box-shadow: none;
 }
 
+.tool-approval-allow-all-button {
+  border: 2px solid rgba(11, 102, 35, 0.9);
+  color: rgba(11, 102, 35, 0.96);
+}
+
+.tool-approval-allow-all-button:hover:not(:disabled) {
+  background: rgba(11, 102, 35, 0.06);
+  box-shadow: none;
+}
+
 .tool-approval-deny-button {
   border: 2px solid rgba(143, 22, 22, 0.9);
   color: rgba(143, 22, 22, 0.96);

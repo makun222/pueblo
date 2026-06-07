@@ -56,6 +56,30 @@ export interface ToolApprovalRequest {
 
 export type ToolApprovalDecision = 'allow-once' | 'allow-all' | 'deny';
 
+/**
+ * Determines whether a tool operation is considered non-destructive and safe for
+ * batch-allow workflows. Destructive operations (e.g., `delete`, or shell commands
+ * that perform deletion) return `false` and should still require explicit approval.
+ *
+ * Currently all built-in tools (`read`, `edit`, `write`, `exec`, `shell_exec`,
+ * `glob`, `grep`) are treated as non-destructive. This function exists as an
+ * extension point for future tools that may need destructive classification.
+ */
+export function isNonDestructive(toolName: string, _toolParams: Record<string, unknown>): boolean {
+    switch (toolName) {
+        case 'read':
+        case 'edit':
+        case 'write':
+        case 'exec':
+        case 'shell_exec':
+        case 'glob':
+        case 'grep':
+            return true;
+        default:
+            return false;
+    }
+}
+
 export type ToolApprovalHandler = (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>;
 
 export type ToolApprovalBatchHandler = (requests: readonly ToolApprovalRequest[]) => Promise<readonly ToolApprovalDecision[]>;
@@ -104,6 +128,10 @@ export class AgentTaskRunner {
   private readonly reportAssistantDelta?: (text: string) => void;
   private readonly reportRequestMetrics?: (metrics: ProviderRequestMetrics) => void;
   private readonly approvalCache = new Set<string>();
+  private isAllowALL:boolean=false;//default is false, if user choose allow-all for a tool, set it to true, then all tools will be allowed without approval
+  public setAllowAll(value: boolean): void {
+    this.isAllowALL = value;
+  }
 
   constructor(
     private readonly providerRegistry: ProviderRegistry,
@@ -250,6 +278,30 @@ export class AgentTaskRunner {
     const messages = [...args.executionMessages];
     let previousToolLoopFingerprint: string | null = null;
     let repeatedToolLoopCount = 0;
+
+    // Manual isAllowALL command: "set isAllowALL='true'" or "set isAllowALL='false'"
+    {
+      const _lastMsg = args.executionMessages[args.executionMessages.length - 1];
+      if (_lastMsg?.role === 'user' && typeof _lastMsg.content === 'string') {
+        const _cmdMatch = _lastMsg.content.match(/^set\s*isAllowALL\s*=\s*['"]?(true|false)['"]?\s*$/i);
+        if (_cmdMatch) {
+          const _newVal = _cmdMatch[1] === 'true';
+          this.isAllowALL = _newVal;
+          const _summary = `isAllowALL 已设置为 ${_newVal}`;
+          args.modelMessageTrace.push({
+            stepNumber: 1,
+            messages: [{
+              role: 'system',
+              content: _summary,
+              toolCallId: undefined,
+              toolName: undefined,
+              toolArgs: undefined,
+            }],
+          });
+          return { outputSummary: _summary };
+        }
+      }
+    }
 
     for (let stepIndex = 0; stepIndex < this.maxSteps; stepIndex += 1) {
       throwIfTaskCancelled(args.signal, 'Task cancelled during agent execution.');
@@ -422,6 +474,8 @@ export class AgentTaskRunner {
           requestMetrics: clarificationResult.requestMetrics ?? args.providerRequestMetricsRef.current,
         };
       }
+
+      // isAllowALL persists across rounds — use /set isAllowALL=false to disable
     }
 
     throwIfTaskCancelled(args.signal, 'Task cancelled before step budget handoff.');
@@ -674,7 +728,7 @@ export class AgentTaskRunner {
       }))
       .filter(({ toolCall, approvalCacheKey }) => (
         getToolExecutionPolicy(toolCall.toolName) === 'approval-required'
-        && requiresInteractiveApproval(toolCall)
+       // && requiresInteractiveApproval(toolCall)
         && (!approvalCacheKey || !this.approvalCache.has(approvalCacheKey))
       ))
       .map(({ toolCall, approvalCacheKey }) => ({
@@ -686,7 +740,48 @@ export class AgentTaskRunner {
     if (pendingRequests.length === 0) {
       return new Map<string, ToolApprovalDecision>();
     }
+    // isAllowALL: auto-approve non-mustApproval tools, prompt only for dangerous commands
+    if (this.isAllowALL) {
+      const approvals = new Map<string, ToolApprovalDecision>();
+      const mustApprovalRequests: typeof pendingRequests = [];
 
+      for (const pr of pendingRequests) {
+        const { toolCall } = pr;
+        const isShellExec = toolCall.toolName === 'shell_exec' || toolCall.toolName === 'exec';
+        const command = isShellExec ? String((toolCall.args as { command?: string }).command ?? '') : '';
+        console.log(`tool call ${toolCall.toolName} with command "${command}".is approvalling: ${isShellExec && this.isMustApproval(command)}`);
+        if (isShellExec && this.isMustApproval(command)) {
+          mustApprovalRequests.push(pr); // Still needs user approval
+          console.log(`tool call ${toolCall.toolName} with command "${command}".must approval`);
+        } else {
+          approvals.set(pr.request.toolCallId, 'allow-once'); // Auto-approve
+          console.log(`tool call ${toolCall.toolName} with command "${command}".auto-approved`);
+        }
+      }
+
+      if (mustApprovalRequests.length > 0) {
+        const approvalDecisions = this.requestToolApprovalBatch
+          ? await this.requestToolApprovalBatch(mustApprovalRequests.map((entry) => entry.request))
+          : await Promise.all(
+            mustApprovalRequests.map(async ({ request }) => this.requestToolApproval?.(request) ?? 'deny'),
+          );
+
+        for (let index = 0; index < mustApprovalRequests.length; index += 1) {
+          const decision = approvalDecisions[index] ?? 'deny';
+          const pendingRequest = mustApprovalRequests[index];
+
+          approvals.set(pendingRequest.request.toolCallId, decision);
+
+          // Only cache allow-all decisions
+          if (decision === 'allow-all' && pendingRequest.approvalCacheKey) {
+            this.approvalCache.add(pendingRequest.approvalCacheKey);
+          //  this.isAllowALL = true;
+          }
+        }
+      }
+
+      return approvals;
+    }
     const approvalDecisions = this.requestToolApprovalBatch
       ? await this.requestToolApprovalBatch(pendingRequests.map((entry) => entry.request))
       : await Promise.all(
@@ -712,7 +807,14 @@ export class AgentTaskRunner {
 
     return approvals;
   }
-
+  private isMustApproval(command:string):boolean{
+    const mustApprovalCommands=['rm','del','format','shutdown','reboot'];
+    const pattern = new RegExp(
+    `(?:^|[|&;>\n\`(\\s])(${mustApprovalCommands.join('|')})(?:$|[\\s|&;>\n\`)])`,
+    'i'
+    );
+    return pattern.test(command);
+    }
   private buildToolApprovalRequest(taskId: string, toolCall: ProviderToolCall): ToolApprovalRequest {
     if (!this.toolService) {
       throw new Error(`Tool service is required to describe tool approval: ${toolCall.toolName}`);
@@ -742,12 +844,85 @@ export class AgentTaskRunner {
     if (!this.toolService) {
       throw new Error(`Tool service is required to execute tool call: ${args.result.toolName}`);
     }
-
+    // Build approval cache key for this specific tool invocation
     const approvalCacheKey = createApprovalCacheKey(args.result);
+
+    // Case 1: Pre-resolved approval decision from resolveToolApprovalDecisions
+    if (args.approvalDecision !== undefined && args.approvalDecision !== null) {
+      if (args.approvalDecision === 'deny') {
+        // Pre-resolved deny - return failure
+        const output: ToolExecutionResult = {
+          toolName: args.result.toolName,
+          status: 'failed',
+          summary: `Execution denied: user approval is required before running ${args.result.toolName}`,
+          output: [
+            `tool: ${args.result.toolName}`,
+            'approvalRequired: true',
+            `decision: ${args.approvalDecision}`,
+          ],
+        };
+        const invocation = this.toolService.recordInvocation({
+          toolName: args.result.toolName,
+          taskId: args.taskId,
+          inputSummary: args.inputSummary,
+          resultStatus: output.status,
+          resultSummary: output.summary,
+        });
+        return { invocation, output };
+      }
+      // allow-once or allow-all - proceed to execute
+      // Only cache allow-all for future calls
+      if (args.approvalDecision === 'allow-all' && approvalCacheKey) {
+        this.approvalCache.add(approvalCacheKey);
+      }
+    } else {
+      // Case 2: No pre-resolved decision - determine if approval is needed now
+      if (getToolExecutionPolicy(args.result.toolName) === 'approval-required') {
+        // Tool requires approval - check cache first
+        if (approvalCacheKey && this.approvalCache.has(approvalCacheKey)) {
+          // Cached approval from previous allow-all - proceed to execute
+        } else {
+          // Not cached - need user approval
+          const approvalDecision = await this.requestToolApproval?.(
+            this.buildToolApprovalRequest(args.taskId, args.result)
+          ) ?? 'deny';
+
+          if (approvalDecision === 'deny') {
+            // Denied by user - return failure
+            const output: ToolExecutionResult = {
+              toolName: args.result.toolName,
+              status: 'failed',
+              summary: `Execution denied: user approval is required before running ${args.result.toolName}`,
+              output: [
+                `tool: ${args.result.toolName}`,
+                'approvalRequired: true',
+                `decision: ${approvalDecision}`,
+              ],
+            };
+            const invocation = this.toolService.recordInvocation({
+              toolName: args.result.toolName,
+              taskId: args.taskId,
+              inputSummary: args.inputSummary,
+              resultStatus: output.status,
+              resultSummary: output.summary,
+            });
+            return { invocation, output };
+          }
+
+          // Only cache allow-all decisions; allow-once runs once without caching
+          if (approvalDecision === 'allow-all' && approvalCacheKey) {
+            this.approvalCache.add(approvalCacheKey);
+          }
+        }
+      }
+      // Tool does not require approval - proceed to execute directly
+    }
+    //如果传入的approvalDecision为allow-once或allow-all，或者之前已经批准过（存在于缓存中），则继续执行工具调用
+   /*  
     if (
-      getToolExecutionPolicy(args.result.toolName) === 'approval-required'
-      && requiresInteractiveApproval(args.result)
-      && (!approvalCacheKey || !this.approvalCache.has(approvalCacheKey))
+    //  getToolExecutionPolicy(args.result.toolName) === 'approval-required'
+    //  && requiresInteractiveApproval(args.result) &&
+       (!approvalCacheKey || !this.approvalCache.has(approvalCacheKey))
     ) {
       const approvalDecision = args.approvalDecision
         ?? await this.requestToolApproval?.(this.buildToolApprovalRequest(args.taskId, args.result))
@@ -755,6 +930,7 @@ export class AgentTaskRunner {
 
       if (approvalDecision === 'allow-all' && approvalCacheKey) {
         this.approvalCache.add(approvalCacheKey);
+      //  this.isAllowALL = true;
       }
 
       if (approvalDecision === 'deny') {
@@ -779,6 +955,7 @@ export class AgentTaskRunner {
         return { invocation, output };
       }
     }
+      */
 
     switch (args.result.toolName) {
       case 'glob':
@@ -1232,11 +1409,15 @@ function requiresInteractiveApproval(toolCall: ProviderToolCall): boolean {
 }
 
 function createApprovalCacheKey(toolCall: ProviderToolCall): string | null {
+  const toolName: string = toolCall.toolName;
+
   switch (toolCall.toolName) {
+    /*
     case 'edit':
       return `edit:${normalizeApprovalCacheToken(toolCall.args.path)}`;
     case 'write':
       return `write:${normalizeApprovalCacheToken(toolCall.args.path)}`;
+    */
     case 'exec':
       return `exec:${normalizeApprovalCacheToken(toolCall.args.command)}`;
     case 'shell_exec':
@@ -1244,8 +1425,15 @@ function createApprovalCacheKey(toolCall: ProviderToolCall): string | null {
     case 'glob':
     case 'grep':
     case 'read':
+    case 'edit':
+    case 'write':
       return null;
   }
+
+  // Unknown tools (e.g. provider-specific extensions): use the tool
+  // name as the cache key so "Allow All" can cover subsequent
+  // invocations of the same tool throughout the task.
+  return toolName;
 }
 
 function normalizeApprovalCacheToken(value: string): string {

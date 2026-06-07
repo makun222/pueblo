@@ -1222,9 +1222,36 @@ export function createCliDependencies(
   dispatcher.register('/set', (args) => {
     const [settingName, ...settingArgs] = args;
 
+    // Support /set isAllowALL=<value> or /set isAllowALL <value>
+    if (settingName?.startsWith('isAllowALL')) {
+      let valueStr: string | undefined;
+
+      if (settingName.includes('=')) {
+        // Format: isAllowALL=true
+        valueStr = settingName.split('=')[1]?.trim().toLowerCase();
+      } else {
+        // Format: isAllowALL true
+        valueStr = settingArgs[0]?.trim().toLowerCase();
+      }
+
+      if (valueStr === 'true' || valueStr === '1') {
+        taskRunner.setAllowAll(true);
+        return successResult('isAllowALL is true','isAllowALL 已设置为 true — 所有工具将自动批准');
+      } else if (valueStr === 'false' || valueStr === '0') {
+        taskRunner.setAllowAll(false);
+        return successResult('isAllowALL is false','isAllowALL 已设置为 false — 工具执行需手动确认');
+      } else {
+        return failureResult('INVALID_ARGUMENT', '无效值，请使用 true 或 false', [
+          '示例: /set isAllowALL=true',
+          '示例: /set isAllowALL true',
+        ]);
+      }
+    }
+
     if (settingName !== 'workspace') {
       return failureResult('SETTING_NOT_SUPPORTED', 'Unsupported setting', [
         'Use /set workspace [path].',
+        'Use /set isAllowALL <true|false>.',
       ]);
     }
 

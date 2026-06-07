@@ -50,7 +50,7 @@ export interface DesktopToolApprovalState {
 
 export interface DesktopToolApprovalResponse {
   readonly batchId: string;
-  readonly decision: 'allow' | 'deny';
+  readonly decision: 'allow' | 'allow-all' | 'deny';
   readonly selectedRequestIds: string[];
 }
 

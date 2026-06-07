@@ -253,7 +253,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
 
     const decisions = response.decision === 'deny'
       ? batch.requests.map(() => 'deny' as const)
-      : buildApprovalDecisions(batch, response.selectedRequestIds);
+      : buildApprovalDecisions(batch, response.selectedRequestIds, response.decision);
 
     activeToolApprovalBatch.resolve(decisions);
     return resolveToolApprovalState(activeToolApprovalBatch, activeFileReview);
@@ -496,7 +496,9 @@ function normalizeApprovalTarget(value: string): string {
 function buildApprovalDecisions(
   batch: DesktopToolApprovalBatch,
   selectedRequestIds: readonly string[],
+  decision: 'allow' | 'allow-all' = 'allow',
 ): readonly ToolApprovalDecision[] {
   const selectedIds = new Set(selectedRequestIds);
-  return batch.requests.map((request) => (selectedIds.has(request.id) ? 'allow-once' : 'deny'));
+  const allowDecision: ToolApprovalDecision = decision === 'allow-all' ? 'allow-all' : 'allow-once';
+  return batch.requests.map((request) => (selectedIds.has(request.id) ? allowDecision : 'deny'));
 }

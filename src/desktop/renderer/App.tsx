@@ -159,7 +159,7 @@ declare global {
       getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
       getToolApprovalState: () => Promise<DesktopToolApprovalState>;
       getTalkState: () => Promise<DesktopTalkState>;
-      respondToolApproval: (response: { batchId: string; decision: 'allow' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
+      respondToolApproval: (response: { batchId: string; decision: 'allow' | 'allow-all' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
       respondFileReview: (response: { reviewId: string; decision: 'keep' | 'discard' }) => Promise<DesktopToolApprovalState>;
       respondTalkRequest: (response: DesktopTalkRequestResponse) => Promise<DesktopTalkState>;
       respondTalkContinuation: (response: DesktopTalkContinuationResponse) => Promise<DesktopTalkState>;
@@ -1052,7 +1052,7 @@ export function App() {
     setSelectedToolApprovalIds(nextSelection);
   };
 
-  const handleResolveToolApproval = async (decision: 'allow' | 'deny') => {
+  const handleResolveToolApproval = async (decision: 'allow' | 'allow-all' | 'deny') => {
     if (!activeToolApprovalBatch || isResolvingToolApproval) {
       return;
     }
@@ -1391,6 +1391,9 @@ export function App() {
               onOpenFileReviewPreview: setSelectedFileChange,
               onAllow: () => {
                 void handleResolveToolApproval('allow');
+              },
+              onAllowAll: () => {
+                void handleResolveToolApproval('allow-all');
               },
               onDeny: () => {
                 void handleResolveToolApproval('deny');
@@ -1966,6 +1969,7 @@ function renderToolApprovalSidebar(args: {
   onToggleRequest: (requestId: string) => void;
   onOpenFileReviewPreview: (fileChange: RendererFileChange) => void;
   onAllow: () => void;
+  onAllowAll: () => void;
   onDeny: () => void;
   onKeepFileReview: () => void;
   onDiscardFileReview: () => void;
@@ -2075,6 +2079,14 @@ function renderToolApprovalSidebar(args: {
               disabled={args.isResolvingToolApproval}
             >
               {args.isResolvingToolApproval ? 'Applying...' : 'Allow'}
+            </button>
+            <button
+              type="button"
+              className="tool-approval-action-button tool-approval-allow-all-button"
+              onClick={args.onAllowAll}
+              disabled={args.isResolvingToolApproval}
+            >
+              Allow All
             </button>
             <button
               type="button"
