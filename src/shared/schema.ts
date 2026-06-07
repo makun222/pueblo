@@ -614,6 +614,7 @@ export const ipcInputEnvelopeSchema = z.object({
   requestId: z.string().min(1),
   windowId: z.string().min(1),
   sessionId: z.string().min(1).nullable(),
+  skillId: z.string().min(1).nullable().optional(),
   inputText: z.string().min(1),
   attachments: z.array(inputAttachmentManifestSchema).default([]),
   submittedAt: z.string().datetime(),

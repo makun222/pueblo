@@ -428,6 +428,35 @@ select {
   /*background: linear-gradient(180deg, rgba(245, 248, 252, 0.98), rgba(245, 248, 252, 0.84) 72%, rgba(245, 248, 252, 0));*/
 }
 
+.cancel-submit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color, #d0d5dd);
+  border-radius: 4px;
+  background: var(--bg-secondary, #f5f7fa);
+  color: var(--text-muted, #667085);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.cancel-submit-button:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.cancel-submit-button:active {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #f87171;
+}
+
 .output-pane-transcript {
   display: flex;
   flex-direction: column;

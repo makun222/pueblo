@@ -39,6 +39,7 @@ export interface ResolveContextInput {
   readonly explicitModelId?: string | null;
   readonly pendingUserInput?: string;
   readonly uploadedAttachments?: InputAttachmentManifest[];
+   readonly skillId?: string | null;
   readonly puebloWorkingDirectory?: string | null;
   readonly cwd?: string;
   readonly workspace?: string | null;
@@ -151,6 +152,7 @@ export class ContextResolver {
       puebloWorkingDirectory: input.puebloWorkingDirectory ?? input.cwd ?? process.cwd(),
       agentInstanceId: agentInstance?.id ?? null,
       config: this.dependencies.config.pepe,
+      skillId: input.skillId ?? null,
     });
     const skillContextText = buildSkillSystemMessage(skillContext);
     const sessionMessages = session?.messageHistory ?? [];

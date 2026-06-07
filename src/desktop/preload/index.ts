@@ -21,6 +21,7 @@ const TALK_STATE_CHANNEL = 'talk-state';
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   submitInput: (envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse> => ipcRenderer.invoke('submit-input', envelope),
+  cancelActiveSubmit: (): Promise<void> => ipcRenderer.invoke('cancel-active-submit'),
   selectInputFiles: (sessionId: string | null): Promise<InputAttachmentManifest[]> => ipcRenderer.invoke('select-input-files', sessionId),
   getRuntimeStatus: (): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('get-runtime-status'),
   getToolApprovalState: (): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('get-tool-approval-state'),

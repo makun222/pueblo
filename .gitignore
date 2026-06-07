@@ -24,3 +24,4 @@ logs/
 .pueblo/*.db-wal
 .pueblo/*.db-shm
 *.bak
+.pueblo/pueblo.db

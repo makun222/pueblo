@@ -169,6 +169,7 @@ export interface DesktopSessionSelectionResponse {
 
 export interface DesktopBridge {
   submitInput(envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse>;
+  cancelActiveSubmit(): Promise<void>;
   selectInputFiles(sessionId: string | null): Promise<InputAttachmentManifest[]>;
   getRuntimeStatus(): Promise<DesktopRuntimeStatus>;
   getToolApprovalState(): Promise<DesktopToolApprovalState>;

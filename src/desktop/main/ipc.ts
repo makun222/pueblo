@@ -380,6 +380,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
     }
   });
 
+  ipcMain.handle('cancel-active-submit', async () => {
+    for (const controller of activeSubmitControllers) {
+      controller.abort(createTaskCancellationError('Task cancelled by user.'));
+    }
+    activeSubmitControllers.clear();
+  });
+
   mainWindow.once('closed', cleanup);
 
   return cleanup;

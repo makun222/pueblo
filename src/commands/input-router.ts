@@ -5,7 +5,7 @@ import type { InputAttachmentManifest, IpcInputEnvelope } from '../shared/schema
 
 export interface InputRouterDependencies {
   readonly dispatcher: CommandDispatcher;
-  readonly runTaskFromText: (text: string, attachments?: InputAttachmentManifest[]) => Promise<CommandResult<unknown>>;
+  readonly runTaskFromText: (text: string, attachments?: InputAttachmentManifest[], skillId?: string | null) => Promise<CommandResult<unknown>>;
   readonly routeTextInput?: (text: string, attachments?: InputAttachmentManifest[]) => Promise<CommandResult<unknown> | null>;
 }
 
@@ -32,8 +32,8 @@ export class InputRouter {
     }
 
     return envelope.attachments.length > 0
-      ? this.dependencies.runTaskFromText(trimmed, envelope.attachments)
-      : this.dependencies.runTaskFromText(trimmed);
+      ? this.dependencies.runTaskFromText(trimmed, envelope.attachments, envelope.skillId ?? undefined)
+      : this.dependencies.runTaskFromText(trimmed, undefined, envelope.skillId ?? undefined);
   }
 }
 

@@ -30,6 +30,7 @@ export function resolveSkillContext(args: {
   readonly puebloWorkingDirectory: string | null | undefined;
   readonly agentInstanceId: string | null | undefined;
   readonly config: Pick<PepeConfig, 'workingDirectoryPattern' | 'skillDirectoryName'>;
+  readonly skillId?: string | null;
 }): SkillContextSnapshot | null {
   if (!args.puebloWorkingDirectory || !args.agentInstanceId) {
     return null;
@@ -39,14 +40,16 @@ export function resolveSkillContext(args: {
   const agentWorkingDirectory = resolveAgentWorkingDirectory(puebloWorkingDirectory, args.agentInstanceId, args.config);
   const skillDirectory = path.join(agentWorkingDirectory, args.config.skillDirectoryName);
 
+  const allSkills = readSkillSummaries(puebloWorkingDirectory, skillDirectory);
+  const skills = args.skillId ? allSkills.filter(s => s.id === args.skillId) : allSkills;
+
   return {
     puebloWorkingDirectory,
     agentWorkingDirectory,
     skillDirectory,
-    skills: readSkillSummaries(puebloWorkingDirectory, skillDirectory),
+    skills,
   };
 }
-
 export function buildSkillSystemMessage(skillContext: SkillContextSnapshot | null | undefined): string | null {
   if (!skillContext) {
     return null;
@@ -57,12 +60,12 @@ export function buildSkillSystemMessage(skillContext: SkillContextSnapshot | nul
     `- Pueblo启动目录: ${skillContext.puebloWorkingDirectory}`,
     `- workspace目录: ${skillContext.agentWorkingDirectory}`,
     `- Pueblo Skill目录: ${skillContext.skillDirectory}`,
-    '- 如果任务完成过程是一个稳定的、可重用的多步骤过程时，建议将该过程转化为Skill。',
-    '- 在创建、更新或覆盖Skill之前，需要用户的明确批准。',
-    '- 一个有用的Skill应总结其目的、使用时机、所需输入、具体步骤、验证和限制。',
-    '- 一般，Skill处理的数据和创建的文件存储在workspace目录，除非用户另有说明。',
+    '- Skill处理的数据和创建的文件一般存储在workspace目录，除非另有说明。',
     `- Skill保存为： <Pueblo Skill>/<skill-id>/${SKILL_INSTRUCTION_FILE_NAME}.`,
     `- 用Skill，请阅读其 ${SKILL_INSTRUCTION_FILE_NAME} 文件，并按照其中的说明作为内部流程使用现有工具。`,
+    '- 如果任务完成过程是一个稳定的、可重用的多步骤过程时，可以将该过程转化为Skill。',
+    '- 在创建、更新或覆盖Skill之前，需要用户的明确批准。',
+    '- 一个有用的Skill应总结其目的、使用时机、所需输入、具体步骤、验证和限制。',
   ];
 
   if (skillContext.skills.length === 0) {

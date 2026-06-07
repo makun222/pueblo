@@ -39,7 +39,7 @@ import {
   createPromptListCommand,
   createPromptSelectCommand,
 } from '../commands/prompt-command';
-import { createSkillListCommand, createSkillOpenCommand } from '../commands/skill-command';
+import { createSkillListCommand, createSkillOpenCommand, createSkillInstallCommand } from '../commands/skill-command';
 import {
   createNewSessionCommand,
   createSessionListCommand,
@@ -474,6 +474,7 @@ export function createCliDependencies(
     inputContextSummary: string,
     userInputOverride?: string | null,
     uploadedAttachments: InputAttachmentManifest[] = [],
+    skillId?: string | null,
   ) => {
     const trimmedGoal = goal.trim();
     const normalizedUserInput = userInputOverride?.trim() || trimmedGoal;
@@ -490,6 +491,7 @@ export function createCliDependencies(
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
       uploadedAttachments,
+      skillId,
       puebloWorkingDirectory,
       cwd: currentWorkspace,
       workspace: currentWorkspace,
@@ -516,6 +518,7 @@ export function createCliDependencies(
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
       uploadedAttachments,
+      skillId,
       puebloWorkingDirectory,
       cwd: currentWorkspace,
       workspace: currentWorkspace,
@@ -1087,7 +1090,7 @@ export function createCliDependencies(
 
   const inputRouter = new InputRouter({
     dispatcher,
-    runTaskFromText: (text, attachments) => runTask(text, 'Plain-text task execution', undefined, attachments ?? []),
+    runTaskFromText: (text, attachments, skillId) => runTask(text, 'Plain-text task execution', undefined, attachments ?? [], skillId),
     routeTextInput: async (text, attachments) => {
       if (getActiveWorkflow()) {
         return continueActiveWorkflow(text, 'Plain-text active workflow continuation', attachments ?? []);
@@ -1182,6 +1185,11 @@ export function createCliDependencies(
     ensureCurrentAgentInstanceId: ensureAgentInstance,
   }));
   dispatcher.register('/skill-open', createSkillOpenCommand({
+    puebloWorkingDirectory,
+    config: currentConfig.pepe,
+    ensureCurrentAgentInstanceId: ensureAgentInstance,
+  }));
+  dispatcher.register('/skill-install', createSkillInstallCommand({
     puebloWorkingDirectory,
     config: currentConfig.pepe,
     ensureCurrentAgentInstanceId: ensureAgentInstance,

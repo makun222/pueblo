@@ -15,6 +15,7 @@ import type {
   DesktopToolApprovalBatch,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
+import { isTaskCancellationError } from '../../shared/task-cancellation.js';
 import './styles.css';
 
 const THINKING_PLACEHOLDER = 'Thinking through the next step...';
@@ -60,8 +61,8 @@ interface AssistantTranscriptEntry {
   readonly completedAtMs?: number | null;
   readonly messageTrace: RendererMessageTraceStep[];
   readonly fileChanges: RendererFileChange[];
-  readonly status: 'pending' | 'streaming' | 'complete';
-  readonly blockType: 'task-result' | 'command-result' | 'error';
+  readonly status: 'pending' | 'streaming' | 'complete' | 'cancelled';
+  readonly blockType: 'task-result' | 'command-result' | 'error' | 'assistant';
 }
 
 type TranscriptEntry = UserTranscriptEntry | AssistantTranscriptEntry | RendererOutputBlock;
@@ -155,6 +156,7 @@ declare global {
   interface Window {
     electronAPI: {
       submitInput: (input: IpcInputEnvelope) => Promise<DesktopSubmitResponse>;
+      cancelActiveSubmit: () => Promise<void>;
       selectInputFiles: (sessionId: string | null) => Promise<InputAttachmentManifest[]>;
       getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
       getToolApprovalState: () => Promise<DesktopToolApprovalState>;
@@ -756,6 +758,28 @@ export function App() {
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+
+      if (isTaskCancellationError(error)) {
+        // User cancelled: preserve the assistant entry with whatever content has streamed.
+        // Just clean up pending refs and timer; setIsSubmitting(false) happens in finally.
+        if (assistantEntryId) {
+          pendingAssistantEntryIdRef.current = null;
+          pendingAssistantDraftRef.current = '';
+          setActiveAnswerTimer(null);
+          updateTranscriptEntries((previous) => previous.map((entry) => {
+            if (!('role' in entry) || entry.role !== 'assistant' || entry.id !== assistantEntryId) {
+              return entry;
+            }
+            return {
+              ...entry,
+              status: 'cancelled',
+              completedAtMs: Date.now(),
+              blockType: 'assistant',
+            };
+          }));
+        }
+        return null;
+      }
 
       if (assistantEntryId) {
         pendingAssistantEntryIdRef.current = null;
@@ -1624,7 +1648,19 @@ export function App() {
           disabled={needsAgentSelection || isSubmitting}
           autoFocus
         />
-        <button type="submit" disabled={needsAgentSelection || isSubmitting}>Send</button>
+        {isSubmitting ? (
+          <button
+            type="button"
+            className="cancel-submit-button"
+            title="Cancel current request"
+            onClick={() => { void window.electronAPI.cancelActiveSubmit(); }}
+            aria-label="Cancel current request"
+          >
+            ✕
+          </button>
+        ) : (
+          <button type="submit" disabled={needsAgentSelection}>Send</button>
+        )}
       </form>
       {talkState.incomingRequest ? renderTalkRequestModal({
         request: talkState.incomingRequest,
