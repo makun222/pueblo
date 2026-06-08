@@ -11,17 +11,14 @@ export interface GrepToolRequest {
 }
 
 import type { ToolExecutionResult } from './glob-tool';
+import minimatch from 'minimatch';
 
 function matchesInclude(filePath: string, include?: string): boolean {
   if (!include) {
     return true;
   }
 
-  if (include === '*.ts') {
-    return filePath.endsWith('.ts');
-  }
-
-  return true;
+  return minimatch(filePath, include, { matchBase: true });
 }
 
 export function createGrepTool() {
@@ -32,8 +29,18 @@ export function createGrepTool() {
       let totalChars = 0;
       const regex = new RegExp(request.pattern, 'i');
 
+      let shouldStop = false;
+
       const visit = (dirPath: string): void => {
+        if (shouldStop) {
+          return;
+        }
+
         for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+          if (shouldStop) {
+            return;
+          }
+
           const fullPath = path.join(dirPath, entry.name);
           if (entry.isDirectory()) {
             if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') {
@@ -59,17 +66,17 @@ export function createGrepTool() {
             }
 
             totalMatches += 1;
-            if (output.length >= MAX_GREP_RESULTS) {
-              continue;
+
+            if (totalMatches >= MAX_GREP_RESULTS) {
+              shouldStop = true;
+              return;
             }
 
             const matchedLine = `${relativePath}:${index + 1}: ${line}`;
-            if (totalChars + matchedLine.length > MAX_GREP_OUTPUT_CHARS && output.length > 0) {
-              continue;
+            if (totalChars + matchedLine.length <= MAX_GREP_OUTPUT_CHARS || output.length === 0) {
+              output.push(matchedLine);
+              totalChars += matchedLine.length;
             }
-
-            output.push(matchedLine);
-            totalChars += matchedLine.length;
           }
         }
       };

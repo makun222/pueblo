@@ -1,16 +1,22 @@
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { ToolExecutionResult } from './glob-tool';
 import type { ProviderShellExecToolArgs } from '../providers/provider-adapter';
 import { isTaskCancellationError, toTaskCancellationError } from '../shared/task-cancellation';
-
-const execFileAsync = promisify(execFile);
 
 export interface ShellExecToolRequest {
   readonly mode: ProviderShellExecToolArgs['mode'];
   readonly command: string;
   readonly cwd: string;
   readonly signal?: AbortSignal;
+}
+
+function killProcessTree(pid: number): void {
+  if (process.platform !== 'win32') return;
+  try {
+    execFile('taskkill', ['/F', '/T', '/PID', String(pid)], { timeout: 5000 });
+  } catch {
+    // best-effort: process may already be dead
+  }
 }
 
 function resolveShellProgram(mode: ProviderShellExecToolArgs['mode']): { command: string; args: string[] } | null {
@@ -43,13 +49,40 @@ export function createShellExecTool() {
       };
     }
 
+    const childProcess = execFile(shellProgram.command, [...shellProgram.args, request.command], {
+      cwd: request.cwd,
+      shell: false,
+      signal: request.signal,
+    });
+
     try {
-      const result = await execFileAsync(shellProgram.command, [...shellProgram.args, request.command], {
-        cwd: request.cwd,
-        shell: false,
-        signal: request.signal,
+      const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+
+        childProcess.stdout?.on('data', (data: string) => { stdout += data; });
+        childProcess.stderr?.on('data', (data: string) => { stderr += data; });
+
+        childProcess.on('error', (err) => {
+          if (!settled) { settled = true; reject(err); }
+        });
+
+        childProcess.on('close', (code: number | null) => {
+          if (settled) return;
+          settled = true;
+          if (code === 0) {
+            resolve({ stdout, stderr });
+          } else {
+            const error = new Error(code === null ? 'Process was terminated' : `Command failed with exit code ${code}`);
+            (error as any).stdout = stdout;
+            (error as any).stderr = stderr;
+            reject(error);
+          }
+        });
       });
-      const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean);
+
+      const output = [stdout.trim(), stderr.trim()].filter(Boolean);
 
       return {
         toolName: 'shell_exec',
@@ -59,14 +92,20 @@ export function createShellExecTool() {
       };
     } catch (error) {
       if (isTaskCancellationError(error)) {
+        if (process.platform === 'win32' && childProcess.pid !== undefined) {
+          killProcessTree(childProcess.pid);
+        }
         throw toTaskCancellationError(error, 'Shell command execution was cancelled.');
       }
+
+      const execError = error as { stdout?: string; stderr?: string };
+      const errorOutput = [execError.stdout?.trim(), execError.stderr?.trim()].filter(Boolean) as string[];
 
       return {
         toolName: 'shell_exec',
         status: 'failed',
         summary: error instanceof Error ? error.message : 'Shell command execution failed',
-        output: [],
+        output: errorOutput,
       };
     }
   };

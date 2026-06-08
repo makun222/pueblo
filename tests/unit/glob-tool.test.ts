@@ -31,7 +31,7 @@ describe('glob tool', () => {
     });
 
     expect(result.status).toBe('succeeded');
-    expect(result.summary).toBe('Matched 200 of 260 path(s)');
+    expect(result.summary).toBe('Matched 200 path(s)');
     expect(result.output).toHaveLength(200);
   });
 });

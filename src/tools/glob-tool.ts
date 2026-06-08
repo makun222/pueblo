@@ -1,6 +1,8 @@
-import { glob } from 'node:fs/promises';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import type { RendererFileChange } from '../shared/schema';
+import minimatch from 'minimatch';
 
 const MAX_GLOB_RESULTS = 200;
 const MAX_GLOB_OUTPUT_CHARS = 12000;
@@ -25,20 +27,48 @@ export function createGlobTool() {
       let totalMatches = 0;
       let totalChars = 0;
 
-      for await (const entry of glob(request.pattern, { cwd: request.cwd })) {
-        totalMatches += 1;
+      let shouldStop = false;
 
-        if (output.length >= MAX_GLOB_RESULTS) {
-          continue;
+      const visit = (dirPath: string): void => {
+        if (shouldStop) {
+          return;
         }
 
-        if (totalChars + entry.length > MAX_GLOB_OUTPUT_CHARS && output.length > 0) {
-          continue;
-        }
+        for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+          if (shouldStop) {
+            return;
+          }
 
-        output.push(entry);
-        totalChars += entry.length;
-      }
+          if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') {
+            continue;
+          }
+
+          const fullPath = path.join(dirPath, entry.name);
+          const relativePath = path.relative(request.cwd, fullPath);
+
+          // Match both files and directories against the glob pattern
+          if (minimatch(relativePath, request.pattern, { matchBase: true, dot: true } as any)) {
+            totalMatches += 1;
+
+            if (totalChars + relativePath.length <= MAX_GLOB_OUTPUT_CHARS || output.length === 0) {
+              output.push(relativePath);
+              totalChars += relativePath.length;
+            }
+
+            if (totalMatches >= MAX_GLOB_RESULTS) {
+              shouldStop = true;
+              return;
+            }
+          }
+
+          // Recurse into directories
+          if (entry.isDirectory()) {
+            visit(fullPath);
+          }
+        }
+      };
+
+      visit(request.cwd);
 
       const truncated = output.length < totalMatches;
 

@@ -63,12 +63,10 @@ export class PepeSemanticClient {
       const result = await adapter.runTask({
         modelId: target.modelId,
         inputContextSummary: [
-/*         'You are Pepe, a memory distillation service.',
-        'Summarize the memory into a concise technical note for future retrieval.',
-        'Prefer one or two sentences. Keep important entities and decisions.', */
-          '你是Pepe，一个记忆提炼服务。',
-          '将记忆总结为简明的技术笔记以便将来检索。',
-          '最好使用一到两句话。保留重要的实体和决策，路径及文件名。',
+          '-你是Pepe，一个记忆提炼服务。',
+          '-将一轮或多轮记忆总结为简明的技术笔记以便将来检索和回顾。',
+          '-使用尽量简短的文字进行总结，包括完成的工作、决策信息，与涉及重要的实体、路径、文件名。',
+          '-涉及tool-results的，主要总结影响了哪些文件，不要保留低价值的细节。',
         ].join('\n'),
         goal: summaryPrompt,
       });
@@ -104,8 +102,7 @@ function buildSummaryPrompt(memory: MemoryRecord, currentInput?: string): string
     `Memory title: ${memory.title}`,
     `Memory content:\n${memory.content}`,
     '',
-    'Return only the distilled summary text.',
-  ].join('\n');
+    ].join('\n');
 }
 
 function resolveDeepSeekSummaryTarget(config: Pick<PepeSemanticClientConfig, 'defaultProviderId' | 'providers'>): PepeSemanticTarget | null {
