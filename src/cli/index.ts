@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { createTaskContext } from '../agent/task-context';
+import { TurnIndexer } from '../agent/turn-indexer';
 import { AgentInstanceRepository } from '../agent/agent-instance-repository';
 import { AgentInstanceService } from '../agent/agent-instance-service';
 import { AgentTemplateLoader } from '../agent/agent-template-loader';
@@ -433,6 +434,7 @@ export function createCliDependencies(
   });
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository, memoryService);
+  const turnIndexers = new Map<string, TurnIndexer>();
   const createPepeSupervisor = (resolvedConfig: AppConfig) => new PepeSupervisor({
     appConfig: resolvedConfig,
     config: resolvedConfig.pepe,
@@ -512,6 +514,13 @@ export function createCliDependencies(
       syncSelectionFromSession(sessionId);
     }
 
+    // Initialize TurnIndexer for this session (persists across multiple runTask calls)
+    let turnIndexer = turnIndexers.get(sessionId);
+    if (!turnIndexer) {
+      turnIndexer = new TurnIndexer(sessionId);
+      turnIndexers.set(sessionId, turnIndexer);
+    }
+
     const executionContext = contextResolver.resolve({
       activeSessionId: sessionId,
       explicitProviderId: selectionState.providerId,
@@ -526,7 +535,11 @@ export function createCliDependencies(
 
     pepeSupervisor.recordInput(sessionId, normalizedUserInput);
 
-    sessionService.addUserMessage(sessionId, normalizedUserInput);
+    // Signal end of previous turn and start a new turn for this user message
+    turnIndexer.signalTurnEnd();
+    const currentTurnId = turnIndexer.currentTurnId;
+
+    sessionService.addUserMessage(sessionId, normalizedUserInput, null, currentTurnId);
 
     try {
       const task = await taskRunner.run({

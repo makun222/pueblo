@@ -12,6 +12,7 @@ export interface AppendSessionMessageInput {
   readonly content: string;
   readonly taskId?: string | null;
   readonly toolName?: string | null;
+  readonly turnId?: string | null;
   readonly createdAt?: string;
 }
 
@@ -128,6 +129,7 @@ export class SessionService {
       createdAt: input.createdAt ?? new Date().toISOString(),
       taskId: input.taskId ?? null,
       toolName: input.toolName ?? null,
+      turnId: input.turnId ?? null,
     };
 
     const updatedAt = new Date().toISOString();
@@ -140,28 +142,31 @@ export class SessionService {
     return updatedSession;
   }
 
-  addUserMessage(sessionId: string, content: string, taskId?: string | null): Session {
+  addUserMessage(sessionId: string, content: string, taskId?: string | null, turnId?: string | null): Session {
     return this.appendMessage(sessionId, {
       role: 'user',
       content,
       taskId,
+      turnId,
     });
   }
 
-  addAssistantMessage(sessionId: string, content: string, taskId?: string | null): Session {
+  addAssistantMessage(sessionId: string, content: string, taskId?: string | null, turnId?: string | null): Session {
     return this.appendMessage(sessionId, {
       role: 'assistant',
       content,
       taskId,
+      turnId,
     });
   }
 
-  addToolMessage(sessionId: string, toolName: string, content: string, taskId?: string | null): Session {
+  addToolMessage(sessionId: string, toolName: string, content: string, taskId?: string | null, turnId?: string | null): Session {
     return this.appendMessage(sessionId, {
       role: 'tool',
       content,
       taskId,
       toolName,
+      turnId,
     });
   }
 

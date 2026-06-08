@@ -48,6 +48,8 @@ export const sessionMessageSchema = z.object({
   createdAt: z.string().datetime(),
   taskId: z.string().min(1).nullable(),
   toolName: z.string().min(1).nullable(),
+  /** 所属回合 ID，格式为 "<sessionId>-turn-<number>"；未分配时省略 */
+  turnId: z.string().min(1).nullable().optional(),
 });
 
 export const contextCountBreakdownSchema = z.object({
