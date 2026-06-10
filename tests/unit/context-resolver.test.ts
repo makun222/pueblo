@@ -304,9 +304,646 @@ describe('context resolver', () => {
       cwd: tempDir,
     });
 
+    expect(resolved.taskContext.sessionSummaryMemories.map((memory) => memory.id)).toEqual([sessionSummary!.id]);
     expect(resolved.taskContext.resultItems).toHaveLength(0);
     expect(resolved.runtimeStatus.selectedMemoryCount).toBe(1);
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(1);
+  });
+
+  it('injects at most one current-session summary and one related-session summary ahead of general memory results', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-cross-session-summary-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({ defaultProviderId: 'openai' });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const currentSession = sessionService.createSession('Current session', 'gpt-4.1-mini');
+    const relatedSession = sessionService.createSession('Related session', 'gpt-4.1-mini');
+
+    const currentTurn = memoryService.createConversationTurnMemory({
+      sessionId: currentSession.id,
+      turnNumber: 1,
+      userInput: 'Track the current sqlite direction',
+      assistantOutput: 'Keep sqlite as the source of truth.',
+    });
+    const currentTurnSummary = memoryService.createDerivedSummaryMemory({
+      sessionId: currentSession.id,
+      parentMemory: currentTurn,
+      summary: 'Current turn summary that should be superseded by the session summary.',
+    });
+    const currentSessionSummary = memoryService.upsertSessionSummaryMemory({
+      sessionId: currentSession.id,
+      summaries: [currentTurnSummary],
+    });
+
+    const relatedTurn = memoryService.createConversationTurnMemory({
+      sessionId: relatedSession.id,
+      turnNumber: 1,
+      userInput: 'Remember the earlier architecture decision',
+      assistantOutput: 'Preserve sqlite persistence for local state.',
+    });
+    const relatedTurnSummary = memoryService.createDerivedSummaryMemory({
+      sessionId: relatedSession.id,
+      parentMemory: relatedTurn,
+      summary: 'Related turn summary that should be superseded by the related session summary.',
+    });
+    const relatedSessionSummary = memoryService.upsertSessionSummaryMemory({
+      sessionId: relatedSession.id,
+      summaries: [relatedTurnSummary],
+    });
+    const genericMemory = memoryService.createMemory('Repo fact', 'General repo fact for recall ordering.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.55,
+    });
+
+    sessionService.addSelectedMemory(currentSession.id, currentSessionSummary!.id);
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: currentSession.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [currentSessionSummary!.id],
+      pendingUserInput: 'Recall the relevant summaries',
+      resultItems: [
+        {
+          memoryId: relatedTurnSummary.id,
+          summary: 'Related turn summary that should be dropped.',
+          similarity: 0.99,
+          sourceSessionId: relatedSession.id,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: relatedSessionSummary!.id,
+          summary: 'Related session summary that should be promoted.',
+          similarity: 0.98,
+          sourceSessionId: relatedSession.id,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: genericMemory.id,
+          summary: 'General repo fact remains available.',
+          similarity: 0.5,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: currentSession.id,
+      pendingUserInput: 'Recall the relevant summaries',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.sessionSummaryMemories.map((memory) => memory.id)).toEqual([
+      currentSessionSummary!.id,
+      relatedSessionSummary!.id,
+    ]);
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([genericMemory.id]);
+    expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(3);
+  });
+
+  it('sorts general result items by memory weight and then updatedAt', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-weight-sort-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({ defaultProviderId: 'openai' });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Weight sort session', 'gpt-4.1-mini');
+    const lowWeightNewer = memoryService.createMemory('Newer low weight', 'Lower weight but recently updated.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.2,
+    });
+    const highWeightOlder = memoryService.createMemory('Older high weight', 'Higher weight and should come first.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.9,
+    });
+    const sameWeightOlder = memoryService.createMemory('Same weight older', 'Same weight but older update.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.9,
+    });
+    const sameWeightNewer = memoryService.createMemory('Same weight newer', 'Same weight and newer update.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.9,
+    });
+
+    sessionService.addSelectedMemory(session.id, lowWeightNewer.id);
+    sessionService.addSelectedMemory(session.id, highWeightOlder.id);
+    sessionService.addSelectedMemory(session.id, sameWeightOlder.id);
+    sessionService.addSelectedMemory(session.id, sameWeightNewer.id);
+
+    memoryService.touchMemory(highWeightOlder.id, { updatedAt: '2026-01-01T00:00:00.000Z' });
+    memoryService.touchMemory(sameWeightOlder.id, { updatedAt: '2026-01-15T00:00:00.000Z' });
+    memoryService.touchMemory(sameWeightNewer.id, { updatedAt: '2026-02-01T00:00:00.000Z' });
+    memoryService.touchMemory(lowWeightNewer.id, { updatedAt: '2026-03-01T00:00:00.000Z' });
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [lowWeightNewer.id, highWeightOlder.id, sameWeightOlder.id, sameWeightNewer.id],
+      pendingUserInput: 'Sort memories for prompt injection',
+      resultItems: [
+        {
+          memoryId: lowWeightNewer.id,
+          summary: 'Low weight summary',
+          similarity: 0.99,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: highWeightOlder.id,
+          summary: 'High weight older summary',
+          similarity: 0.5,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: sameWeightOlder.id,
+          summary: 'High weight same timestamp older',
+          similarity: 0.6,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+        {
+          memoryId: sameWeightNewer.id,
+          summary: 'High weight same timestamp newer',
+          similarity: 0.4,
+          sourceSessionId: null,
+          vectorVersion: 'pepe-local-v1',
+        },
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Sort memories for prompt injection',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([
+      sameWeightNewer.id,
+      sameWeightOlder.id,
+      highWeightOlder.id,
+      lowWeightNewer.id,
+    ]);
+  });
+
+  it('does not truncate result items when budget-aware truncation is disabled', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-budget-flag-off-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({ defaultProviderId: 'openai' });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 180 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Budget flag off session', 'gpt-4.1-mini');
+    const memoryA = memoryService.createMemory('Memory A', 'Highest weight memory.', 'project', { memoryKind: 'knowledge', weight: 0.95 });
+    const memoryB = memoryService.createMemory('Memory B', 'Mid weight memory.', 'project', { memoryKind: 'knowledge', weight: 0.55 });
+    const memoryC = memoryService.createMemory('Memory C', 'Lowest weight memory.', 'project', { memoryKind: 'knowledge', weight: 0.2 });
+
+    sessionService.addSelectedMemory(session.id, memoryA.id);
+    sessionService.addSelectedMemory(session.id, memoryB.id);
+    sessionService.addSelectedMemory(session.id, memoryC.id);
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [memoryA.id, memoryB.id, memoryC.id],
+      pendingUserInput: 'Preserve all result items even when the window is small',
+      resultItems: [
+        createResultItem(memoryA.id, makeLongSummary('A', 180), 0.99),
+        createResultItem(memoryB.id, makeLongSummary('B', 180), 0.8),
+        createResultItem(memoryC.id, makeLongSummary('C', 180), 0.7),
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Preserve all result items even when the window is small',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([memoryA.id, memoryB.id, memoryC.id]);
+  });
+
+  it('drops low-weight result items first when budget-aware truncation is enabled', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-budget-truncate-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      pepe: { enableBudgetAwareResultTruncation: true },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 200 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Budget truncate session', 'gpt-4.1-mini');
+    const highWeight = memoryService.createMemory('High weight', 'Retain me first.', 'project', { memoryKind: 'knowledge', weight: 0.95 });
+    const mediumWeight = memoryService.createMemory('Medium weight', 'Retain me after high weight.', 'project', { memoryKind: 'knowledge', weight: 0.7 });
+    const lowWeight = memoryService.createMemory('Low weight', 'Drop me first.', 'project', { memoryKind: 'knowledge', weight: 0.2 });
+
+    sessionService.addSelectedMemory(session.id, highWeight.id);
+    sessionService.addSelectedMemory(session.id, mediumWeight.id);
+    sessionService.addSelectedMemory(session.id, lowWeight.id);
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [highWeight.id, mediumWeight.id, lowWeight.id],
+      pendingUserInput: 'Keep the most important result items only',
+      resultItems: [
+        createResultItem(highWeight.id, makeLongSummary('high', 180), 0.99),
+        createResultItem(mediumWeight.id, makeLongSummary('medium', 180), 0.8),
+        createResultItem(lowWeight.id, makeLongSummary('low', 180), 0.7),
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Keep the most important result items only',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([highWeight.id, mediumWeight.id]);
+    expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(2);
+  });
+
+  it('prefers priority-tagged memories during sorting and truncation', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-priority-sort-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      pepe: { enableBudgetAwareResultTruncation: true },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 150 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Priority session', 'gpt-4.1-mini');
+    const criticalLowWeight = memoryService.createMemory('Critical low weight', 'Manual critical priority should win.', 'project', {
+      memoryKind: 'knowledge',
+      tags: ['priority:critical'],
+      weight: 0.1,
+    });
+    const highWeight = memoryService.createMemory('High weight', 'High weight but no explicit priority.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.95,
+    });
+    const mediumWeight = memoryService.createMemory('Medium weight', 'Medium weight and removable.', 'project', {
+      memoryKind: 'knowledge',
+      weight: 0.65,
+    });
+
+    sessionService.addSelectedMemory(session.id, criticalLowWeight.id);
+    sessionService.addSelectedMemory(session.id, highWeight.id);
+    sessionService.addSelectedMemory(session.id, mediumWeight.id);
+
+    const pepeResultService = new PepeResultService(memoryService, config.pepe);
+    pepeResultService.cacheSessionResult({
+      sessionId: session.id,
+      agentInstanceId: null,
+      selectedMemoryIds: [criticalLowWeight.id, highWeight.id, mediumWeight.id],
+      pendingUserInput: 'Keep the critical item and the strongest fallback',
+      resultItems: [
+        createResultItem(highWeight.id, makeLongSummary('high-priority-weight', 160), 0.99),
+        createResultItem(criticalLowWeight.id, makeLongSummary('critical-priority', 160), 0.5),
+        createResultItem(mediumWeight.id, makeLongSummary('medium-priority-weight', 160), 0.8),
+      ],
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Keep the critical item and the strongest fallback',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([
+      criticalLowWeight.id,
+      highWeight.id,
+    ]);
+  });
+
+  it('injects deterministic recall results when the feature flag is enabled', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      pepe: { enableDeterministicRecall: true },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Deterministic recall session', 'gpt-4.1-mini');
+    const knowledgeMemory = memoryService.createMemory('SQLite invariant', 'sqlite persistence is the source of truth for repository state', 'project', {
+      type: 'long-term',
+      memoryKind: 'knowledge',
+      weight: 0.92,
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, config.pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Recall the sqlite persistence decision',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([knowledgeMemory.id]);
+    expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(1);
+  });
+
+  it('keeps deterministic recall disabled by default', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-off-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({ defaultProviderId: 'openai' });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Recall off session', 'gpt-4.1-mini');
+    memoryService.createMemory('SQLite invariant', 'sqlite persistence is the source of truth for repository state', 'project', {
+      type: 'long-term',
+      memoryKind: 'knowledge',
+      weight: 0.92,
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, config.pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Recall the sqlite persistence decision',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems).toHaveLength(0);
+    expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(0);
+  });
+
+  it('falls back safely when deterministic recall search fails', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-fail-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      pepe: { enableDeterministicRecall: true },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Recall failure session', 'gpt-4.1-mini');
+    memoryService.searchMemories = (() => {
+      throw new Error('simulated recall failure');
+    }) as typeof memoryService.searchMemories;
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, config.pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Recall the sqlite persistence decision',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems).toHaveLength(0);
+    expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(0);
+  });
+
+  it('skips deterministic recall when the fixed context is already overloaded', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-overload-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+
+    const config = createTestAppConfig({
+      defaultProviderId: 'openai',
+      pepe: { enableDeterministicRecall: true },
+    });
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository(), config.memory);
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'openai',
+        name: 'OpenAI',
+        defaultModelId: 'gpt-4.1-mini',
+        models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true, contextWindow: 120 }],
+      }),
+      new InMemoryProviderAdapter('openai', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Recall overload session', 'gpt-4.1-mini');
+    for (let index = 0; index < 6; index += 1) {
+      sessionService.addUserMessage(session.id, `Question ${index}: ${'x'.repeat(220)}`);
+      sessionService.addAssistantMessage(session.id, `Answer ${index}: ${'y'.repeat(220)}`);
+    }
+    memoryService.createMemory('SQLite invariant', 'sqlite persistence is the source of truth for repository state', 'project', {
+      type: 'long-term',
+      memoryKind: 'knowledge',
+      weight: 0.92,
+    });
+
+    const resolver = new ContextResolver({
+      config,
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService: new PepeResultService(memoryService, config.pepe),
+    });
+
+    const resolved = resolver.resolve({
+      activeSessionId: session.id,
+      pendingUserInput: 'Recall the sqlite persistence decision',
+      cwd: tempDir,
+    });
+
+    expect(resolved.taskContext.resultItems).toHaveLength(0);
   });
 
   it('extracts the target directory from the latest user path when the new turn omits it', () => {
@@ -700,3 +1337,17 @@ describe('context resolver', () => {
     expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([otherMemory.id]);
   });
 });
+
+function createResultItem(memoryId: string, summary: string, similarity: number) {
+  return {
+    memoryId,
+    summary,
+    similarity,
+    sourceSessionId: null,
+    vectorVersion: 'pepe-local-v1',
+  };
+}
+
+function makeLongSummary(label: string, charCount: number) {
+  return `${label}: ${'x'.repeat(charCount)}`;
+}

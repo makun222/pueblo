@@ -108,7 +108,10 @@ describe.sequential('cli startup auth setup', () => {
     expect(result.configured).toBe(true);
     expect(stdoutSpy).toHaveBeenCalledWith('GitHub Copilot is not configured for CLI use. Starting device login flow...\n');
     expect(openUrl).toHaveBeenCalledWith('https://github.com/login/device');
-    expect(reportProgress).toHaveBeenCalledWith('Open https://github.com/login/device and enter code: WDJB-MJHT');
+    expect(reportProgress).toHaveBeenCalledWith({
+      title: 'GitHub Device Login',
+      message: 'Open https://github.com/login/device and enter code: WDJB-MJHT',
+    });
     expect(fs.existsSync(path.join(tempDir, '.pueblo', 'config.json'))).toBe(true);
     expect(savedConfig.githubCopilot.token).toBeUndefined();
     expect(savedConfig.githubCopilot.credentialTarget).toBeTruthy();

@@ -4,6 +4,7 @@ import {
   parseProviderEditCompatibleToolArgs,
   parseProviderToolArgs,
   type ProviderAdapter,
+  type ProviderGrepToolArgs,
   type ProviderMessage,
   type ProviderRunRequest,
   type ProviderRunResult,
@@ -457,7 +458,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
             error,
           },
         });
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = describeNetworkError(error);
         throw new ProviderError(`DeepSeek network request failed to ${input}: ${reason}`);
       }
     }
@@ -479,6 +480,66 @@ function isRetryableNetworkError(error: unknown): boolean {
   return causeCode ? RETRYABLE_NETWORK_ERROR_CODES.has(causeCode) : false;
 }
 
+function describeNetworkError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const message = error.message.trim() || error.name;
+  const cause = describeNetworkErrorCause(error.cause);
+  return cause ? `${message} (cause: ${cause})` : message;
+}
+
+function describeNetworkErrorCause(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const parts: string[] = [];
+  const code = resolveErrorCode(value);
+  const message = resolveErrorMessage(value);
+  const errno = resolveScalar(value, 'errno');
+  const syscall = resolveScalar(value, 'syscall');
+  const host = resolveScalar(value, 'hostname') ?? resolveScalar(value, 'host');
+  const address = resolveScalar(value, 'address');
+  const port = resolveScalar(value, 'port');
+  const nestedCause = describeNetworkErrorCause(resolveProperty(value, 'cause'));
+
+  if (code) {
+    parts.push(code);
+  }
+
+  if (message && message !== 'fetch failed') {
+    parts.push(message);
+  }
+
+  if (errno && errno !== code) {
+    parts.push(`errno=${errno}`);
+  }
+
+  if (syscall) {
+    parts.push(`syscall=${syscall}`);
+  }
+
+  if (host) {
+    parts.push(`host=${host}`);
+  }
+
+  if (address) {
+    parts.push(`address=${address}`);
+  }
+
+  if (port) {
+    parts.push(`port=${port}`);
+  }
+
+  if (nestedCause) {
+    parts.push(`cause=${nestedCause}`);
+  }
+
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
 function resolveErrorCode(value: unknown): string | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -486,6 +547,37 @@ function resolveErrorCode(value: unknown): string | null {
 
   const code = 'code' in value ? value.code : undefined;
   return typeof code === 'string' && code.trim().length > 0 ? code : null;
+}
+
+function resolveErrorMessage(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const message = 'message' in value ? value.message : undefined;
+  return typeof message === 'string' && message.trim().length > 0 ? message.trim() : null;
+}
+
+function resolveScalar(value: unknown, propertyName: string): string | null {
+  const property = resolveProperty(value, propertyName);
+  if (typeof property === 'string') {
+    const trimmed = property.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof property === 'number' || typeof property === 'bigint') {
+    return String(property);
+  }
+
+  return null;
+}
+
+function resolveProperty(value: unknown, propertyName: string): unknown {
+  if (!value || typeof value !== 'object' || !(propertyName in value)) {
+    return undefined;
+  }
+
+  return Reflect.get(value, propertyName);
 }
 
 function parseDeepSeekResponsePayload(
@@ -812,7 +904,7 @@ function parseDeepSeekToolCall(
 
   let parsedArguments: unknown;
   try {
-    parsedArguments = JSON.parse(rawArguments);
+    parsedArguments = parseDeepSeekToolArguments(rawArguments);
   } catch {
     throw new ProviderError(`DeepSeek tool call ${toolName} returned invalid JSON arguments`);
   }
@@ -833,7 +925,7 @@ function parseDeepSeekToolCall(
       return {
         toolCallId,
         toolName,
-        args: parseProviderToolArgsOrThrow('deepseek', 'grep', parsedArguments),
+        args: normalizeDeepSeekGrepArgs(parseProviderToolArgsOrThrow('deepseek', 'grep', parsedArguments)),
       };
     case 'exec':
       return {
@@ -862,10 +954,120 @@ function parseDeepSeekToolCall(
     case 'write':
       return {
         toolCallId,
-        toolName,
-        args: parseProviderToolArgsOrThrow('deepseek', 'write', parsedArguments),
+        toolName: 'edit',
+        args: parseProviderEditCompatibleToolArgsOrThrow('deepseek', parsedArguments),
       };
   }
+}
+
+function parseDeepSeekToolArguments(rawArguments: string): unknown {
+  try {
+    return JSON.parse(rawArguments);
+  } catch (error) {
+    const repairedArguments = repairCommonJsonStringEscapes(rawArguments);
+    if (!repairedArguments || repairedArguments === rawArguments) {
+      throw error;
+    }
+
+    return JSON.parse(repairedArguments);
+  }
+}
+
+function repairCommonJsonStringEscapes(rawJson: string): string | null {
+  let repaired = '';
+  let changed = false;
+  let inString = false;
+
+  for (let index = 0; index < rawJson.length;) {
+    const character = rawJson[index]!;
+
+    if (!inString) {
+      repaired += character;
+      inString = character === '"';
+      index += 1;
+      continue;
+    }
+
+    if (character === '"') {
+      repaired += character;
+      inString = false;
+      index += 1;
+      continue;
+    }
+
+    if (character === '\\') {
+      const nextCharacter = rawJson[index + 1];
+      if (!nextCharacter) {
+        repaired += '\\\\';
+        changed = true;
+        index += 1;
+        continue;
+      }
+
+      if (isValidJsonEscape(rawJson, index + 1)) {
+        if (nextCharacter === 'u') {
+          repaired += rawJson.slice(index, index + 6);
+          index += 6;
+          continue;
+        }
+
+        repaired += rawJson.slice(index, index + 2);
+        index += 2;
+        continue;
+      }
+
+      repaired += '\\\\';
+      changed = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '\n') {
+      repaired += '\\n';
+      changed = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '\r') {
+      repaired += '\\r';
+      changed = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '\t') {
+      repaired += '\\t';
+      changed = true;
+      index += 1;
+      continue;
+    }
+
+    repaired += character;
+    index += 1;
+  }
+
+  return changed ? repaired : null;
+}
+
+function isValidJsonEscape(rawJson: string, escapeCharacterIndex: number): boolean {
+  const escapeCharacter = rawJson[escapeCharacterIndex];
+  if (!escapeCharacter) {
+    return false;
+  }
+
+  if (escapeCharacter === 'u') {
+    return /^[0-9a-fA-F]{4}$/.test(rawJson.slice(escapeCharacterIndex + 1, escapeCharacterIndex + 5));
+  }
+
+  return escapeCharacter === '"'
+    || escapeCharacter === '\\'
+    || escapeCharacter === '/'
+    || escapeCharacter === 'b'
+    || escapeCharacter === 'f'
+    || escapeCharacter === 'n'
+    || escapeCharacter === 'r'
+    || escapeCharacter === 't';
 }
 
 function parseProviderToolArgsOrThrow<TToolName extends ProviderToolName>(
@@ -878,6 +1080,24 @@ function parseProviderToolArgsOrThrow<TToolName extends ProviderToolName>(
   } catch (error) {
     throw wrapToolArgumentValidationError(providerId, toolName, error);
   }
+}
+
+function normalizeDeepSeekGrepArgs(args: ProviderGrepToolArgs): ProviderGrepToolArgs {
+  const normalizedPattern = args.pattern
+    .replace(/\u0008/g, '\\b')
+    .replace(/\f/g, '\\f')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+
+  if (normalizedPattern === args.pattern) {
+    return args;
+  }
+
+  return {
+    ...args,
+    pattern: normalizedPattern,
+  };
 }
 
 function parseProviderEditCompatibleToolArgsOrThrow(

@@ -168,6 +168,94 @@ describe('task message builder', () => {
     expect(messages[1]?.content).toContain('Relevant result items');
   });
 
+  it('injects session summaries after recent conversation and before workflow and general result items', () => {
+    const context = createTaskContext({
+      config: createTestAppConfig(),
+      puebloProfile: createEmptyPuebloProfile(null),
+      sessionSummaryMemories: [
+        {
+          id: 'summary-current',
+          type: 'short-term',
+          memoryKind: 'summary',
+          title: 'Session Summary',
+          content: 'Session Summary\n- Current session: preserve sqlite decisions.',
+          scope: 'session',
+          status: 'active',
+          tags: ['pepe-summary', 'pepe-session-summary'],
+          parentId: null,
+          derivationType: 'summary',
+          summaryDepth: 1,
+          weight: 0.95,
+          lastAccessedAt: null,
+          sourceSessionId: 'session-1',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      workflowContext: {
+        workflowId: 'workflow-1',
+        workflowType: 'pueblo-plan',
+        status: 'round-active',
+        planSummary: 'Goal: implement workflow context',
+        todoSummary: 'Round 1 tasks:\n- keep workflow after summaries',
+        planMemoryId: 'memory-plan-1',
+        todoMemoryId: 'memory-todo-1',
+        runtimePlanPath: 'D:/workspace/.plans/workflow-1/context.plan.md',
+        deliverablePlanPath: null,
+        activeRoundNumber: 1,
+        updatedAt: new Date().toISOString(),
+      },
+      resultSet: {
+        sessionId: 'session-1',
+        agentInstanceId: 'agent-1',
+        inputFingerprint: 'inspect-current-failure',
+        generatedAt: new Date().toISOString(),
+        items: [
+          {
+            memoryId: 'memory-1',
+            summary: 'Repo fact: Repository uses sqlite.',
+            similarity: 0.91,
+            sourceSessionId: null,
+            vectorVersion: 'pepe-local-v1',
+          },
+        ],
+      },
+      sessionMessages: [
+        {
+          id: 'message-1',
+          role: 'user',
+          content: 'Previous user turn',
+          createdAt: new Date().toISOString(),
+          taskId: null,
+          toolName: null,
+        },
+      ],
+      contextCount: {
+        estimatedTokens: 0,
+        contextWindowLimit: null,
+        utilizationRatio: null,
+        messageCount: 1,
+        selectedPromptCount: 0,
+        selectedMemoryCount: 2,
+        derivedMemoryCount: 0,
+      },
+      currentSessionId: 'session-1',
+    });
+
+    const messages = buildProviderMessages(context, 'Inspect the current failure');
+    const systemBlocks = messages.filter((message) => message.role === 'system').map((message) => message.content);
+    const recentConversationIndex = systemBlocks.findIndex((content) => content.startsWith('Recent conversation context:'));
+    const sessionSummaryIndex = systemBlocks.findIndex((content) => content.startsWith('Relevant session summaries:'));
+    const workflowIndex = systemBlocks.findIndex((content) => content.startsWith('Active workflow context:'));
+    const resultItemsIndex = systemBlocks.findIndex((content) => content.startsWith('Relevant result items:'));
+
+    expect(sessionSummaryIndex).toBeGreaterThan(recentConversationIndex);
+    expect(workflowIndex).toBeGreaterThan(sessionSummaryIndex);
+    expect(resultItemsIndex).toBeGreaterThan(workflowIndex);
+    expect(systemBlocks[sessionSummaryIndex]).toContain('Current session summary');
+    expect(systemBlocks[sessionSummaryIndex]).toContain('preserve sqlite decisions');
+  });
+
   it('dedupes repeated pueblo directives while preserving section order', () => {
     const profile = createEmptyPuebloProfile(null);
     profile.roleDirectives.push('Inspect root cause first.', 'Inspect root cause first.  ');
@@ -334,9 +422,9 @@ describe('task message builder', () => {
     const messages = buildProviderMessages(context, 'Ship the release');
 
     expect(messages[0]?.content).toContain('Pueblo skill workspace:');
-    expect(messages[0]?.content).toContain('Pueblo startup directory: D:/workspace/pueblo');
-    expect(messages[0]?.content).toContain('Before creating, updating, or overwriting a skill');
-    expect(messages[0]?.content).toContain('the data they process and the files they create should still come from the active target repository or workspace');
+    expect(messages[0]?.content).toContain('Pueblo启动目录: D:/workspace/pueblo');
+    expect(messages[0]?.content).toContain('在创建、更新或覆盖Skill之前，需要用户的明确批准');
+    expect(messages[0]?.content).toContain('Skill处理的数据和创建的文件一般存储在workspace目录');
     expect(messages[0]?.content).toContain('release-windows');
     expect(messages[0]?.content).toContain('agent-agent-1/skills/release-windows/SKILL.md');
   });

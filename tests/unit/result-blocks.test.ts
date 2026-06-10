@@ -267,9 +267,9 @@ describe('Result Block Rendering', () => {
 
     const blocks = createResultBlocks(result);
 
-    expect(blocks.map((block) => block.title)).toEqual(['WORKFLOW_STARTED', 'WORKFLOW_STARTED-data', 'Workflow']);
-    expect(blocks[2]?.content).toContain('Workflow ID: workflow-2');
-    expect(blocks[2]?.content).toContain('Route Reason: explicit');
-    expect(blocks[2]?.content).toContain('Runtime Plan Path: D:/workspace/.plans/workflow-2/feature.plan.md');
+    expect(blocks.map((block) => block.title)).toEqual(['WORKFLOW_STARTED', 'Workflow']);
+    expect(blocks[1]?.content).toContain('Workflow ID: workflow-2');
+    expect(blocks[1]?.content).toContain('Route Reason: explicit');
+    expect(blocks[1]?.content).toContain('Runtime Plan Path: D:/workspace/.plans/workflow-2/feature.plan.md');
   });
 });

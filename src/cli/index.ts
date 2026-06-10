@@ -571,12 +571,12 @@ export function createCliDependencies(
       sessionService.addProviderUsage(sessionId, outputPayload?.providerUsage);
 
       for (const toolResult of outputPayload?.toolResults ?? []) {
-        sessionService.addToolMessage(sessionId, toolResult.toolName, `${toolResult.status}: ${toolResult.summary}`, task.id);
+        sessionService.addToolMessage(sessionId, toolResult.toolName, `${toolResult.status}: ${toolResult.summary}`, task.id, currentTurnId);
       }
 
       const assistantOutput = extractTaskOutputSummaryText(task.outputSummary);
       if (assistantOutput) {
-        sessionService.addAssistantMessage(sessionId, assistantOutput, task.id);
+        sessionService.addAssistantMessage(sessionId, assistantOutput, task.id, currentTurnId);
       }
 
       const workflowProgress = advanceWorkflowAfterTaskCompletion(sessionId, assistantOutput ?? null);
@@ -586,6 +586,7 @@ export function createCliDependencies(
         turnNumber: memoryService.listSessionMemories(sessionId).length + 1,
         userInput: normalizedUserInput,
         assistantOutput: assistantOutput ?? 'No assistant output recorded.',
+        turnId: currentTurnId,
       });
       addTaskMemoriesToSession({
         sessionId,
@@ -619,12 +620,13 @@ export function createCliDependencies(
         if (activeWorkflow) {
           workflowService.markWorkflowFailed(activeWorkflow.id, error.message);
         }
-        sessionService.addAssistantMessage(sessionId, `Task failed: ${error.message}`);
+        sessionService.addAssistantMessage(sessionId, `Task failed: ${error.message}`, currentTurnId);
         const turnMemory = memoryService.createConversationTurnMemory({
           sessionId,
           turnNumber: memoryService.listSessionMemories(sessionId).length + 1,
           userInput: normalizedUserInput,
           assistantOutput: `Task failed: ${error.message}`,
+          turnId: currentTurnId,
         });
         addTaskMemoriesToSession({
           sessionId,

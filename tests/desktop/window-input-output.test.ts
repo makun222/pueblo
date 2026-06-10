@@ -386,6 +386,7 @@ describe('Desktop Window Input/Output', () => {
   });
 
   it('should render a collapsed message details block for output entries', async () => {
+    const user = userEvent.setup();
     render(createElement(App));
 
     await waitFor(() => {
@@ -403,13 +404,16 @@ describe('Desktop Window Input/Output', () => {
     const details = screen.getByText('Process Info').closest('details');
     expect(details).toBeTruthy();
     expect(details?.hasAttribute('open')).toBe(false);
+    await user.click(screen.getByText('Process Info'));
     expect(screen.getByText('Step 1')).toBeTruthy();
     expect(details?.querySelector('.message-details-summary')?.textContent).toContain('2 messages');
     expect(details?.querySelector('.message-details-summary')?.textContent).toContain('18 chars');
     expect(details?.querySelector('.message-step-summary')?.textContent).toContain('2 messages');
     expect(details?.querySelector('.message-step-summary')?.textContent).toContain('18 chars');
+    await user.click(screen.getByText('Step 1'));
     expect(screen.getByText('system')).toBeTruthy();
     expect(screen.getByText('user')).toBeTruthy();
+    await user.click(screen.getByText('user'));
     expect(screen.getByText('tool=grep')).toBeTruthy();
     expect(screen.getByText('call=call-1')).toBeTruthy();
     expect(screen.getByText((_content, element) => {

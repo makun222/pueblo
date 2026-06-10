@@ -83,7 +83,7 @@ class ClarifyingStepLimitProviderAdapter implements ProviderAdapter {
           '我想了很久，这个任务还需要你进一步明确。',
           '1. 指定要分析的文件或模块。',
           '2. 指定你最关心的问题类型，例如根因或修改方案。',
-          `Prompt observed: ${lastMessage?.content.includes('Do not call any more tools.') ? 'yes' : 'no'}`,
+          `Prompt observed: ${lastMessage?.content.includes('你需要跟用户进行需求澄清') ? 'yes' : 'no'}`,
         ].join('\n'),
       };
     }
@@ -117,7 +117,7 @@ class StepBudgetPromptObservingProviderAdapter implements ProviderAdapter {
     return {
       type: 'final',
       outputSummary: [
-        `Budget prompt observed: ${budgetMessage?.content.includes('本轮有 48 步的硬性模型调用限制。') ? 'yes' : 'no'}`,
+        `Budget prompt observed: ${budgetMessage?.content.includes('每轮交互有 48 步的硬性模型调用限制。') ? 'yes' : 'no'}`,
         `Multi-turn prompt observed: ${budgetMessage?.content.includes('划分为多个子任务') ? 'yes' : 'no'}`,
         `Early handoff prompt observed: ${budgetMessage?.content.includes('留到后续轮次继续') ? 'yes' : 'no'}`,
       ].join('\n'),
@@ -147,7 +147,7 @@ class StepBudgetHandoffProviderAdapter implements ProviderAdapter {
           '',
           'Recommended next request',
           '- 下一轮继续最重要的前几个剩余子任务。',
-          `Prompt observed: ${lastMessage?.content.includes('Use exactly these three section headings: Completed this round, Remaining work, Recommended next request.') ? 'yes' : 'no'}`,
+          `Prompt observed: ${lastMessage?.content.includes('写一个简洁的进度报告') ? 'yes' : 'no'}`,
         ].join('\n'),
       };
     }
@@ -286,7 +286,7 @@ class UnknownToolThenFinalProviderAdapter implements ProviderAdapter {
   seenRetryPrompt: string | null = null;
 
   async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
-    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('The tool "search" is not available in this runtime.'));
+    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('这个工具 "search" 在此运行时不可用。'));
 
     if (!retryPrompt) {
       throw new ProviderUnknownToolError('deepseek', 'search');
@@ -308,7 +308,7 @@ class InvalidToolArgumentsThenFinalProviderAdapter implements ProviderAdapter {
   seenRetryPrompt: string | null = null;
 
   async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
-    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('The arguments for tool "read" were invalid.'));
+    const retryPrompt = context.messages.find((message) => message.role === 'user' && message.content.includes('工具 "read" 的参数无效。'));
 
     if (!retryPrompt) {
       throw new ProviderInvalidToolArgumentsError('deepseek', 'read', [
@@ -591,7 +591,7 @@ describe('AgentTaskRunner step limit', () => {
     expect(outputSummary.outputSummary).toContain('Recommended next request');
     expect(outputSummary.outputSummary).toContain('Prompt observed: yes');
     expect(outputSummary.modelMessageTrace?.at(-1)?.messages.at(-1)?.role).toBe('user');
-    expect(outputSummary.modelMessageTrace?.at(-1)?.messages.at(-1)?.content).toContain('You have reached the task step budget for this round.');
+    expect(outputSummary.modelMessageTrace?.at(-1)?.messages.at(-1)?.content).toContain('你已经达到了本轮任务步骤的预算。');
   });
 
   it('returns clarification guidance when the model repeats the same tool loop without making progress', async () => {
@@ -627,7 +627,7 @@ describe('AgentTaskRunner step limit', () => {
     expect(getInvocationCount()).toBe(6);
     expect(outputSummary.outputSummary).toContain('当前状态：Agent task entered a repeated read loop for 6 consecutive steps without making progress');
     expect(outputSummary.outputSummary).toContain('1. 指定要分析的文件、模块或失败命令。');
-    expect(outputSummary.modelMessageTrace?.at(-1)?.messages.at(-1)?.content).toContain('Do not call any more tools.');
+    expect(outputSummary.modelMessageTrace?.at(-1)?.messages.at(-1)?.content).toContain('你需要跟用户进行需求澄清');
   });
 
   it('returns a failed tool result when approval-required tools are denied', async () => {
@@ -814,8 +814,8 @@ describe('AgentTaskRunner step limit', () => {
     expect(getInvocationCount()).toBe(0);
     expect(result.outputSummary).toContain('Recovered after unavailable tool guidance');
     expect(progressMessages).toContain('Step 1: unavailable tool requested - search');
-    expect(adapter.seenRetryPrompt).toContain('Do not call it again.');
-    expect(adapter.seenRetryPrompt).toContain('Available tools:');
+    expect(adapter.seenRetryPrompt).toContain('请勿再次调用');
+    expect(adapter.seenRetryPrompt).toContain('可用工具:');
     expect(adapter.seenRetryPrompt).toContain('- read (free)');
     expect(adapter.seenRetryPrompt).toContain('Required fields: path');
   });
@@ -851,7 +851,7 @@ describe('AgentTaskRunner step limit', () => {
     expect(getInvocationCount()).toBe(0);
     expect(result.outputSummary).toContain('Recovered after invalid tool argument guidance');
     expect(progressMessages).toContain('Step 1: invalid read arguments requested');
-    expect(adapter.seenRetryPrompt).toContain('Validation errors:');
+    expect(adapter.seenRetryPrompt).toContain('验证错误:');
     expect(adapter.seenRetryPrompt).toContain('- path: Invalid input: expected string, received undefined');
     expect(adapter.seenRetryPrompt).toContain('- read (free)');
     expect(adapter.seenRetryPrompt).toContain('Required fields: path');
@@ -1108,6 +1108,7 @@ describe('AgentTaskRunner step limit', () => {
         selectedModelName: 'GPT-4.1 Mini',
         selectedPromptIds: [],
         selectedMemoryIds: [],
+        sessionSummaryMemories: [],
         prompts: [],
         resultSet: null,
         resultItems: [],
@@ -1190,6 +1191,7 @@ describe('AgentTaskRunner step limit', () => {
         selectedModelName: 'GPT-4.1 Mini',
         selectedPromptIds: [],
         selectedMemoryIds: [],
+        sessionSummaryMemories: [],
         prompts: [],
         resultSet: null,
         resultItems: [],

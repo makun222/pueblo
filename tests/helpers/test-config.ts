@@ -43,6 +43,11 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
     },
     pepe: {
       enabled: overrides.pepe?.enabled ?? true,
+      enableBudgetAwareResultTruncation: overrides.pepe?.enableBudgetAwareResultTruncation ?? false,
+      enableDeterministicRecall: overrides.pepe?.enableDeterministicRecall ?? false,
+      deterministicRecallMaxResults: overrides.pepe?.deterministicRecallMaxResults ?? 4,
+      deterministicRecallMinWeight: overrides.pepe?.deterministicRecallMinWeight ?? 0.35,
+      deterministicRecallLookbackTurns: overrides.pepe?.deterministicRecallLookbackTurns ?? 6,
       providerId: overrides.pepe?.providerId ?? null,
       modelId: overrides.pepe?.modelId ?? null,
       embeddingProviderId: overrides.pepe?.embeddingProviderId ?? null,

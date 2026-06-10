@@ -156,4 +156,61 @@ describe('TurnIndexer', () => {
       expect(indexer.isFirstStepInTurn).toBe(true);
     });
   });
+
+  // ----------------------------------------------------------
+  // 边界条件：大数、快速连续 signalTurnEnd
+  // ----------------------------------------------------------
+  describe('edge cases', () => {
+    it('should handle a large starting turn number', () => {
+      const indexer = new TurnIndexer('sess', {
+        startingTurnNumber: 1000000,
+      });
+
+      expect(indexer.turnNumber).toBe(1000000);
+      expect(indexer.currentTurnId).toBe('sess-turn-1000000');
+    });
+
+    it('should handle rapid successive signalTurnEnd calls', () => {
+      const indexer = new TurnIndexer('sess');
+      for (let i = 0; i < 100; i++) {
+        indexer.signalTurnEnd();
+      }
+      expect(indexer.turnNumber).toBe(101);
+      expect(indexer.currentTurnId).toBe('sess-turn-101');
+      expect(indexer.isFirstStepInTurn).toBe(true);
+    });
+
+    it('should handle signalTurnEnd immediately after construction without markStepConsumed', () => {
+      // Edge case: empty turn (no steps consumed) followed by turn end
+      const indexer = new TurnIndexer('empty-turn');
+      expect(indexer.isFirstStepInTurn).toBe(true);
+      indexer.signalTurnEnd();
+      expect(indexer.turnNumber).toBe(2);
+      expect(indexer.isFirstStepInTurn).toBe(true);
+      expect(indexer.currentTurnId).toBe('empty-turn-turn-2');
+    });
+
+    it('should handle re-entrant signalTurnEnd calls (no-op in between)', () => {
+      const indexer = new TurnIndexer('reentrant');
+      indexer.signalTurnEnd();
+      indexer.signalTurnEnd();
+      indexer.signalTurnEnd();
+      expect(indexer.turnNumber).toBe(4);
+      expect(indexer.currentTurnId).toBe('reentrant-turn-4');
+    });
+
+    it('should keep isFirstStepInTurn as true after consecutive signalTurnEnd calls', () => {
+      const indexer = new TurnIndexer('sess');
+      for (let i = 0; i < 5; i++) {
+        expect(indexer.isFirstStepInTurn).toBe(true);
+        indexer.signalTurnEnd();
+      }
+      expect(indexer.turnNumber).toBe(6);
+    });
+
+    it('should throw when turnNumber overflows MAX_SAFE_INTEGER', () => {
+      const indexer = new TurnIndexer('sess', { startingTurnNumber: Number.MAX_SAFE_INTEGER });
+      expect(() => indexer.signalTurnEnd()).toThrow('has reached MAX_SAFE_INTEGER');
+    });
+  });
 });

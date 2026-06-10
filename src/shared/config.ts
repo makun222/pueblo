@@ -65,6 +65,11 @@ const pepeRankingSchema = z.object({
 
 const pepeSchema = z.object({
   enabled: z.boolean().default(true),
+  enableBudgetAwareResultTruncation: z.boolean().default(false),
+  enableDeterministicRecall: z.boolean().default(false),
+  deterministicRecallMaxResults: z.number().int().positive().default(4),
+  deterministicRecallMinWeight: z.number().min(0).max(1).default(0.35),
+  deterministicRecallLookbackTurns: z.number().int().positive().default(6),
   providerId: z.string().trim().min(1).nullable().default(null),
   modelId: z.string().trim().min(1).nullable().default(null),
   embeddingProviderId: z.string().trim().min(1).nullable().default(null),
@@ -193,6 +198,11 @@ const appConfigSchema = z.object({
   }),
   pepe: pepeSchema.default({
     enabled: true,
+    enableBudgetAwareResultTruncation: false,
+    enableDeterministicRecall: false,
+    deterministicRecallMaxResults: 4,
+    deterministicRecallMinWeight: 0.35,
+    deterministicRecallLookbackTurns: 6,
     providerId: null,
     modelId: null,
     embeddingProviderId: null,

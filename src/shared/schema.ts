@@ -235,6 +235,15 @@ export const memoryStatusSchema = z.enum(['active', 'expired', 'deleted']);
 export const memoryDerivationTypeSchema = z.enum(['manual', 'summary', 'imported']);
 export const memoryKindSchema = z.enum(['generic', 'turn', 'summary', 'workflow', 'knowledge', 'workspace-setting']);
 
+export const memoryQuerySchema = z.object({
+  text: z.string().trim().min(1).optional(),
+  sessionId: z.string().min(1).nullable().optional(),
+  memoryKinds: z.array(memoryKindSchema).min(1).optional(),
+  minWeight: z.number().min(0).max(1).optional(),
+  lookbackTurns: z.number().int().positive().optional(),
+  maxResults: z.number().int().positive().optional(),
+});
+
 export const memoryRecordSchema = z.object({
   id: z.string().min(1),
   type: memoryTypeSchema,
@@ -649,6 +658,7 @@ export type MemoryType = z.infer<typeof memoryTypeSchema>;
 export type MemoryScope = z.infer<typeof memoryScopeSchema>;
 export type MemoryStatus = z.infer<typeof memoryStatusSchema>;
 export type MemoryDerivationType = z.infer<typeof memoryDerivationTypeSchema>;
+export type MemoryQuery = z.infer<typeof memoryQuerySchema>;
 export type MemoryRecord = z.infer<typeof memoryRecordSchema>;
 export type PromptStatus = z.infer<typeof promptStatusSchema>;
 export type PromptAsset = z.infer<typeof promptAssetSchema>;

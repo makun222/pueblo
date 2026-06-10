@@ -59,11 +59,21 @@ export function createLlmResponseLogger(options: LlmResponseLoggerOptions = {}):
 
 function normalizeUnknown(value: unknown): unknown {
   if (value instanceof Error) {
-    return {
+    const normalized: Record<string, unknown> = {
       name: value.name,
       message: value.message,
       stack: value.stack,
     };
+
+    for (const propertyName of Object.getOwnPropertyNames(value)) {
+      if (propertyName === 'name' || propertyName === 'message' || propertyName === 'stack') {
+        continue;
+      }
+
+      normalized[propertyName] = normalizeUnknown(Reflect.get(value, propertyName));
+    }
+
+    return normalized;
   }
 
   if (Array.isArray(value)) {

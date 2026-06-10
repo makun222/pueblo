@@ -173,11 +173,11 @@ describe('DeepSeek read workflow integration', () => {
     expect(task.toolInvocationIds).toEqual(['tool-1']);
     expect(payload?.outputSummary).toBe('The sample file contains alpha, beta, and gamma.');
     expect(payload?.toolResults).toEqual([
-      {
+      expect.objectContaining({
         toolName: 'read',
         status: 'succeeded',
         summary: 'Read 3 line(s) from sample.txt',
-      },
+      }),
     ]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });

@@ -14,7 +14,7 @@ describe('input router', () => {
     const result = await router.route('  inspect repo  ');
 
     expect(result.code).toBe('TASK_COMPLETED');
-    expect(runTaskFromText).toHaveBeenCalledWith('inspect repo');
+    expect(runTaskFromText).toHaveBeenCalledWith('inspect repo', undefined, undefined);
     expect(dispatcher.dispatch).not.toHaveBeenCalled();
   });
 

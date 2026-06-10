@@ -46,7 +46,7 @@ describe('agent instance service', () => {
 
     expect(second.id).toBe(first.id);
     expect(second.isDefaultForProfile).toBe(true);
-    expect(second.workspaceRoot).toBe('d:/workspace/one');
+    expect(second.workspaceRoot).toBe('d:/workspace/two');
   });
 
   it('promotes the latest legacy instance to default when no explicit default exists', () => {

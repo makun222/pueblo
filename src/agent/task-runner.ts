@@ -324,9 +324,11 @@ export class AgentTaskRunner {
           messages: stepMessages,
           availableTools: args.availableTools,
           signal: args.signal,
-          onTextDelta: (text) => {
-            this.reportAssistantDelta?.(text);
-          },
+          onTextDelta: this.reportAssistantDelta
+            ? (text) => {
+              this.reportAssistantDelta?.(text);
+            }
+            : undefined,
         });
       } catch (error) {
         if (error instanceof ProviderUnknownToolError) {
@@ -728,7 +730,7 @@ export class AgentTaskRunner {
       }))
       .filter(({ toolCall, approvalCacheKey }) => (
         getToolExecutionPolicy(toolCall.toolName) === 'approval-required'
-       // && requiresInteractiveApproval(toolCall)
+        && requiresInteractiveApproval(toolCall)
         && (!approvalCacheKey || !this.approvalCache.has(approvalCacheKey))
       ))
       .map(({ toolCall, approvalCacheKey }) => ({
@@ -877,7 +879,7 @@ export class AgentTaskRunner {
       }
     } else {
       // Case 2: No pre-resolved decision - determine if approval is needed now
-      if (getToolExecutionPolicy(args.result.toolName) === 'approval-required') {
+      if (getToolExecutionPolicy(args.result.toolName) === 'approval-required' && requiresInteractiveApproval(args.result)) {
         // Tool requires approval - check cache first
         if (approvalCacheKey && this.approvalCache.has(approvalCacheKey)) {
           // Cached approval from previous allow-all - proceed to execute
@@ -1412,12 +1414,10 @@ function createApprovalCacheKey(toolCall: ProviderToolCall): string | null {
   const toolName: string = toolCall.toolName;
 
   switch (toolCall.toolName) {
-    /*
     case 'edit':
       return `edit:${normalizeApprovalCacheToken(toolCall.args.path)}`;
     case 'write':
       return `write:${normalizeApprovalCacheToken(toolCall.args.path)}`;
-    */
     case 'exec':
       return `exec:${normalizeApprovalCacheToken(toolCall.args.command)}`;
     case 'shell_exec':
@@ -1425,8 +1425,6 @@ function createApprovalCacheKey(toolCall: ProviderToolCall): string | null {
     case 'glob':
     case 'grep':
     case 'read':
-    case 'edit':
-    case 'write':
       return null;
   }
 

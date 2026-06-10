@@ -116,6 +116,11 @@ export class TurnIndexer implements TurnManager {
   }
 
   signalTurnEnd(): void {
+    if (this._turnNumber >= Number.MAX_SAFE_INTEGER) {
+      throw new Error(
+        `TurnIndexer: turnNumber (${this._turnNumber}) has reached MAX_SAFE_INTEGER, cannot increment further.`
+      );
+    }
     this._turnNumber += 1;
     this._isFirstStepInTurn = true;
   }

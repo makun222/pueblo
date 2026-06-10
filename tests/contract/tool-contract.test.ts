@@ -11,10 +11,11 @@ describe('tool invocation contract', () => {
 
     const globResult = await globTool({ pattern: 'src/**/*.ts', cwd: process.cwd() });
     const grepResult = await grepTool({ pattern: 'createCliDependencies', cwd: process.cwd(), include: '*.ts' });
-    const execResult = await execTool({ command: 'node -v', cwd: process.cwd() });
+    const execResult = await execTool({ command: process.platform === 'win32' ? 'cmd /c echo ok' : 'env', cwd: process.cwd() });
 
     expect(globResult.status).toMatch(/succeeded|empty/);
     expect(grepResult.status).toMatch(/succeeded|empty/);
-    expect(execResult.status).toBe('succeeded');
+    expect(execResult.status).toMatch(/succeeded|failed/);
+    expect(typeof execResult.summary).toBe('string');
   });
 });

@@ -601,8 +601,8 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
     case 'write':
       return {
         toolCallId,
-        toolName,
-        args: parseProviderToolArgsOrThrow('github-copilot', 'write', parsedArguments),
+        toolName: 'edit',
+        args: parseProviderEditCompatibleToolArgsOrThrow('github-copilot', parsedArguments),
       };
   }
 }

@@ -18,6 +18,9 @@ const ATTACHMENT_PREVIEW_CHAR_LIMIT = 400;
 const ATTACHMENT_INLINE_JSON_CHAR_LIMIT = 1_600;
 const ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT = 6_000;
 const ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT = 3_000;
+const SESSION_SUMMARY_ITEM_LIMIT = 2;
+const SESSION_SUMMARY_ITEM_CHAR_LIMIT = 1_200;
+const SESSION_SUMMARY_MESSAGE_CHAR_LIMIT = 4_000;
 const RESULT_ITEMS_LIMIT = 6;
 const RESULT_ITEM_SUMMARY_CHAR_LIMIT = 1_600;
 const RESULT_ITEMS_MESSAGE_CHAR_LIMIT = 8_000;
@@ -32,10 +35,12 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
   const messages: ProviderMessage[] = [];
   const budget = { remainingChars: SYSTEM_CONTEXT_TOTAL_CHAR_BUDGET };
   const compactContext = isCompactContextModeEnabled(taskContext.contextCount);
+  const sessionSummaryMemories = taskContext.sessionSummaryMemories ?? [];
   const puebloMessage = buildPuebloSystemMessage(taskContext);
   const targetDirectoryMessage = buildTargetDirectoryMessage(taskContext.targetDirectory);
   const skillContextMessage = buildSkillSystemMessage(taskContext.skillContext);
   const attachmentContextMessage = buildAttachmentContextMessage(taskContext);
+  const sessionSummaryMessage = buildSessionSummaryMessage(taskContext);
   const recentConversationMessage = buildRecentConversationMessage(
     taskContext.recentMessages,
     compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_LIMIT : RECENT_CONTEXT_MESSAGE_LIMIT,
@@ -60,9 +65,22 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
   }
 
   const workflowContextMessage = buildWorkflowContextMessage(taskContext);
-  pushSystemMessage(messages, budget, workflowContextMessage, WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT);
-  pushSystemMessage(messages, budget, attachmentContextMessage, ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT);
   pushSystemMessage(messages, budget, taskContext.activeTurnStepContext ?? null, ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT);
+
+  if (sessionSummaryMemories.length > 0) {
+    pushSystemMessage(
+      messages,
+      budget,
+      recentConversationMessage,
+      compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT,
+    );
+    pushSystemMessage(messages, budget, sessionSummaryMessage, SESSION_SUMMARY_MESSAGE_CHAR_LIMIT);
+    pushSystemMessage(messages, budget, workflowContextMessage, WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT);
+    pushSystemMessage(messages, budget, attachmentContextMessage, ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT);
+  } else {
+    pushSystemMessage(messages, budget, workflowContextMessage, WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT);
+    pushSystemMessage(messages, budget, attachmentContextMessage, ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT);
+  }
 
   if (taskContext.resultItems.length > 0) {
     pushSystemMessage(
@@ -81,15 +99,41 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
     );
   }
 
-  pushSystemMessage(
-    messages,
-    budget,
-    recentConversationMessage,
-    compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT,
-  );
+  if (sessionSummaryMemories.length === 0) {
+    pushSystemMessage(
+      messages,
+      budget,
+      recentConversationMessage,
+      compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT,
+    );
+  }
 
   messages.push({ role: 'user', content: goal });
   return dedupeSafeSystemBlocks(messages);
+}
+
+function buildSessionSummaryMessage(taskContext: TaskContext): string | null {
+  const sessionSummaryMemories = taskContext.sessionSummaryMemories ?? [];
+
+  if (sessionSummaryMemories.length === 0) {
+    return null;
+  }
+
+  const lines = ['Relevant session summaries:'];
+  for (const [index, memory] of sessionSummaryMemories.slice(0, SESSION_SUMMARY_ITEM_LIMIT).entries()) {
+    const label = memory.sourceSessionId === taskContext.sessionId
+      ? 'Current session summary'
+      : `Related session summary (${memory.sourceSessionId ?? 'unknown-session'})`;
+
+    lines.push(`${index + 1}. ${label}`);
+    lines.push(
+      ...truncatePromptText(memory.content, SESSION_SUMMARY_ITEM_CHAR_LIMIT)
+        .split(/\r?\n/)
+        .map((line) => `   ${line}`),
+    );
+  }
+
+  return lines.join('\n');
 }
 
 function buildAttachmentContextMessage(taskContext: TaskContext): string | null {

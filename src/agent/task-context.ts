@@ -4,6 +4,7 @@ import type {
   BackgroundSummaryStatus,
   ContextCount,
   InputAttachmentManifest,
+  MemoryRecord,
   PepeResultItem,
   PepeResultSet,
   PromptAsset,
@@ -23,6 +24,7 @@ export interface TaskContext {
   readonly selectedModelName: string | null;
   readonly selectedPromptIds: string[];
   readonly selectedMemoryIds: string[];
+  readonly sessionSummaryMemories: MemoryRecord[];
   readonly prompts: PromptAsset[];
   readonly resultSet: PepeResultSet | null;
   readonly resultItems: PepeResultItem[];
@@ -42,6 +44,7 @@ export interface TaskContextInput {
   readonly session?: Session | null;
   readonly targetDirectory?: string | null;
   readonly prompts?: PromptAsset[];
+  readonly sessionSummaryMemories?: MemoryRecord[];
   readonly resultSet?: PepeResultSet | null;
   readonly resultItems?: PepeResultItem[];
   readonly workflowContext?: WorkflowContext | null;
@@ -79,6 +82,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     selectedModelName: input.selectedModelName ?? null,
     selectedPromptIds: session?.selectedPromptIds ?? prompts.map((prompt) => prompt.id),
     selectedMemoryIds: session?.selectedMemoryIds ?? resultItems.map((item) => item.memoryId),
+    sessionSummaryMemories: input.sessionSummaryMemories ?? [],
     prompts,
     resultSet,
     resultItems,

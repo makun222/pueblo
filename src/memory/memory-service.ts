@@ -1,4 +1,4 @@
-import type { MemoryRecord, MemoryScope } from '../shared/schema';
+import { memoryQuerySchema, type MemoryQuery, type MemoryRecord, type MemoryScope } from '../shared/schema';
 import { DEFAULT_MEMORY_CONFIG, type MemoryConfig, type MemoryWeightPolicyConfig } from '../shared/config';
 import { MemoryQueries } from './memory-queries';
 import type { MemoryStore } from './memory-repository';
@@ -17,6 +17,11 @@ import type { PuebloPlanRound, PuebloPlanTask } from '../workflow/pueblo-plan/pu
 const WORKSPACE_MEMORY_TITLE = 'Workspace Root';
 const WORKSPACE_MEMORY_TAG = 'workspace-setting';
 const PEPE_SESSION_SUMMARY_TAG = 'pepe-session-summary';
+const MANUAL_PRIORITY_TAG_PREFIX = 'priority:';
+const AUTO_PRIORITY_TAG_PREFIX = 'priority:auto:';
+const PRIORITY_LEVELS = ['critical', 'high', 'normal', 'low'] as const;
+
+export type MemoryPriority = typeof PRIORITY_LEVELS[number];
 
 type MemoryPolicyOverrides = {
   readonly turn?: Partial<MemoryConfig['turn']>;
@@ -42,9 +47,11 @@ export class MemoryService {
   }
 
   createMemory(title: string, content: string, scope: MemoryScope, options: CreateMemoryModelOptions = {}): MemoryRecord {
+    const normalizedTags = normalizeMemoryPriorityTags(options.memoryKind ?? 'generic', options.tags ?? []);
     return this.repository.create(title, content, scope, {
       ...options,
-      weight: options.weight ?? clampWeight(options.weight ?? 0, resolveWeightBounds(this.policy, options.memoryKind ?? 'generic', options.tags ?? [])),
+      tags: normalizedTags,
+      weight: options.weight ?? clampWeight(options.weight ?? 0, resolveWeightBounds(this.policy, options.memoryKind ?? 'generic', normalizedTags)),
     });
   }
 
@@ -117,8 +124,43 @@ export class MemoryService {
     return memory;
   }
 
-  searchMemories(query: string): MemoryRecord[] {
-    return this.queries.searchMemories(query).filter((memory) => memory.status === 'active');
+  searchMemories(query: string | MemoryQuery): MemoryRecord[] {
+    if (typeof query === 'string') {
+      return this.queries.searchMemories(query).filter((memory) => memory.status === 'active');
+    }
+
+    const parsedQuery = memoryQuerySchema.parse(query);
+    const structuredText = parsedQuery.text;
+    let memories = structuredText
+      ? this.listMemories().filter((memory) => matchesStructuredTextQuery(memory, structuredText))
+      : this.listMemories();
+
+    memories = memories.filter((memory) => memory.status === 'active');
+
+    if (parsedQuery.sessionId) {
+      memories = memories.filter((memory) => isMemoryVisibleToSession(memory, parsedQuery.sessionId ?? null));
+    }
+
+    if (parsedQuery.memoryKinds && parsedQuery.memoryKinds.length > 0) {
+      const allowedKinds = new Set(parsedQuery.memoryKinds);
+      memories = memories.filter((memory) => allowedKinds.has(memory.memoryKind));
+    }
+
+    const minWeight = parsedQuery.minWeight;
+    if (typeof minWeight === 'number') {
+      memories = memories.filter((memory) => memory.weight >= minWeight);
+    }
+
+    if (parsedQuery.lookbackTurns && parsedQuery.sessionId) {
+      memories = filterMemoriesByLookbackTurns(memories, parsedQuery.sessionId, parsedQuery.lookbackTurns);
+    }
+
+    const sortedMemories = sortMemoriesForSearch(memories);
+    if (!parsedQuery.maxResults) {
+      return sortedMemories;
+    }
+
+    return sortedMemories.slice(0, parsedQuery.maxResults);
   }
 
   resolveMemorySelection(memoryIds: string[]): MemoryRecord[] {
@@ -252,13 +294,14 @@ export class MemoryService {
     readonly turnNumber: number;
     readonly userInput: string;
     readonly assistantOutput: string;
+    readonly turnId?: string;
   }): MemoryRecord {
     return this.createMemory(
       `Turn ${args.turnNumber}`,
       ['User:', args.userInput.trim(), '', 'Assistant:', args.assistantOutput.trim()].join('\n'),
       'session',
       {
-        tags: ['conversation-turn', 'auto-captured'],
+        tags: args.turnId ? ['conversation-turn', 'auto-captured', `turn:${args.turnId}`] : ['conversation-turn', 'auto-captured'],
         memoryKind: 'turn',
         derivationType: 'manual',
         sourceSessionId: args.sessionId,
@@ -285,7 +328,7 @@ export class MemoryService {
         content,
         memoryKind: 'summary',
         type: args.parentMemory.type,
-        tags: uniqueTags([...existing.tags, 'pepe-summary', 'semantic-summary']),
+        tags: normalizeMemoryPriorityTags('summary', [...existing.tags, 'pepe-summary', 'semantic-summary']),
         weight: clampWeight(existing.weight > 0 ? existing.weight : this.policy.derivedSummary.initialWeight, resolveWeightBounds(this.policy, 'summary', existing.tags)),
         lastAccessedAt: now,
         updatedAt: now,
@@ -334,13 +377,14 @@ export class MemoryService {
     const tags = ['pepe-summary', PEPE_SESSION_SUMMARY_TAG, 'semantic-summary', 'auto-captured'];
 
     if (existing) {
+      const normalizedTags = normalizeMemoryPriorityTags('summary', [...existing.tags, ...tags]);
       return this.repository.save({
         ...existing,
         title: 'Session Summary',
         content: nextContent,
         memoryKind: 'summary',
-        tags: uniqueTags([...existing.tags, ...tags]),
-        weight: clampWeight(existing.weight > 0 ? existing.weight : this.policy.sessionSummary.initialWeight, resolveWeightBounds(this.policy, 'summary', tags)),
+        tags: normalizedTags,
+        weight: clampWeight(existing.weight > 0 ? existing.weight : this.policy.sessionSummary.initialWeight, resolveWeightBounds(this.policy, 'summary', normalizedTags)),
         lastAccessedAt: now,
         updatedAt: now,
       });
@@ -367,16 +411,11 @@ export class MemoryService {
     readonly workflow: WorkflowInstance;
     readonly sessionId: string;
   }): MemoryRecord {
-    return this.createMemory(
+    return this.upsertWorkflowMemory(
       buildWorkflowPlanMemoryTitle(args.workflow),
       buildWorkflowPlanMemoryContent(args.workflow),
-      'session',
-      {
-        memoryKind: 'workflow',
-        tags: buildWorkflowPlanMemoryTags(args.workflow.type),
-        sourceSessionId: args.sessionId,
-        weight: this.policy.workflow.initialWeight,
-      },
+      args.sessionId,
+      buildWorkflowPlanMemoryTags(args.workflow.type),
     );
   }
 
@@ -386,18 +425,97 @@ export class MemoryService {
     readonly round: PuebloPlanRound;
     readonly tasks: PuebloPlanTask[];
   }): MemoryRecord {
-    return this.createMemory(
+    return this.upsertWorkflowMemory(
       buildWorkflowTodoMemoryTitle({ workflow: args.workflow, round: args.round }),
       buildWorkflowTodoMemoryContent({ workflow: args.workflow, round: args.round, tasks: args.tasks }),
-      'session',
-      {
-        memoryKind: 'workflow',
-        tags: buildWorkflowTodoMemoryTags(args.workflow.type),
-        sourceSessionId: args.sessionId,
-        weight: this.policy.workflow.initialWeight,
-      },
+      args.sessionId,
+      buildWorkflowTodoMemoryTags(args.workflow.type),
     );
   }
+
+  private upsertWorkflowMemory(
+    title: string,
+    content: string,
+    sessionId: string,
+    tags: string[],
+  ): MemoryRecord {
+    const now = new Date().toISOString();
+    const mergeKey = resolveWorkflowMergeKey(content, tags);
+    const matches = mergeKey
+      ? this.listMemories()
+        .filter((memory) => memory.memoryKind === 'workflow' && memory.sourceSessionId === sessionId)
+        .filter((memory) => resolveWorkflowMergeKey(memory.content, memory.tags) === mergeKey)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))
+      : [];
+    const current = matches[0] ?? null;
+
+    for (const staleMemory of matches.slice(1)) {
+      this.repository.save({
+        ...staleMemory,
+        status: 'expired',
+        updatedAt: now,
+      });
+    }
+
+    if (!current) {
+      return this.createMemory(
+        title,
+        content,
+        'session',
+        {
+          memoryKind: 'workflow',
+          tags,
+          sourceSessionId: sessionId,
+          weight: this.policy.workflow.initialWeight,
+        },
+      );
+    }
+
+    const mergedTags = normalizeMemoryPriorityTags('workflow', [...current.tags, ...tags]);
+    return this.repository.save({
+      ...current,
+      title,
+      content,
+      scope: 'session',
+      memoryKind: 'workflow',
+      tags: mergedTags,
+      sourceSessionId: sessionId,
+      weight: clampWeight(Math.max(current.weight, this.policy.workflow.initialWeight), resolveWeightBounds(this.policy, 'workflow', mergedTags)),
+      lastAccessedAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+export function resolveMemoryPriority(memory: Pick<MemoryRecord, 'memoryKind' | 'tags'> | undefined): MemoryPriority {
+  const manualPriority = findPriorityTag(memory?.tags ?? [], MANUAL_PRIORITY_TAG_PREFIX);
+  if (manualPriority) {
+    return manualPriority;
+  }
+
+  const autoPriority = findPriorityTag(memory?.tags ?? [], AUTO_PRIORITY_TAG_PREFIX);
+  if (autoPriority) {
+    return autoPriority;
+  }
+
+  if (memory?.tags.includes(PEPE_SESSION_SUMMARY_TAG) || memory?.memoryKind === 'workflow' || memory?.tags.includes('workflow')) {
+    return 'high';
+  }
+
+  return 'normal';
+}
+
+export function resolveMemoryPriorityRank(memory: Pick<MemoryRecord, 'memoryKind' | 'tags'> | undefined): number {
+  return priorityRank(resolveMemoryPriority(memory));
+}
+
+function sortMemoriesForSearch(memories: readonly MemoryRecord[]): MemoryRecord[] {
+  return [...memories].sort((left, right) => {
+    return resolveMemoryPriorityRank(right) - resolveMemoryPriorityRank(left)
+      || right.weight - left.weight
+      || compareDateDesc(right.updatedAt, left.updatedAt)
+      || compareDateDesc(right.createdAt, left.createdAt);
+  });
 }
 
 function resolveWeightBounds(
@@ -442,8 +560,185 @@ function clampWeight(value: number, bounds: Pick<MemoryWeightPolicyConfig, 'minW
   return Number(Math.min(bounds.maxWeight, Math.max(bounds.minWeight, value)).toFixed(4));
 }
 
+function isMemoryVisibleToSession(memory: MemoryRecord, sessionId: string | null): boolean {
+  if (memory.scope !== 'session') {
+    return true;
+  }
+
+  return memory.sourceSessionId === sessionId;
+}
+
+function filterMemoriesByLookbackTurns(memories: readonly MemoryRecord[], sessionId: string, lookbackTurns: number): MemoryRecord[] {
+  const turnNumbers = memories
+    .filter((memory) => memory.sourceSessionId === sessionId)
+    .map((memory) => extractMemoryTurnNumber(memory))
+    .filter((turnNumber): turnNumber is number => turnNumber !== null);
+
+  const latestTurnNumber = turnNumbers.length > 0 ? Math.max(...turnNumbers) : null;
+  if (latestTurnNumber === null) {
+    return [...memories];
+  }
+
+  const minimumTurnNumber = Math.max(1, latestTurnNumber - lookbackTurns + 1);
+  return memories.filter((memory) => {
+    if (memory.sourceSessionId !== sessionId) {
+      return true;
+    }
+
+    if (memory.memoryKind !== 'turn' && memory.memoryKind !== 'summary') {
+      return true;
+    }
+
+    const turnNumber = extractMemoryTurnNumber(memory);
+    if (turnNumber === null) {
+      return true;
+    }
+
+    return turnNumber >= minimumTurnNumber;
+  });
+}
+
 function uniqueTags(tags: string[]): string[] {
   return [...new Set(tags)];
+}
+
+function normalizeMemoryPriorityTags(memoryKind: MemoryRecord['memoryKind'], tags: readonly string[]): string[] {
+  const baseTags = uniqueTags(tags.filter((tag) => !isPriorityTag(tag)));
+  const manualPriority = findPriorityTag(tags, MANUAL_PRIORITY_TAG_PREFIX);
+  const autoPriority = inferAutoPriority(memoryKind, baseTags);
+
+  if (manualPriority && autoPriority) {
+    return [...baseTags, `${MANUAL_PRIORITY_TAG_PREFIX}${manualPriority}`, `${AUTO_PRIORITY_TAG_PREFIX}${autoPriority}`];
+  }
+
+  if (manualPriority) {
+    return [...baseTags, `${MANUAL_PRIORITY_TAG_PREFIX}${manualPriority}`];
+  }
+
+  if (autoPriority) {
+    return [...baseTags, `${AUTO_PRIORITY_TAG_PREFIX}${autoPriority}`];
+  }
+
+  return baseTags;
+}
+
+function inferAutoPriority(memoryKind: MemoryRecord['memoryKind'], tags: readonly string[]): MemoryPriority | null {
+  if (tags.includes(PEPE_SESSION_SUMMARY_TAG) || memoryKind === 'workflow' || tags.includes('workflow')) {
+    return 'high';
+  }
+
+  return null;
+}
+
+function isPriorityTag(tag: string): boolean {
+  return tag.startsWith(MANUAL_PRIORITY_TAG_PREFIX) || tag.startsWith(AUTO_PRIORITY_TAG_PREFIX);
+}
+
+function findPriorityTag(tags: readonly string[], prefix: string): MemoryPriority | null {
+  for (const level of PRIORITY_LEVELS) {
+    if (tags.includes(`${prefix}${level}`)) {
+      return level;
+    }
+  }
+
+  return null;
+}
+
+function priorityRank(priority: MemoryPriority): number {
+  switch (priority) {
+    case 'critical':
+      return 3;
+    case 'high':
+      return 2;
+    case 'normal':
+      return 1;
+    case 'low':
+      return 0;
+  }
+}
+
+function compareDateDesc(left: string | undefined, right: string | undefined): number {
+  if (!left && !right) {
+    return 0;
+  }
+
+  if (!left) {
+    return 1;
+  }
+
+  if (!right) {
+    return -1;
+  }
+
+  return left.localeCompare(right);
+}
+
+function extractMemoryTurnNumber(memory: Pick<MemoryRecord, 'title' | 'tags'>): number | null {
+  const tagMatch = memory.tags
+    .map((tag) => /^turn:(?:.+-)?(\d+)$/.exec(tag)?.[1] ?? null)
+    .find((match): match is string => Boolean(match));
+  if (tagMatch) {
+    return Number(tagMatch);
+  }
+
+  const titleMatch = /Turn\s+(\d+)/i.exec(memory.title);
+  if (!titleMatch) {
+    return null;
+  }
+
+  return Number(titleMatch[1]);
+}
+
+function matchesStructuredTextQuery(memory: Pick<MemoryRecord, 'title' | 'content'>, text: string): boolean {
+  const terms = text
+    .toLowerCase()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+  if (terms.length === 0) {
+    return true;
+  }
+
+  const haystack = `${memory.title}\n${memory.content}`.toLowerCase();
+  return terms.some((term) => haystack.includes(term));
+}
+
+function resolveWorkflowMergeKey(content: string, tags: readonly string[]): string | null {
+  const workflowId = extractWorkflowMetadataValue(content, 'workflowId');
+  const slot = resolveWorkflowMemorySlot(tags);
+
+  if (!workflowId || !slot) {
+    return null;
+  }
+
+  return `${slot}:${workflowId}`;
+}
+
+function resolveWorkflowMemorySlot(tags: readonly string[]): 'plan' | 'todo' | null {
+  if (tags.includes('plan')) {
+    return 'plan';
+  }
+
+  if (tags.includes('todo')) {
+    return 'todo';
+  }
+
+  return null;
+}
+
+function extractWorkflowMetadataValue(content: string, fieldName: string): string | null {
+  const prefix = `${fieldName}:`;
+  const line = content
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix));
+
+  if (!line) {
+    return null;
+  }
+
+  const value = line.slice(prefix.length).trim();
+  return value.length > 0 ? value : null;
 }
 
 function buildSessionSummaryContent(summaries: readonly MemoryRecord[]): string {

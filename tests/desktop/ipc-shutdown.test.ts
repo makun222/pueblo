@@ -52,6 +52,7 @@ const {
     setProgressReporter: vi.fn(),
     setToolApprovalHandler: vi.fn(),
     setToolApprovalBatchHandler: vi.fn(),
+    setFileReviewHandler: vi.fn(),
     databaseClose: vi.fn(),
   };
 
@@ -141,6 +142,7 @@ describe('Desktop IPC shutdown', () => {
     cliMock.setProgressReporter.mockReset();
     cliMock.setToolApprovalHandler.mockReset();
     cliMock.setToolApprovalBatchHandler.mockReset();
+    cliMock.setFileReviewHandler.mockReset();
     cliMock.databaseClose.mockReset();
     routeInputMock.mockReset();
     runtimeFactoryMock.mockClear();
@@ -167,6 +169,7 @@ describe('Desktop IPC shutdown', () => {
     expect(cliMock.setProgressReporter).toHaveBeenLastCalledWith(null);
     expect(cliMock.setToolApprovalBatchHandler).toHaveBeenLastCalledWith(null);
     expect(cliMock.setToolApprovalHandler).toHaveBeenLastCalledWith(null);
+    expect(cliMock.setFileReviewHandler).toHaveBeenLastCalledWith(null);
     expect(cliMock.databaseClose).toHaveBeenCalledTimes(1);
     expect(runtime.dispose).toHaveBeenCalledTimes(1);
 

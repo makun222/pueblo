@@ -9,6 +9,7 @@ import {
   providerEditToolInputSchema,
   getToolExecutionPolicy,
   providerGlobToolInputSchema,
+  providerGrepToolInputSchema,
   providerReadToolInputSchema,
   type ProviderAdapter,
   type ProviderStepContext,
@@ -28,8 +29,8 @@ describe('DeepSeek Provider Contract', () => {
     expect(profile.id).toBe('deepseek');
     expect(profile.defaultModelId).toBe('deepseek-v4-flash');
     expect(profile.models).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'deepseek-v4-flash', contextWindow: 64000 }),
-      expect.objectContaining({ id: 'deepseek-v4-pro', contextWindow: 64000 }),
+      expect.objectContaining({ id: 'deepseek-v4-flash', contextWindow: 1000000 }),
+      expect.objectContaining({ id: 'deepseek-v4-pro', contextWindow: 1000000 }),
     ]));
   });
 
@@ -244,6 +245,31 @@ describe('DeepSeek Provider Contract', () => {
     })).rejects.toThrow('DeepSeek network request failed to https://api.deepseek.com/chat/completions: fetch failed');
   });
 
+  it('should include nested network causes in DeepSeek provider errors', async () => {
+    const connectTimeoutError = new Error('Connect Timeout Error');
+    Object.assign(connectTimeoutError, { code: 'UND_ERR_CONNECT_TIMEOUT' });
+
+    const fetchError = new TypeError('fetch failed');
+    Object.defineProperty(fetchError, 'cause', {
+      value: connectTimeoutError,
+      configurable: true,
+    });
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl: vi.fn().mockRejectedValue(fetchError),
+    });
+
+    await expect(adapter.runTask({
+      modelId: 'deepseek-v4-flash',
+      goal: 'Inspect repository state',
+      inputContextSummary: 'Task execution test',
+    })).rejects.toThrow(
+      'DeepSeek network request failed to https://api.deepseek.com/chat/completions: fetch failed (cause: UND_ERR_CONNECT_TIMEOUT, Connect Timeout Error)',
+    );
+  });
+
   it('should retry one transient DeepSeek fetch failure before surfacing an error', async () => {
     const fetchImpl = vi.fn()
       .mockRejectedValueOnce(new TypeError('fetch failed'))
@@ -377,7 +403,7 @@ describe('DeepSeek Provider Contract', () => {
     const oversizedToolOutput = JSON.stringify({
       status: 'succeeded',
       summary: `Large repository search result ${'x'.repeat(800)}`,
-      output: Array.from({ length: 320 }, (_, index) => `result-${index}: ${'x'.repeat(1000)}`),
+      output: Array.from({ length: 900 }, (_, index) => `result-${index}: ${'x'.repeat(1000)}`),
     });
 
     const result = await adapter.runStep({
@@ -424,8 +450,8 @@ describe('DeepSeek Provider Contract', () => {
       compactionStage?: string;
     };
 
-    expect(String(fetchImpl.mock.calls[0]?.[1]?.body).length).toBeLessThan(256000);
-    expect(compactedToolPayload.outputCount).toBe(320);
+    expect(String(fetchImpl.mock.calls[0]?.[1]?.body).length).toBeLessThan(512000);
+    expect(compactedToolPayload.outputCount).toBe(900);
     expect(compactedToolPayload.outputTruncated).toBe(true);
     expect(compactedToolPayload.compression).toBe('deepseek-request-compacted');
     expect(compactedToolPayload.compactionStage).toBeDefined();
@@ -452,12 +478,12 @@ describe('DeepSeek Provider Contract', () => {
     };
 
     expect(logContent.category).toBe('request-compacted');
-    expect(logContent.requestMetrics?.bodyBytes).toBeLessThan(256000);
-    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.bodyBytes).toBeLessThan(512000);
+    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(512000);
     expect(logContent.requestMetrics?.compacted).toBe(true);
     expect(logContent.requestMetrics?.compactedToolMessages).toBe(1);
     expect(logContent.requestMetrics?.compactionStage).toBeDefined();
-    expect(logContent.details?.limitBytes).toBe(256000);
+    expect(logContent.details?.limitBytes).toBe(512000);
     expect(logContent.details?.savedBytes).toBeGreaterThan(0);
   });
 
@@ -475,7 +501,7 @@ describe('DeepSeek Provider Contract', () => {
       modelId: 'deepseek-v4-pro',
       messages: [
         { role: 'system', content: 'You are a coding assistant' },
-        { role: 'user', content: `Analyze this oversized prompt: ${'y'.repeat(300000)}` },
+        { role: 'user', content: `Analyze this oversized prompt: ${'y'.repeat(700000)}` },
       ],
       availableTools: [],
     })).rejects.toThrow('DeepSeek request body remained too large after local compaction');
@@ -495,8 +521,8 @@ describe('DeepSeek Provider Contract', () => {
     };
 
     expect(logContent.category).toBe('request-too-large');
-    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(256000);
-    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(512000);
+    expect(logContent.requestMetrics?.originalBodyBytes).toBeGreaterThan(512000);
     expect(logContent.requestMetrics?.compacted).toBe(false);
   });
 
@@ -514,7 +540,7 @@ describe('DeepSeek Provider Contract', () => {
       modelId: 'deepseek-v4-pro',
       messages: [
         { role: 'system', content: 'You are a coding assistant' },
-        { role: 'user', content: `Analyze this oversized prompt: ${'y'.repeat(300000)}` },
+        { role: 'user', content: `Analyze this oversized prompt: ${'y'.repeat(700000)}` },
         {
           role: 'tool',
           content: JSON.stringify({
@@ -547,7 +573,7 @@ describe('DeepSeek Provider Contract', () => {
 
     expect(logContent.category).toBe('request-too-large');
     expect(logContent.requestMetrics?.bodyBytes).toBe(logContent.requestMetrics?.originalBodyBytes);
-    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(256000);
+    expect(logContent.requestMetrics?.bodyBytes).toBeGreaterThan(512000);
     expect(logContent.requestMetrics?.compacted).toBe(false);
     expect(logContent.requestMetrics?.compactedToolMessages).toBe(0);
     expect(logContent.requestMetrics?.compactionStage).toBe('none');
@@ -1083,6 +1109,66 @@ describe('DeepSeek Provider Contract', () => {
     expect(assistantMessage?.reasoning_content).toBe('Two tools are needed before I can answer.');
     expect(assistantMessage?.tool_calls).toHaveLength(2);
     expect(assistantMessage?.tool_calls?.map((toolCall) => toolCall.id)).toEqual(['tool-1', 'tool-2']);
+  });
+
+  it('should recover grep tool calls when regex escapes are not JSON-escaped', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'I need to search with a regex.',
+              tool_calls: [
+                {
+                  id: 'tool-grep-1',
+                  type: 'function',
+                  function: {
+                    name: 'grep',
+                    arguments: '{"pattern":"\\s+task\\b","include":"src/**/*.ts"}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }),
+    );
+
+    const adapter = new DeepSeekAdapter({
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl,
+    });
+
+    const result = await adapter.runStep({
+      modelId: 'deepseek-v4-pro',
+      messages: [{ role: 'user', content: 'Search for task references with regex.' }],
+      availableTools: [
+        {
+          name: 'grep',
+          description: 'Search file contents',
+          executionPolicy: getToolExecutionPolicy('grep'),
+          inputSchema: providerGrepToolInputSchema,
+        },
+      ],
+    });
+
+    expect(result.type).toBe('tool-call');
+    if (result.type !== 'tool-call') {
+      throw new Error('Expected tool-call result');
+    }
+
+    expect(result.toolName).toBe('grep');
+    expect(result.toolCallId).toBe('tool-grep-1');
+    expect(result.args).toEqual({
+      pattern: '\\s+task\\b',
+      include: 'src/**/*.ts',
+    });
   });
 
   it('should accept read tool calls returned by DeepSeek', async () => {

@@ -10,6 +10,7 @@ export interface CreateMemoryModelOptions {
   readonly weight?: number;
   readonly lastAccessedAt?: string | null;
   readonly sourceSessionId?: string | null;
+  //readonly usageLocation?: UsageLocation | null;
 }
 
 export function createMemoryModel(
@@ -36,6 +37,7 @@ export function createMemoryModel(
     weight: options.weight ?? 0,
     lastAccessedAt: options.lastAccessedAt ?? now,
     sourceSessionId: options.sourceSessionId ?? null,
+    //usageLocation: options.usageLocation ?? null,
     createdAt: now,
     updatedAt: now,
   });
