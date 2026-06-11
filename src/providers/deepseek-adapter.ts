@@ -957,6 +957,12 @@ function parseDeepSeekToolCall(
         toolName: 'edit',
         args: parseProviderEditCompatibleToolArgsOrThrow('deepseek', parsedArguments),
       };
+    case 'undo_edit':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('deepseek', 'undo_edit', parsedArguments),
+      };
   }
 }
 

@@ -13,7 +13,7 @@ export interface GlobToolRequest {
 }
 
 export interface ToolExecutionResult {
-  readonly toolName: 'glob' | 'grep' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write';
+  readonly toolName: 'glob' | 'grep' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write' | 'undo_edit';
   readonly status: 'succeeded' | 'failed' | 'empty';
   readonly summary: string;
   readonly output: string[];

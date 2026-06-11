@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write' | 'undo_edit';
 export type ToolExecutionPolicy = 'free' | 'approval-required';
 
 interface ProviderJsonSchemaStringProperty {
@@ -105,6 +105,32 @@ export const providerWriteToolArgsSchema = z.object({
   text: z.string(),
 });
 
+export const providerUndoEditToolArgsSchema = z.object({
+  path: z.string().trim().min(1),
+  startLine: z.number().int().positive().optional(),
+  endLine: z.number().int().positive().optional(),
+});
+
+export const providerUndoEditToolInputSchema: ProviderToolInputSchema = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'File path to read and display for undo reference.',
+    },
+    startLine: {
+      type: 'integer',
+      description: 'Optional starting line number (1-based) of the old content.',
+    },
+    endLine: {
+      type: 'integer',
+      description: 'Optional ending line number (1-based) of the old content.',
+    },
+  },
+  required: ['path'],
+  additionalProperties: false,
+};
+
 const providerLegacyWriteToolArgsSchema = z.object({
   path: z.string().trim().min(1),
   content: z.string(),
@@ -122,7 +148,9 @@ export type ProviderShellExecToolArgs = z.infer<typeof providerShellExecToolArgs
 export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
 export type ProviderEditToolArgs = z.infer<typeof providerEditToolArgsSchema>;
 export type ProviderWriteToolArgs = z.infer<typeof providerWriteToolArgsSchema>;
-export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderShellExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs;
+export type ProviderUndoEditToolArgs = z.infer<typeof providerUndoEditToolArgsSchema>;
+
+export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderShellExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs | ProviderUndoEditToolArgs;
 export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
   TToolName extends 'glob' ? ProviderGlobToolArgs :
     TToolName extends 'grep' ? ProviderGrepToolArgs :
@@ -130,7 +158,8 @@ export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
         TToolName extends 'shell_exec' ? ProviderShellExecToolArgs :
           TToolName extends 'read' ? ProviderReadToolArgs :
             TToolName extends 'edit' ? ProviderEditToolArgs :
-              ProviderWriteToolArgs;
+              TToolName extends 'undo_edit' ? ProviderUndoEditToolArgs :
+                ProviderWriteToolArgs;
 export type ProviderToolCall =
   | {
       readonly toolCallId: string;
@@ -166,6 +195,11 @@ export type ProviderToolCall =
       readonly toolCallId: string;
       readonly toolName: 'write';
       readonly args: ProviderWriteToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'undo_edit';
+      readonly args: ProviderUndoEditToolArgs;
     };
 
 export const providerGlobToolInputSchema: ProviderToolInputSchema = {
@@ -422,6 +456,16 @@ export type ProviderStepResult =
       readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
+      readonly type: 'tool-call';
+      readonly toolCallId: string;
+      readonly toolName: 'undo_edit';
+      readonly args: ProviderUndoEditToolArgs;
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
+      readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
+    }
+  | {
       readonly type: 'tool-calls';
       readonly toolCalls: readonly ProviderToolCall[];
       readonly rationale?: string;
@@ -509,6 +553,8 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
       return providerEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'write':
       return providerWriteToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
+    case 'undo_edit':
+      return providerUndoEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
   }
 }
 
@@ -561,6 +607,7 @@ export function getToolExecutionPolicy(toolName: string): ToolExecutionPolicy {
     case 'shell_exec':
     case 'edit':
     case 'write':
+    case 'undo_edit':
       return 'approval-required';
     case 'glob':
     case 'grep':

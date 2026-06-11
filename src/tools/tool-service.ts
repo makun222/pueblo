@@ -6,6 +6,7 @@ import { createGrepTool } from './grep-tool';
 import { createReadTool } from './read-tool';
 import { createShellExecTool } from './shell-exec-tool';
 import { createWriteTool, type WriteToolRequest } from './write-tool';
+import { createUndoEditTool, type UndoEditToolRequest } from './undo-edit-tool';
 import {
   getToolExecutionPolicy,
   providerEditToolInputSchema,
@@ -26,6 +27,9 @@ import {
   type ProviderToolDefinition,
   type ProviderToolName,
   type ProviderWriteToolArgs,
+  type ProviderUndoEditToolArgs,
+  providerUndoEditToolArgsSchema,
+  providerUndoEditToolInputSchema,
 } from '../providers/provider-adapter';
 import { throwIfTaskCancelled } from '../shared/task-cancellation';
 
@@ -77,6 +81,10 @@ export type ExecuteToolRequest =
   | (ExecuteToolInput & {
       readonly toolName: 'write';
       readonly args: ProviderWriteToolArgs;
+    })
+  | (ExecuteToolInput & {
+      readonly toolName: 'undo_edit';
+      readonly args: ProviderUndoEditToolArgs;
     });
 
 export class ToolService {
@@ -87,6 +95,7 @@ export class ToolService {
   private readonly shellExecTool = createShellExecTool();
   private readonly readTool = createReadTool();
   private readonly writeTool = createWriteTool();
+  private readonly undoEditTool = createUndoEditTool();
 
   constructor(private readonly dependencies: ToolServiceDependencies) {
     this.editTool = createEditTool({
@@ -148,6 +157,12 @@ export class ToolService {
         description: `Writes content to a file within the current task root, creating or overwriting it. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerWriteToolInputSchema,
         executionPolicy: getToolExecutionPolicy('write'),
+      },
+      {
+        name: 'undo_edit',
+        description: `Reverts a previous edit or write operation on a file. ${taskRootExplanation} Requires user approval before execution.`,
+        inputSchema: providerUndoEditToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('undo_edit'),
       },
     ];
   }
@@ -223,6 +238,7 @@ export class ToolService {
       case 'glob':
       case 'grep':
       case 'read':
+      case 'undo_edit':
         return {
           title: `Allow ${input.toolName} to run?`,
           summary: `${input.toolName}: ${JSON.stringify(input.args)}`,
@@ -291,6 +307,8 @@ export class ToolService {
         return this.runEdit(parseProviderToolArgs('edit', input.args), executionCwd);
       case 'write':
         return this.runWrite(parseProviderToolArgs('write', input.args), executionCwd);
+      case 'undo_edit':
+        return this.runUndoEdit(parseProviderToolArgs('undo_edit', input.args), executionCwd);
     }
   }
 
@@ -340,6 +358,13 @@ export class ToolService {
     return this.writeTool({
       path: args.path,
       text: args.text,
+      cwd: executionCwd,
+    });
+  }
+
+  private runUndoEdit(args: ProviderUndoEditToolArgs, executionCwd: string): Promise<ToolExecutionResult> {
+    return this.undoEditTool({
+      path: args.path,
       cwd: executionCwd,
     });
   }

@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { ToolExecutionResult } from './glob-tool';
 import type { RendererFileChange } from '../shared/schema';
 import { inspectAttachmentAssetContent, maybeExportAttachmentAssetFromContent } from './attachment-asset-export';
+import { isAutoSaveEnabled } from '../shared/auto-save-state';
+import { SnapshotEngine } from '../shared/snapshot-engine';
 
 export interface EditToolRequest {
   readonly path: string;
@@ -67,6 +69,22 @@ export function createEditTool(options: EditToolOptions = {}) {
         : prepareTextEditOutcome(request);
 
       const reviewHandler = options.getReviewHandler?.() ?? null;
+
+      // Path B: auto-save ON — snapshot-before-write + direct overwrite
+      if (isAutoSaveEnabled()) {
+        const snapshotEngine = new SnapshotEngine(request.cwd, {
+          maxSnapshotsPerFile: 50,
+          ttlDays: 7,
+        });
+        if (pendingEdit.fileExistedBefore) {
+          await snapshotEngine.createSnapshot(pendingEdit.absolutePath);
+        } else {
+          await snapshotEngine.createNullSnapshot(pendingEdit.absolutePath);
+        }
+        return applyPendingEditOutcome(pendingEdit);
+      }
+
+      // Path A: auto-save OFF — existing review / shadow-edit flow
       if (!reviewHandler) {
         return applyPendingEditOutcome(pendingEdit);
       }

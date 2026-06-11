@@ -21,7 +21,7 @@ import {
   type Session,
   type SessionMessage,
 } from '../shared/schema';
-import { extractTaskOutputSummaryPayload, summarizeTaskStepTrace } from '../shared/result';
+import { extractTaskOutputSummaryPayload, summarizeTaskTurnTrace } from '../shared/result';
 import { buildSkillSystemMessage, resolveSkillContext } from './skill-context';
 import {
   compactRecentMessageForPrompt,
@@ -162,8 +162,7 @@ export class ContextResolver {
     });
     const skillContextText = buildSkillSystemMessage(skillContext);
     const sessionMessages = session?.messageHistory ?? [];
-    const recentContextMessages = selectRecentContextMessages(sessionMessages);
-    const recentMessages = recentContextMessages.map(formatSessionMessageForContext);
+    const recentMessages = selectRecentContextMessages(sessionMessages);
     const promptRecentMessages = selectRecentMessagesForPrompt(recentMessages);
     const targetDirectory = resolveTargetDirectory({
       pendingUserInput: input.pendingUserInput,
@@ -183,7 +182,10 @@ export class ContextResolver {
     const uploadedAttachments = input.uploadedAttachments ?? [];
     const attachmentContextTexts = uploadedAttachments.map((attachment) => summarizeAttachmentForContext(attachment));
     const latestTaskPayload = session?.id ? extractLatestTaskPayload(this.dependencies.taskRepository, session.id) : null;
-    const activeTurnStepSummaries = summarizeTaskStepTrace(latestTaskPayload?.stepTrace);
+    const activeTurnStepSummaries = summarizeTaskTurnTrace(latestTaskPayload?.stepTrace, {
+      subtaskGoal: puebloProfile.goalDirectives.join('\n'),
+      constraints: puebloProfile.constraintDirectives,
+    });
     const activeTurnStepContext = activeTurnStepSummaries.length > 0
       ? ['Active turn step context:', ...activeTurnStepSummaries.map((entry) => entry.content)].join('\n')
       : null;
@@ -318,7 +320,7 @@ export class ContextResolver {
         ...attachmentContextTexts,
       ],
       transientTexts: [activeTurnStepContext ?? ''],
-      sessionMessages: recentContextMessages,
+      sessionMessages,
       pendingUserInput: input.pendingUserInput,
     });
     const contextCount = this.budgetService.compute({
@@ -374,7 +376,7 @@ export class ContextResolver {
       resultItems: budgetedResultItems,
       workflowContext,
       skillContext,
-      sessionMessages: recentContextMessages,
+      sessionMessages,
       recentMessages,
       activeTurnStepContext,
       puebloProfile,
@@ -877,8 +879,65 @@ function extractLatestTaskPayload(
   return extractTaskOutputSummaryPayload(latestTask?.outputSummary ?? null);
 }
 
-function selectRecentContextMessages(sessionMessages: readonly SessionMessage[]): SessionMessage[] {
-  return sessionMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT);
+/**
+ * Select messages from the most recent N turns, grouped by turnId.
+ *
+ * Returns one compact summary string per turn, so that each turn contributes a
+ * single entry to the recent-conversation context regardless of how many
+ * messages it contains.  This prevents a single chatty turn from crowding
+ * out context from neighbouring turns.
+ */
+function selectRecentContextMessages(
+  sessionMessages: readonly SessionMessage[],
+  turnLimit = RECENT_CONTEXT_MESSAGE_LIMIT,
+): string[] {
+  if (sessionMessages.length === 0) {
+    return [];
+  }
+
+  // Group messages by turnId while preserving arrival order of the first
+  // message for each turn.
+  const turnMap = new Map<string, { messages: SessionMessage[]; firstSeenIndex: number }>();
+  for (let i = 0; i < sessionMessages.length; i += 1) {
+    const msg = sessionMessages[i]!;
+    const key = msg.turnId ?? '__unassigned__';
+    if (!turnMap.has(key)) {
+      turnMap.set(key, { messages: [], firstSeenIndex: i });
+    }
+    turnMap.get(key)!.messages.push(msg);
+  }
+
+  // Pick the last `turnLimit` turns ordered by first appearance.
+  const orderedTurns = [...turnMap.entries()]
+    .sort((a, b) => a[1].firstSeenIndex - b[1].firstSeenIndex)
+    .slice(-turnLimit);
+
+  return orderedTurns.map(([turnId, { messages }]) => {
+    const userMsgs = messages.filter(m => m.role === 'user');
+    const assistantMsgs = messages.filter(m => m.role === 'assistant');
+    const toolMsgs = messages.filter(m => m.role === 'tool');
+
+    const parts: string[] = [];
+    if (userMsgs.length > 0) {
+      const content = userMsgs
+        .map(m => m.content)
+        .join('\n')
+        .slice(0, 300);
+      parts.push(`User: ${content}`);
+    }
+    if (assistantMsgs.length > 0) {
+      const content = assistantMsgs
+        .map(m => m.content)
+        .join('\n')
+        .slice(0, 300);
+      parts.push(`Assistant: ${content}`);
+    }
+    if (toolMsgs.length > 0) {
+      parts.push(`Tool results: ${toolMsgs.length} message(s)`);
+    }
+
+    return `Turn ${turnId}:\n${parts.join('\n')}`;
+  });
 }
 
 function selectRecentUserMessagesForTargetDirectory(sessionMessages: readonly SessionMessage[]): SessionMessage[] {

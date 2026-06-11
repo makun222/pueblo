@@ -98,7 +98,7 @@ describe('foundation', () => {
 
   it('dispatches registered core commands', async () => {
     const dispatcher = new CommandDispatcher();
-    registerCoreCommands(dispatcher);
+    registerCoreCommands(dispatcher, () => '/fake/workspace');
 
     const result = await dispatcher.dispatch({ input: '/ping' });
     const helpResult = await dispatcher.dispatch({ input: '/help' });
@@ -108,7 +108,7 @@ describe('foundation', () => {
     expect(helpResult.ok).toBe(true);
     expect(helpResult.code).toBe('HELP');
     expect(helpResult.data).toMatchObject({
-      commands: ['/help', '/ping'],
+      commands: ['/help', '/ping', '/auto-save', '/undo'],
     });
   });
 

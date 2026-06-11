@@ -604,6 +604,12 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
         toolName: 'edit',
         args: parseProviderEditCompatibleToolArgsOrThrow('github-copilot', parsedArguments),
       };
+    case 'undo_edit':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('github-copilot', 'undo_edit', parsedArguments),
+      };
   }
 }
 

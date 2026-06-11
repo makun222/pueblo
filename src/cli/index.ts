@@ -1154,7 +1154,7 @@ export function createCliDependencies(
     selectionState.modelId = resolved.runtimeStatus.modelId;
   };
 
-  registerCoreCommands(dispatcher);
+  registerCoreCommands(dispatcher, () => currentWorkspace);
   const handleCurrentSessionChange = (sessionId: string | null): void => {
     syncSelectionFromSession(sessionId);
   };

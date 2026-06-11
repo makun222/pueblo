@@ -1,4 +1,6 @@
 import { failureResult, successResult, type CommandResult } from '../shared/result';
+import { createAutoSaveHandler } from './auto-save-command.js';
+import { createUndoHandler } from './undo-command.js';
 
 export interface DispatchRequest {
   readonly input: string;
@@ -125,9 +127,14 @@ export function createCommandSelectionState(): CommandSelectionState {
   };
 }
 
-export function registerCoreCommands(dispatcher: CommandDispatcher): void {
+export function registerCoreCommands(
+  dispatcher: CommandDispatcher,
+  getWorkspaceRoot: () => string,
+): void {
   dispatcher.register('/ping', () => successResult('PING_OK', 'Pueblo foundation is ready'));
   dispatcher.register('/help', () => successResult('HELP', 'Available commands', {
     commands: dispatcher.listCommands(),
   }));
+  dispatcher.register('/auto-save', createAutoSaveHandler());
+  dispatcher.register('/undo', createUndoHandler(getWorkspaceRoot));
 }

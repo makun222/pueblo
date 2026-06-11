@@ -31,11 +31,40 @@ const COMPACT_RESULT_ITEM_SUMMARY_CHAR_LIMIT = 600;
 const COMPACT_RECENT_CONVERSATION_MESSAGE_LIMIT = 3;
 const COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT = 1_800;
 
+/**
+ * Section priority order for Provider message assembly.
+ *
+ * Sections consume the character budget in ascending priority order:
+ * lower-numbered sections are pushed first and are less likely to be
+ * truncated when the budget is tight.  This keeps fixed system prompts
+ * intact and pushes expendable memory content toward the tail.
+ */
+const SECTION_ORDER = {
+  system: 0,
+  targetDirectory: 1,
+  skills: 2,
+  search: 3,
+  activeTurn: 10,
+  recent: 20,
+  session: 30,
+  workflow: 40,
+  attachment: 50,
+  resultItems: 60,
+  goal: 100,
+} as const;
+
+type SectionName = keyof typeof SECTION_ORDER;
+
+interface MessageSection {
+  name: SectionName;
+  content: string | null;
+  maxChars: number;
+}
+
 export function buildProviderMessages(taskContext: TaskContext, goal: string): ProviderMessage[] {
   const messages: ProviderMessage[] = [];
   const budget = { remainingChars: SYSTEM_CONTEXT_TOTAL_CHAR_BUDGET };
   const compactContext = isCompactContextModeEnabled(taskContext.contextCount);
-  const sessionSummaryMemories = taskContext.sessionSummaryMemories ?? [];
   const puebloMessage = buildPuebloSystemMessage(taskContext);
   const targetDirectoryMessage = buildTargetDirectoryMessage(taskContext.targetDirectory);
   const skillContextMessage = buildSkillSystemMessage(taskContext.skillContext);
@@ -45,67 +74,61 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
     taskContext.recentMessages,
     compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_LIMIT : RECENT_CONTEXT_MESSAGE_LIMIT,
   );
-
-  pushSystemMessage(messages, budget, puebloMessage, PUEBLO_SYSTEM_MESSAGE_CHAR_LIMIT);
-  pushSystemMessage(messages, budget, targetDirectoryMessage, TARGET_DIRECTORY_MESSAGE_CHAR_LIMIT);
-  pushSystemMessage(messages, budget, skillContextMessage, SKILL_CONTEXT_MESSAGE_CHAR_LIMIT);
-
-  if (taskContext.prompts.length > 0) {
-    pushSystemMessage(
-      messages,
-      budget,
-      [
-        'Selected prompts:',
-        ...taskContext.prompts
-          .slice(0, SELECTED_PROMPTS_LIMIT)
-          .map((prompt, index) => `${index + 1}. ${prompt.title}: ${truncatePromptText(prompt.content, SELECTED_PROMPT_CHAR_LIMIT)}`),
-      ].join('\n'),
-      SELECTED_PROMPTS_MESSAGE_CHAR_LIMIT,
-    );
-  }
-
   const workflowContextMessage = buildWorkflowContextMessage(taskContext);
-  pushSystemMessage(messages, budget, taskContext.activeTurnStepContext ?? null, ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT);
 
-  if (sessionSummaryMemories.length > 0) {
-    pushSystemMessage(
-      messages,
-      budget,
-      recentConversationMessage,
-      compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT,
-    );
-    pushSystemMessage(messages, budget, sessionSummaryMessage, SESSION_SUMMARY_MESSAGE_CHAR_LIMIT);
-    pushSystemMessage(messages, budget, workflowContextMessage, WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT);
-    pushSystemMessage(messages, budget, attachmentContextMessage, ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT);
-  } else {
-    pushSystemMessage(messages, budget, workflowContextMessage, WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT);
-    pushSystemMessage(messages, budget, attachmentContextMessage, ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT);
-  }
+  // Assemble all context sections with their SECTION_ORDER priority tags,
+  // then sort and push.  Fixed prompts (system / target / skills) always
+  // precede memory content (active turn, recent, session, result items).
+  const sections: MessageSection[] = [
+    { name: 'system', content: puebloMessage, maxChars: PUEBLO_SYSTEM_MESSAGE_CHAR_LIMIT },
+    { name: 'targetDirectory', content: targetDirectoryMessage, maxChars: TARGET_DIRECTORY_MESSAGE_CHAR_LIMIT },
+    { name: 'skills', content: skillContextMessage, maxChars: SKILL_CONTEXT_MESSAGE_CHAR_LIMIT },
+    ...(taskContext.prompts.length > 0
+      ? [
+          {
+            name: 'search' as const,
+            content: [
+              'Selected prompts:',
+              ...taskContext.prompts
+                .slice(0, SELECTED_PROMPTS_LIMIT)
+                .map((prompt, index) => `${index + 1}. ${prompt.title}: ${truncatePromptText(prompt.content, SELECTED_PROMPT_CHAR_LIMIT)}`),
+            ].join('\n'),
+            maxChars: SELECTED_PROMPTS_MESSAGE_CHAR_LIMIT,
+          },
+        ]
+      : []),
+    { name: 'activeTurn', content: taskContext.activeTurnStepContext ?? null, maxChars: ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT },
+    { name: 'recent', content: recentConversationMessage, maxChars: compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT },
+    { name: 'session', content: sessionSummaryMessage, maxChars: SESSION_SUMMARY_MESSAGE_CHAR_LIMIT },
+    ...(workflowContextMessage
+      ? [{ name: 'workflow' as const, content: workflowContextMessage, maxChars: WORKFLOW_CONTEXT_MESSAGE_CHAR_LIMIT }]
+      : []),
+    ...(attachmentContextMessage
+      ? [{ name: 'attachment' as const, content: attachmentContextMessage, maxChars: ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT }]
+      : []),
+    ...(taskContext.resultItems.length > 0
+      ? [
+          {
+            name: 'resultItems' as const,
+            content: [
+              'Relevant result items:',
+              ...taskContext.resultItems
+                .slice(0, compactContext ? COMPACT_RESULT_ITEMS_LIMIT : RESULT_ITEMS_LIMIT)
+                .map(
+                  (item, index) =>
+                    `${index + 1}. [similarity=${item.similarity}] ${truncatePromptText(item.summary, compactContext ? COMPACT_RESULT_ITEM_SUMMARY_CHAR_LIMIT : RESULT_ITEM_SUMMARY_CHAR_LIMIT)}`,
+                ),
+            ].join('\n'),
+            maxChars: RESULT_ITEMS_MESSAGE_CHAR_LIMIT,
+          },
+        ]
+      : []),
+  ];
 
-  if (taskContext.resultItems.length > 0) {
-    pushSystemMessage(
-      messages,
-      budget,
-      [
-        'Relevant result items:',
-        ...taskContext.resultItems
-          .slice(0, compactContext ? COMPACT_RESULT_ITEMS_LIMIT : RESULT_ITEMS_LIMIT)
-          .map(
-            (item, index) =>
-              `${index + 1}. [similarity=${item.similarity}] ${truncatePromptText(item.summary, compactContext ? COMPACT_RESULT_ITEM_SUMMARY_CHAR_LIMIT : RESULT_ITEM_SUMMARY_CHAR_LIMIT)}`,
-          ),
-      ].join('\n'),
-      RESULT_ITEMS_MESSAGE_CHAR_LIMIT,
-    );
-  }
-
-  if (sessionSummaryMemories.length === 0) {
-    pushSystemMessage(
-      messages,
-      budget,
-      recentConversationMessage,
-      compactContext ? COMPACT_RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT : RECENT_CONVERSATION_MESSAGE_CHAR_LIMIT,
-    );
+  for (const section of sections
+    .filter((s) => s.content !== null)
+    .sort((a, b) => SECTION_ORDER[a.name] - SECTION_ORDER[b.name])) {
+    pushSystemMessage(messages, budget, section.content!, section.maxChars);
   }
 
   messages.push({ role: 'user', content: goal });
@@ -258,15 +281,11 @@ function buildTargetDirectoryMessage(targetDirectory: string | null): string | n
 }
 
 export function selectRecentMessagesForPrompt(recentMessages: readonly string[]): string[] {
-  return recentMessages
-    .slice(-RECENT_CONTEXT_MESSAGE_LIMIT)
-    .map(compactRecentMessageForPrompt);
+  return recentMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT);
 }
 
 function buildRecentConversationMessage(recentMessages: readonly string[], messageLimit = RECENT_CONTEXT_MESSAGE_LIMIT): string | null {
-  const selectedMessages = recentMessages
-    .slice(-messageLimit)
-    .map(compactRecentMessageForPrompt);
+  const selectedMessages = recentMessages.slice(-messageLimit);
 
   if (selectedMessages.length === 0) {
     return null;

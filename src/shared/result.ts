@@ -228,10 +228,14 @@ export function createOutputBlock(input: OutputBlockInput) {
   };
 }
 
-export function summarizeTaskStepTrace(stepTrace: readonly TaskStepTraceEntry[] | null | undefined): Array<{
+export interface TurnTraceSummary {
   readonly stepNumber: number;
   readonly content: string;
-}> {
+  readonly subtaskGoal?: string;
+  readonly constraints?: readonly string[];
+}
+
+export function summarizeTaskStepTrace(stepTrace: readonly TaskStepTraceEntry[] | null | undefined): TurnTraceSummary[] {
   if (!stepTrace || stepTrace.length === 0) {
     return [];
   }
@@ -252,6 +256,71 @@ export function summarizeTaskStepTrace(stepTrace: readonly TaskStepTraceEntry[] 
     .map(([stepNumber, entries]) => ({
       stepNumber,
       content: buildTaskStepSummaryContent(stepNumber, entries),
+    }))
+    .filter((entry) => entry.content.length > 0);
+}
+
+/**
+ * Build a turn-aware step trace that enriches each step summary with the
+ * current subtask goal and constraints so the LLM can stay focused on the
+ * immediate objective rather than just seeing a flat step log.
+ */
+function buildTurnStepSummaryContent(
+  stepNumber: number,
+  entries: TaskStepTraceEntry[],
+  taskContext?: { subtaskGoal?: string; constraints?: readonly string[] },
+): string {
+  const baseContent = buildTaskStepSummaryContent(stepNumber, entries);
+  const prefixParts: string[] = [];
+
+  if (taskContext?.subtaskGoal) {
+    prefixParts.push(`[Goal] ${taskContext.subtaskGoal}`);
+  }
+  if (taskContext?.constraints && taskContext.constraints.length > 0) {
+    prefixParts.push(`[Constraints] ${taskContext.constraints.join('; ')}`);
+  }
+
+  if (prefixParts.length === 0) {
+    return baseContent;
+  }
+
+  return `${prefixParts.join(' ')}\n${baseContent}`;
+}
+
+/**
+ * Replace for summarizeTaskStepTrace when the current subtask goal and
+ * constraints are known.  Produces TurnTraceSummary entries with the
+ * caller-provided contextual cues prepended to each step.
+ */
+export function summarizeTaskTurnTrace(
+  stepTrace: readonly TaskStepTraceEntry[] | null | undefined,
+  taskContext?: { subtaskGoal?: string; constraints?: readonly string[] },
+): TurnTraceSummary[] {
+  if (!stepTrace || stepTrace.length === 0) {
+    return [];
+  }
+
+  // Only enrich when contextual information is actually available, otherwise
+  // fall back to the plain step summary.
+  if (!taskContext?.subtaskGoal && !taskContext?.constraints?.length) {
+    return summarizeTaskStepTrace(stepTrace);
+  }
+
+  const grouped = new Map<number, TaskStepTraceEntry[]>();
+  for (const entry of stepTrace) {
+    const entries = grouped.get(entry.stepNumber);
+    if (entries) {
+      entries.push(entry);
+      continue;
+    }
+    grouped.set(entry.stepNumber, [entry]);
+  }
+
+  return [...grouped.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([stepNumber, entries]) => ({
+      stepNumber,
+      content: buildTurnStepSummaryContent(stepNumber, entries, taskContext),
     }))
     .filter((entry) => entry.content.length > 0);
 }

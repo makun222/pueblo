@@ -404,6 +404,9 @@ export class AgentTaskRunner {
           args.signal,
           approvalDecisions.get(toolCall.toolCallId) ?? null,
         );
+        if (!toolExecution) {
+          throw new Error('Tool execution returned undefined');
+        }
         args.toolInvocationIds.push(toolExecution.invocation.id);
         args.toolOutputs.push(toolExecution.output);
         args.stepTrace.push({
@@ -1023,6 +1026,15 @@ export class AgentTaskRunner {
           executionCwd: args.executionCwd,
           signal: args.signal,
         });
+      case 'undo_edit':
+        return this.toolService.execute({
+          taskId: args.taskId,
+          toolName: 'undo_edit',
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
+          signal: args.signal,
+        });
     }
   }
 
@@ -1065,6 +1077,12 @@ export class AgentTaskRunner {
           args: result.args,
         };
       case 'write':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'undo_edit':
         return {
           toolCallId: result.toolCallId,
           toolName: result.toolName,
@@ -1559,6 +1577,10 @@ function formatProgressToolCall(toolCall: ProviderToolCall): string {
       const mode = 'mode' in toolCall.args ? String(toolCall.args.mode) : 'shell';
       const command = 'command' in toolCall.args ? String(toolCall.args.command) : toolCall.toolName;
       return `${toolCall.toolName} ${truncateProgressMessage(`${mode}: ${command}`)}`;
+    }
+    case 'undo_edit': {
+      const path = 'path' in toolCall.args ? String(toolCall.args.path) : 'undo edit';
+      return `${toolCall.toolName} ${truncateProgressMessage(path)}`;
     }
   }
 }
