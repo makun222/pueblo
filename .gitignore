@@ -17,6 +17,11 @@ Thumbs.db
 .kilocode
 .pueblo/*.json
 .pueblo/*.db
+.pueblo/*.db-wal
+.pueblo/*.db-shm
+.pueblo/file-snapshots
+.pueblo/shadow-edits
+.pueblo/attachments
 .plans/
 .specify/
 agent-*/
@@ -25,3 +30,5 @@ logs/
 .pueblo/*.db-shm
 *.bak
 .pueblo/pueblo.db
+agent-*
+

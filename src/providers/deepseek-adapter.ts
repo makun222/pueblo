@@ -885,6 +885,17 @@ function extractDeepSeekStepResult(
     }
   }
 
+  // DeepSeek may return reasoning_content while content is null/empty.
+  // Treat this as a valid terminal response rather than a provider error.
+  if (reasoningContent) {
+    return {
+      type: 'final',
+      outputSummary: '',
+      usage,
+      requestMetrics,
+    };
+  }
+
   throw new ProviderError('DeepSeek response payload did not include message content');
 }
 
@@ -902,12 +913,7 @@ function parseDeepSeekToolCall(
     throw new ProviderError(`DeepSeek tool call ${toolName} did not include arguments`);
   }
 
-  let parsedArguments: unknown;
-  try {
-    parsedArguments = parseDeepSeekToolArguments(rawArguments);
-  } catch {
-    throw new ProviderError(`DeepSeek tool call ${toolName} returned invalid JSON arguments`);
-  }
+  const parsedArguments = parseDeepSeekToolArguments(toolName, rawArguments);
 
   const toolCallId = toolCall.id?.trim();
   if (!toolCallId) {
@@ -966,16 +972,33 @@ function parseDeepSeekToolCall(
   }
 }
 
-function parseDeepSeekToolArguments(rawArguments: string): unknown {
+function parseDeepSeekToolArguments(
+  toolName: string,
+  rawArguments: string,
+): unknown {
+  const fail = (detail: string): ProviderInvalidToolArgumentsError =>
+    new ProviderInvalidToolArgumentsError('deepseek', toolName, [
+      { path: '(arguments)', message: detail },
+    ]);
+
   try {
     return JSON.parse(rawArguments);
   } catch (error) {
     const repairedArguments = repairCommonJsonStringEscapes(rawArguments);
     if (!repairedArguments || repairedArguments === rawArguments) {
-      throw error;
+      throw fail(
+        'DeepSeek tool call arguments are not valid JSON: ' +
+          (error instanceof Error ? error.message : String(error)),
+      );
     }
 
-    return JSON.parse(repairedArguments);
+    try {
+      return JSON.parse(repairedArguments);
+    } catch {
+      throw fail(
+        'DeepSeek tool call arguments could not be parsed even after JSON repair',
+      );
+    }
   }
 }
 

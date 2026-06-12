@@ -897,6 +897,10 @@ function selectRecentContextMessages(
 
   // Group messages by turnId while preserving arrival order of the first
   // message for each turn.
+  // Messages without a turnId (system context directives, tool results, etc.)
+  // are grouped under "__unassigned__".  Individual message content is
+  // truncated during formatting so the block stays bounded even for very
+  // large tool-output runs.
   const turnMap = new Map<string, { messages: SessionMessage[]; firstSeenIndex: number }>();
   for (let i = 0; i < sessionMessages.length; i += 1) {
     const msg = sessionMessages[i]!;
@@ -912,7 +916,7 @@ function selectRecentContextMessages(
     .sort((a, b) => a[1].firstSeenIndex - b[1].firstSeenIndex)
     .slice(-turnLimit);
 
-  return orderedTurns.map(([turnId, { messages }]) => {
+  return orderedTurns.flatMap(([turnId, { messages }]) => {
     const userMsgs = messages.filter(m => m.role === 'user');
     const assistantMsgs = messages.filter(m => m.role === 'assistant');
     const toolMsgs = messages.filter(m => m.role === 'tool');
@@ -936,7 +940,10 @@ function selectRecentContextMessages(
       parts.push(`Tool results: ${toolMsgs.length} message(s)`);
     }
 
-    return `Turn ${turnId}:\n${parts.join('\n')}`;
+    if (turnId === '__unassigned__') {
+      return parts;
+    }
+    return [`Turn ${turnId}:\n${parts.join('\n')}`];
   });
 }
 
