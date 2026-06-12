@@ -105,7 +105,7 @@ describeIfNodeSqlite('tool workflow integration', () => {
     try {
       await cli.dispatcher.dispatch({ input: '/model openai gpt-4.1-mini' });
       const result = await cli.submitInput('inspect repo');
-      const runtimeStatus = cli.getRuntimeStatus();
+      const runtimeStatus = await cli.getRuntimeStatus();
 
       expect(result.ok).toBe(true);
       expect(runtimeStatus.activeSessionId).not.toBeNull();
@@ -208,7 +208,7 @@ describeIfNodeSqlite('tool workflow integration', () => {
     try {
       await cli.dispatcher.dispatch({ input: '/model deepseek deepseek-v4-pro' });
       const result = await cli.submitInput('Read sample.txt and summarize it.');
-      const runtimeStatus = cli.getRuntimeStatus();
+      const runtimeStatus = await cli.getRuntimeStatus();
       const payload = extractTaskOutputSummaryPayload(result.data && typeof result.data === 'object' && 'outputSummary' in result.data
         ? String((result.data as { outputSummary?: string | null }).outputSummary ?? '')
         : null);

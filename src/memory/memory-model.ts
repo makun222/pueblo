@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { memoryRecordSchema, type MemoryRecord, type MemoryScope } from '../shared/schema';
 
 export interface CreateMemoryModelOptions {
@@ -11,6 +12,10 @@ export interface CreateMemoryModelOptions {
   readonly lastAccessedAt?: string | null;
   readonly sourceSessionId?: string | null;
   //readonly usageLocation?: UsageLocation | null;
+}
+
+export function computeContentHash(content: string): string {
+  return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
 export function createMemoryModel(
@@ -28,6 +33,7 @@ export function createMemoryModel(
     memoryKind: options.memoryKind ?? 'generic',
     title,
     content,
+    contentHash: computeContentHash(content),
     scope,
     status: 'active',
     tags: options.tags ?? [],

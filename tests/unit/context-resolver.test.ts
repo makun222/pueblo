@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe('context resolver', () => {
-  it('resolves pueblo profile, session-backed selections, and result-backed context counts', () => {
+  it('resolves pueblo profile, session-backed selections, and result-backed context counts', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-resolver-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -131,7 +131,7 @@ describe('context resolver', () => {
       providerRegistry,
       pepeResultService,
     });
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Inspect the failing workflow',
       cwd: tempDir,
@@ -161,7 +161,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.contextWindowLimit).toBe(16000);
   });
 
-  it('surfaces active turn step context and compact mode in runtime status', () => {
+  it('surfaces active turn step context and compact mode in runtime status', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-step-summary-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -219,7 +219,7 @@ describe('context resolver', () => {
       taskRepository,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Inspect the failure',
       cwd: tempDir,
@@ -231,7 +231,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.compactContextMode).toBe(true);
   });
 
-  it('prioritizes the selected session summary over per-turn Pepe summaries', () => {
+  it('prioritizes the selected session summary over per-turn Pepe summaries', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-session-summary-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -298,7 +298,7 @@ describe('context resolver', () => {
       pepeResultService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Inspect sqlite persistence',
       cwd: tempDir,
@@ -310,7 +310,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(1);
   });
 
-  it('injects at most one current-session summary and one related-session summary ahead of general memory results', () => {
+  it('injects at most one current-session summary and one related-session summary ahead of general memory results', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-cross-session-summary-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -413,7 +413,7 @@ describe('context resolver', () => {
       pepeResultService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: currentSession.id,
       pendingUserInput: 'Recall the relevant summaries',
       cwd: tempDir,
@@ -427,7 +427,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(3);
   });
 
-  it('sorts general result items by memory weight and then updatedAt', () => {
+  it('sorts general result items by memory weight and then updatedAt', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-weight-sort-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -524,7 +524,7 @@ describe('context resolver', () => {
       pepeResultService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Sort memories for prompt injection',
       cwd: tempDir,
@@ -538,7 +538,7 @@ describe('context resolver', () => {
     ]);
   });
 
-  it('does not truncate result items when budget-aware truncation is disabled', () => {
+  it('does not truncate result items when budget-aware truncation is disabled', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-budget-flag-off-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -591,7 +591,7 @@ describe('context resolver', () => {
       pepeResultService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Preserve all result items even when the window is small',
       cwd: tempDir,
@@ -600,7 +600,7 @@ describe('context resolver', () => {
     expect(resolved.taskContext.resultItems.map((item) => item.memoryId)).toEqual([memoryA.id, memoryB.id, memoryC.id]);
   });
 
-  it('drops low-weight result items first when budget-aware truncation is enabled', () => {
+  it('drops low-weight result items first when budget-aware truncation is enabled', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-budget-truncate-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -656,7 +656,7 @@ describe('context resolver', () => {
       pepeResultService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Keep the most important result items only',
       cwd: tempDir,
@@ -666,7 +666,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(2);
   });
 
-  it('prefers priority-tagged memories during sorting and truncation', () => {
+  it('prefers priority-tagged memories during sorting and truncation', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-priority-sort-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -732,7 +732,7 @@ describe('context resolver', () => {
       pepeResultService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Keep the critical item and the strongest fallback',
       cwd: tempDir,
@@ -744,7 +744,7 @@ describe('context resolver', () => {
     ]);
   });
 
-  it('injects deterministic recall results when the feature flag is enabled', () => {
+  it('injects deterministic recall results when the feature flag is enabled', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -785,7 +785,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, config.pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Recall the sqlite persistence decision',
       cwd: tempDir,
@@ -795,7 +795,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(1);
   });
 
-  it('keeps deterministic recall disabled by default', () => {
+  it('keeps deterministic recall disabled by default', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-off-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -833,7 +833,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, config.pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Recall the sqlite persistence decision',
       cwd: tempDir,
@@ -843,7 +843,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(0);
   });
 
-  it('falls back safely when deterministic recall search fails', () => {
+  it('falls back safely when deterministic recall search fails', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-fail-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -882,7 +882,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, config.pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Recall the sqlite persistence decision',
       cwd: tempDir,
@@ -892,7 +892,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.selectedMemoryCount).toBe(0);
   });
 
-  it('skips deterministic recall when the fixed context is already overloaded', () => {
+  it('skips deterministic recall when the fixed context is already overloaded', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-deterministic-recall-overload-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -937,7 +937,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, config.pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Recall the sqlite persistence decision',
       cwd: tempDir,
@@ -946,7 +946,7 @@ describe('context resolver', () => {
     expect(resolved.taskContext.resultItems).toHaveLength(0);
   });
 
-  it('extracts the target directory from the latest user path when the new turn omits it', () => {
+  it('extracts the target directory from the latest user path when the new turn omits it', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-target-dir-'));
     tempDirs.push(tempDir);
     const externalRepoDir = path.join(tempDir, 'external-repo');
@@ -982,7 +982,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'openai' }).pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: '继续分析 source code',
       cwd: tempDir,
@@ -991,7 +991,7 @@ describe('context resolver', () => {
     expect(resolved.taskContext.targetDirectory).toBe(externalRepoDir);
   });
 
-  it('keeps only the recent context window from large session histories', () => {
+  it('keeps only the recent context window from large session histories', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-recent-window-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -1027,7 +1027,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'openai' }).pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Continue the latest investigation',
       cwd: tempDir,
@@ -1053,7 +1053,7 @@ describe('context resolver', () => {
     expect(resolved.runtimeStatus.contextCount.messageCount).toBe(6);
   });
 
-  it('resolves the Pueblo skill directory from the agent working directory and lists installed skills', () => {
+  it('resolves the Pueblo skill directory from the agent working directory and lists installed skills', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-skills-'));
     const startupDir = path.join(tempDir, 'pueblo-home');
     const workspaceDir = path.join(tempDir, 'workspace');
@@ -1113,7 +1113,7 @@ describe('context resolver', () => {
       pepeResultService: new PepeResultService(memoryService, config.pepe),
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Inspect reusable release flow',
       puebloWorkingDirectory: startupDir,
@@ -1132,7 +1132,7 @@ describe('context resolver', () => {
     ]);
   });
 
-  it('projects active workflow plan and todo context into the resolved task context', () => {
+  it('projects active workflow plan and todo context into the resolved task context', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-workflow-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -1201,7 +1201,7 @@ describe('context resolver', () => {
       workflowService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Continue the workflow execution.',
       cwd: tempDir,
@@ -1212,7 +1212,7 @@ describe('context resolver', () => {
     expect(resolved.taskContext.workflowContext?.todoSummary).toContain('Round 1 tasks:');
   });
 
-  it('filters pinned workflow memories out of general Pepe result items', () => {
+  it('filters pinned workflow memories out of general Pepe result items', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-workflow-filter-'));
     tempDirs.push(tempDir);
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
@@ -1326,7 +1326,7 @@ describe('context resolver', () => {
       workflowService,
     });
 
-    const resolved = resolver.resolve({
+    const resolved = await resolver.resolve({
       activeSessionId: session.id,
       pendingUserInput: 'Continue workflow execution',
       cwd: tempDir,

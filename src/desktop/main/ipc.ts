@@ -160,7 +160,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
     return {
       result,
       blocks: primaryBlock ? [primaryBlock] : [],
-      runtimeStatus: resolveRuntimeStatus(cli),
+      runtimeStatus: await resolveRuntimeStatus(cli),
     };
   };
 
@@ -310,9 +310,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
       return [];
     }
 
+    const runtimeStatus = await cli.getRuntimeStatus();
     return ingestInputFiles({
       filePaths: selection.filePaths,
-      workspaceRoot: cli.getRuntimeStatus().workspace ?? process.cwd(),
+      workspaceRoot: runtimeStatus.workspace ?? process.cwd(),
       sessionId,
     });
   });
@@ -336,7 +337,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
         return {
           result: talkCommandResult,
           blocks,
-          runtimeStatus: resolveRuntimeStatus(cli),
+          runtimeStatus: await resolveRuntimeStatus(cli),
         };
       }
 
@@ -350,7 +351,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
         return {
           result,
           blocks,
-          runtimeStatus: resolveRuntimeStatus(cli),
+          runtimeStatus: await resolveRuntimeStatus(cli),
         };
       }
 
@@ -398,11 +399,11 @@ function removeDesktopIpcHandlers(): void {
   }
 }
 
-function resolveRuntimeStatus(
+async function resolveRuntimeStatus(
   cli: ReturnType<typeof createCliDependencies>,
-): DesktopRuntimeStatus {
+): Promise<DesktopRuntimeStatus> {
   return {
-    ...cli.getRuntimeStatus(),
+    ...(await cli.getRuntimeStatus()),
     desktopProcessId: process.pid,
   };
 }

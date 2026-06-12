@@ -31,6 +31,132 @@ type MemoryPolicyOverrides = {
   readonly workflow?: Partial<MemoryConfig['workflow']>;
 };
 
+// ──────────────────────────────────────────
+// Task E: selectForContext — 统一上下文选择接口
+// ──────────────────────────────────────────
+
+/** 上下文选择的预算/策略参数 */
+export interface SelectForContextOptions {
+  /** 候选记忆集合 */
+  candidates: readonly MemoryRecord[];
+
+  /**
+   * 上下文策略配置（来自 AgentMemory.contextPolicy）
+   * - injectionWeightThreshold: 各类别记忆的最低 weight 门槛
+   * - reservedBudget: 各类别预留 token 预算
+   */
+  policy: {
+    injectionWeightThreshold?: {
+      recentConversation?: number;
+      sessionSummary?: number;
+      relevantResultItems?: number;
+    };
+    reservedBudget?: {
+      recentConversation?: number;
+    };
+  };
+
+  /** 模型上下文窗口总预算（token 数） */
+  totalBudget: number;
+
+  /** 当前选择类别，用于匹配对应的 threshold 和 budget */
+  category: 'recentConversation' | 'sessionSummary' | 'relevantResultItems';
+}
+
+/** selectForContext 的返回结果 */
+export interface SelectForContextResult {
+  /** 最终选中的记忆列表 */
+  selected: MemoryRecord[];
+  /** 选择过程各阶段的评估数据 */
+  rationale: {
+    totalCandidates: number;
+    afterWeightFilter: number;
+    afterDedup: number;
+    afterBudgetTruncation: number;
+    budgetUsed: number;
+  };
+}
+
+const DEFAULT_INJECTION_WEIGHT: Record<string, number> = {
+  recentConversation: 0,
+  sessionSummary: 0,
+  relevantResultItems: 0,
+};
+
+/** 按 injectionWeightThreshold 过滤候选记忆 */
+function filterByWeightThreshold(
+  items: MemoryRecord[],
+  category: string,
+  thresholds: Record<string, number | undefined>,
+): MemoryRecord[] {
+  const threshold = thresholds[category] ?? 0;
+  return items.filter(m => (m.weight ?? 0) >= threshold);
+}
+
+/** 按 memoryId 去重，保留第一个出现项 */
+function dedupeById(items: MemoryRecord[]): MemoryRecord[] {
+  const seen = new Set<string>();
+  const result: MemoryRecord[] = [];
+  for (const item of items) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+/** 按 contentHash 去重，保留第一个出现项 */
+function dedupeByContentHash(items: MemoryRecord[]): MemoryRecord[] {
+  const seen = new Set<string>();
+  const result: MemoryRecord[] = [];
+  for (const item of items) {
+    const hash = item.contentHash;
+    if (!hash || !seen.has(hash)) {
+      if (hash) seen.add(hash);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+/**
+ * 按优先级等级 + weight 排序。
+ * - 先按 priorityRank 降序（A→B→C→D→无）
+ * - 同 rank 内按 weight 降序
+ */
+function sortByPriorityAndWeight(items: MemoryRecord[]): MemoryRecord[] {
+  return [...items].sort((a, b) => {
+    return (b.weight ?? 0) - (a.weight ?? 0); // 高 weight 优先
+  });
+}
+
+/**
+ * 在 budget 约束下截断，优先保留高 priority + 高 weight 的记忆。
+ * 简单 token 估算：每个记忆按 4 token/word 和平均 ~20 words ≈ 80 tokens 估算。
+ * 实际 token 数应由 caller 精确计算，此处做保守估算截断。
+ */
+const ESTIMATED_TOKENS_PER_MEMORY = 80;
+
+function truncateByBudget(
+  items: MemoryRecord[],
+  totalBudget: number,
+  reservedBudget: number | undefined,
+): { selected: MemoryRecord[]; budgetUsed: number } {
+  const effectiveBudget = totalBudget - (reservedBudget ?? 0);
+  if (effectiveBudget <= 0) return { selected: [], budgetUsed: 0 };
+
+  let budgetUsed = 0;
+  const selected: MemoryRecord[] = [];
+  for (const item of items) {
+    const estimatedTokens = ESTIMATED_TOKENS_PER_MEMORY;
+    if (budgetUsed + estimatedTokens > effectiveBudget) break;
+    selected.push(item);
+    budgetUsed += estimatedTokens;
+  }
+  return { selected, budgetUsed };
+}
+
 export class MemoryService {
   private readonly queries: MemoryQueries;
   private readonly policy: MemoryConfig;
@@ -484,6 +610,52 @@ export class MemoryService {
       lastAccessedAt: now,
       updatedAt: now,
     });
+  }
+
+  /**
+   * Unified context selection pipeline: filter → dedupe → sort → truncate.
+   * Encapsulates the selection logic that was previously scattered across context-resolver.ts.
+   */
+  async selectForContext(options: SelectForContextOptions): Promise<SelectForContextResult> {
+    const {
+      candidates,
+      totalBudget,
+      policy,
+      category,
+    } = options;
+
+    const totalCandidates = candidates.length;
+    const injectionWeightThreshold = policy.injectionWeightThreshold;
+    const reservedBudget = policy.reservedBudget?.recentConversation ?? 0;
+
+    // Convert to mutable array for pipeline processing
+    const mutableCandidates = [...candidates];
+
+    // 1. Filter by weight threshold
+    const afterWeightFilter = filterByWeightThreshold(mutableCandidates, category, injectionWeightThreshold ?? {});
+
+    // 2. Deduplicate by id
+    const afterIdDedup = dedupeById(afterWeightFilter);
+
+    // 3. Deduplicate by content hash
+    const afterContentDedup = dedupeByContentHash(afterIdDedup);
+
+    // 4. Sort by weight descending
+    const sorted = sortByPriorityAndWeight(afterContentDedup);
+
+    // 5. Truncate by budget
+    const { selected, budgetUsed } = truncateByBudget(sorted, totalBudget, reservedBudget);
+
+    return {
+      selected,
+      rationale: {
+        totalCandidates,
+        afterWeightFilter: afterWeightFilter.length,
+        afterDedup: afterContentDedup.length,
+        afterBudgetTruncation: selected.length,
+        budgetUsed,
+      },
+    };
   }
 }
 

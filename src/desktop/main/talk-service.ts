@@ -110,7 +110,7 @@ interface RegistryEntry {
 }
 
 export interface DesktopTalkServiceDependencies {
-  readonly getRuntimeStatus: () => DesktopRuntimeStatus;
+  readonly getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
   readonly executeInput: (envelope: IpcInputEnvelope) => Promise<{
     readonly result: CommandResult<unknown>;
     readonly blocks: RendererOutputBlock[];
@@ -310,7 +310,7 @@ export class DesktopTalkService {
       type: 'accept',
       conversationId: pendingRequest.conversationId,
       fromPid: this.localPid,
-      fromAgentProfileName: this.dependencies.getRuntimeStatus().agentProfileName ?? null,
+      fromAgentProfileName: (await this.dependencies.getRuntimeStatus()).agentProfileName ?? null,
     });
     this.publishSystemMessage('Talk Started', `Accepted talk request from pid ${pendingRequest.fromPid}.`);
     void this.processLocalTurn(pendingRequest.message, 0);
@@ -386,7 +386,7 @@ export class DesktopTalkService {
         type: 'request',
         conversationId,
         fromPid: this.localPid,
-        fromAgentProfileName: this.dependencies.getRuntimeStatus().agentProfileName ?? null,
+        fromAgentProfileName: (await this.dependencies.getRuntimeStatus()).agentProfileName ?? null,
         message,
         createdAt: new Date().toISOString(),
       });
@@ -555,7 +555,8 @@ export class DesktopTalkService {
     this.publishSystemMessage('Talk Turn', `Peer ${conversation.peerPid}: ${peerText}`);
 
     try {
-      const response = await this.dependencies.executeInput(this.createTalkEnvelope(peerText));
+      const envelope = await this.createTalkEnvelope(peerText);
+      const response = await this.dependencies.executeInput(envelope);
       if (this.activeConversation !== conversation) {
         return;
       }
@@ -678,12 +679,12 @@ export class DesktopTalkService {
     }
   }
 
-  private createTalkEnvelope(inputText: string): IpcInputEnvelope {
+  private async createTalkEnvelope(inputText: string): Promise<IpcInputEnvelope> {
     const submittedAt = new Date().toISOString();
     return {
       requestId: `${submittedAt}-${Math.random().toString(16).slice(2)}`,
       windowId: 'desktop-window',
-      sessionId: this.dependencies.getRuntimeStatus().activeSessionId ?? null,
+      sessionId: (await this.dependencies.getRuntimeStatus()).activeSessionId ?? null,
       inputText,
       attachments: [],
       submittedAt,

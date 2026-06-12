@@ -18,6 +18,7 @@ interface MemoryRow {
   weight: number;
   last_accessed_at: string | null;
   source_session_id: string | null;
+  content_hash: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -97,6 +98,7 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       weight: memory.weight,
       last_accessed_at: memory.lastAccessedAt,
       source_session_id: memory.sourceSessionId,
+      content_hash: memory.contentHash ?? null,
       created_at: memory.createdAt,
       updated_at: memory.updatedAt,
     };
@@ -108,6 +110,7 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
              tags_json=@tags_json, parent_id=@parent_id, derivation_type=@derivation_type,
              summary_depth=@summary_depth, weight=@weight, last_accessed_at=@last_accessed_at,
              source_session_id=@source_session_id,
+             content_hash=@content_hash,
              created_at=@created_at, updated_at=@updated_at
          WHERE id=@id`,
         params,
@@ -116,10 +119,10 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       this.run(
         `INSERT INTO memory_records (
           id, type, memory_kind, title, content, scope, status, tags_json, parent_id, derivation_type, summary_depth,
-          weight, last_accessed_at, source_session_id, created_at, updated_at
+          weight, last_accessed_at, source_session_id, content_hash, created_at, updated_at
         ) VALUES (
           @id, @type, @memory_kind, @title, @content, @scope, @status, @tags_json, @parent_id, @derivation_type, @summary_depth,
-          @weight, @last_accessed_at, @source_session_id, @created_at, @updated_at
+          @weight, @last_accessed_at, @source_session_id, @content_hash, @created_at, @updated_at
         )`,
         params,
       );
@@ -154,8 +157,27 @@ export class MemoryRepository extends RepositoryBase implements MemoryStore {
       weight: row.weight,
       lastAccessedAt: row.last_accessed_at,
       sourceSessionId: row.source_session_id,
+      contentHash: row.content_hash ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
+  }
+
+  /** Deduplicate memories by contentHash — keeps only the first occurrence per contentHash */
+  deduplicateByContentHash(memories: MemoryRecord[]): MemoryRecord[] {
+    const seen = new Set<string>();
+    const result: MemoryRecord[] = [];
+    for (const mem of memories) {
+      if (!mem.contentHash) {
+        // keep memories without contentHash (backward compatibility)
+        result.push(mem);
+        continue;
+      }
+      if (!seen.has(mem.contentHash)) {
+        seen.add(mem.contentHash);
+        result.push(mem);
+      }
+    }
+    return result;
   }
 }

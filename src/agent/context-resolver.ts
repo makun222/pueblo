@@ -137,7 +137,7 @@ export class ContextResolver {
     );
   }
 
-  resolve(input: ResolveContextInput = {}): ResolvedContext {
+  async resolve(input: ResolveContextInput = {}): Promise<ResolvedContext> {
     const session = this.resolveSession(input.activeSessionId);
     const profiles = this.dependencies.providerRegistry.listProfiles();
     const selection = resolveProviderModelSelection({
@@ -185,7 +185,7 @@ export class ContextResolver {
     const activeTurnStepSummaries = summarizeTaskTurnTrace(latestTaskPayload?.stepTrace, {
       subtaskGoal: puebloProfile.goalDirectives.join('\n'),
       constraints: puebloProfile.constraintDirectives,
-    });
+    }, puebloProfile.contextPolicy.activeTurnStepWindow);
     const activeTurnStepContext = activeTurnStepSummaries.length > 0
       ? ['Active turn step context:', ...activeTurnStepSummaries.map((entry) => entry.content)].join('\n')
       : null;
@@ -262,9 +262,23 @@ export class ContextResolver {
         })
         .map((memory) => memory.id),
     );
-    const prioritizedResultItems = sortResultItemsForPrompt(
-      filteredResultItemsWithoutLegacySteps.filter((item) => !overshadowedResultMemoryIds.has(item.memoryId)),
-      nonLegacyResultItemMemories,
+    // Use selectForContext for unified dedup + sort of non-legacy result items
+    const contextSelection = await this.dependencies.memoryService.selectForContext({
+      candidates: nonLegacyResultItemMemories,
+      totalBudget: Number.MAX_SAFE_INTEGER, // Skip truncation — handled by applyBudgetAwareResultTruncation below
+      policy: {
+        injectionWeightThreshold: {},
+        reservedBudget: { recentConversation: 0 },
+      },
+      category: 'relevantResultItems',
+    });
+    const selectedContextMemoryIds = new Set(contextSelection.selected.map((m) => m.id));
+    const contextMemoryRank = new Map(contextSelection.selected.map((m, i) => [m.id, i]));
+    const filteredNonOvershadowed = filteredResultItemsWithoutLegacySteps.filter(
+      (item) => !overshadowedResultMemoryIds.has(item.memoryId) && selectedContextMemoryIds.has(item.memoryId),
+    );
+    const prioritizedResultItems = filteredNonOvershadowed.sort(
+      (a, b) => (contextMemoryRank.get(a.memoryId) ?? Infinity) - (contextMemoryRank.get(b.memoryId) ?? Infinity),
     );
     const budgetedResultItems = applyBudgetAwareResultTruncation({
       enabled: this.dependencies.config.pepe.enableBudgetAwareResultTruncation,
@@ -585,10 +599,20 @@ function selectSessionSummariesForPrompt(args: {
   readonly selectedMemories: readonly MemoryRecord[];
   readonly resultItemMemories: readonly MemoryRecord[];
 }): MemoryRecord[] {
-  const candidates = sortMemoriesForPrompt(dedupeMemoriesById([
-    ...args.selectedMemories.filter(isSessionSummaryMemory),
-    ...args.resultItemMemories.filter(isSessionSummaryMemory),
-  ]));
+  // Inline dedup + sort for session summary candidates
+  const allSummaryCandidates = [...args.selectedMemories.filter(isSessionSummaryMemory), ...args.resultItemMemories.filter(isSessionSummaryMemory)];
+  const dedupedById = new Map<string, MemoryRecord>();
+  for (const m of allSummaryCandidates) {
+    if (!dedupedById.has(m.id)) dedupedById.set(m.id, m);
+  }
+  const dedupedByHash = new Map<string, MemoryRecord>();
+  for (const m of dedupedById.values()) {
+    const key = m.contentHash ?? m.id;
+    if (!dedupedByHash.has(key)) dedupedByHash.set(key, m);
+  }
+  const candidates = [...dedupedByHash.values()].sort(
+    (a, b) => (resolveMemoryPriorityRank(b) - resolveMemoryPriorityRank(a)) || (b.weight - a.weight),
+  );
 
   const selected: MemoryRecord[] = [];
   const currentSessionSummary = candidates.find((memory) => memory.sourceSessionId === args.currentSessionId) ?? null;
@@ -683,6 +707,25 @@ function dedupeMemoriesById(memories: readonly MemoryRecord[]): MemoryRecord[] {
 
     seenMemoryIds.add(memory.id);
     deduped.push(memory);
+  }
+
+  return deduped;
+}
+
+function dedupeMemoriesByContentHash(memories: readonly MemoryRecord[]): MemoryRecord[] {
+  const seen = new Set<string>();
+  const deduped: MemoryRecord[] = [];
+
+  for (const memory of memories) {
+    if (!memory.contentHash) {
+      // keep memories without contentHash (backward compatibility)
+      deduped.push(memory);
+      continue;
+    }
+    if (!seen.has(memory.contentHash)) {
+      seen.add(memory.contentHash);
+      deduped.push(memory);
+    }
   }
 
   return deduped;

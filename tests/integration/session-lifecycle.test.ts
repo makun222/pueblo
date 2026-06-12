@@ -351,6 +351,103 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     database.close();
   });
 
+  it('adds content_hash to legacy memory_records tables and persists hashed memories after migration', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-memory-content-hash-'));
+    tempDirs.push(tempDir);
+    const dbPath = path.join(tempDir, 'pueblo.db');
+    const database = createSqliteDatabase({ dbPath });
+
+    database.connection.exec(`
+      CREATE TABLE schema_migrations (
+        id TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+      CREATE TABLE memory_records (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        memory_kind TEXT NOT NULL DEFAULT 'generic',
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        status TEXT NOT NULL,
+        tags_json TEXT NOT NULL,
+        parent_id TEXT,
+        derivation_type TEXT NOT NULL DEFAULT 'manual',
+        summary_depth INTEGER NOT NULL DEFAULT 0,
+        weight REAL NOT NULL DEFAULT 0,
+        last_accessed_at TEXT,
+        source_session_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const insertMigration = database.connection.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)');
+    const appliedAt = new Date().toISOString();
+    for (const id of [
+      '001_initial_foundation',
+      '002_provider_desktop_updates',
+      '003_context_memory_metadata',
+      '004_agent_instances',
+      '005_session_context_backfill',
+      '006_agent_instance_defaults',
+      '007_workflow_instances',
+      '008_session_provider_usage_stats',
+      '009_memory_weight_policy',
+      '010_session_memory_selection_layers',
+      '011_memory_selection_cleanup',
+      '012_step_memory_retirement',
+    ]) {
+      insertMigration.run(id, appliedAt);
+    }
+
+    runMigrations(database.connection);
+
+    const columns = database.connection
+      .prepare("PRAGMA table_info('memory_records')")
+      .all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toContain('content_hash');
+
+    const memoryRepository = new MemoryRepository({ connection: database.connection });
+    database.connection.prepare(`
+      INSERT INTO memory_records (
+        id, type, memory_kind, title, content, scope, status, tags_json, parent_id,
+        derivation_type, summary_depth, weight, last_accessed_at, source_session_id, content_hash, created_at, updated_at
+      ) VALUES (
+        @id, @type, @memory_kind, @title, @content, @scope, @status, @tags_json, @parent_id,
+        @derivation_type, @summary_depth, @weight, @last_accessed_at, @source_session_id, @content_hash, @created_at, @updated_at
+      )
+    `).run({
+      id: 'legacy-memory-null-hash',
+      type: 'short-term',
+      memory_kind: 'generic',
+      title: 'Legacy memory',
+      content: 'Legacy rows may have null content hash.',
+      scope: 'session',
+      status: 'active',
+      tags_json: '[]',
+      parent_id: null,
+      derivation_type: 'manual',
+      summary_depth: 0,
+      weight: 0,
+      last_accessed_at: appliedAt,
+      source_session_id: null,
+      content_hash: null,
+      created_at: appliedAt,
+      updated_at: appliedAt,
+    });
+
+    const legacy = memoryRepository.getById('legacy-memory-null-hash');
+    expect(legacy?.contentHash).toBeUndefined();
+
+    const created = memoryRepository.create('Hashed memory', 'Persist this content hash.', 'session');
+    const persisted = memoryRepository.getById(created.id);
+
+    expect(persisted?.contentHash).toBe(created.contentHash);
+
+    database.close();
+  });
+
   it('persists structured session message history in sqlite', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-session-messages-'));
     tempDirs.push(tempDir);
@@ -524,7 +621,7 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       expect(sessions).toHaveLength(1);
       expect(sessions[0]?.selectedMemoryIds).toEqual([]);
       expect(sessions[0]?.messageHistory).toEqual([]);
-      expect(cli.getRuntimeStatus().activeSessionId).toBeTruthy();
+      expect((await cli.getRuntimeStatus()).activeSessionId).toBeTruthy();
     } finally {
       cli.databaseClose();
     }
@@ -544,17 +641,17 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     });
 
     try {
-      const firstRuntime = cli.startAgentSession('code-master');
+      const firstRuntime = await cli.startAgentSession('code-master');
       const firstSessionId = firstRuntime.activeSessionId;
       const firstInstanceId = firstRuntime.agentInstanceId;
 
-      const secondRuntime = cli.startAgentSession('code-master');
+      const secondRuntime = await cli.startAgentSession('code-master');
 
       expect(secondRuntime.agentInstanceId).toBe(firstInstanceId);
       expect(secondRuntime.activeSessionId).toBe(firstSessionId);
 
       const newSessionResult = await cli.dispatcher.dispatch({ input: '/new follow-up session' });
-      const newSessionRuntime = cli.getRuntimeStatus();
+      const newSessionRuntime = await cli.getRuntimeStatus();
 
       expect(newSessionResult.ok).toBe(true);
       expect(newSessionRuntime.agentInstanceId).toBe(firstInstanceId);
@@ -578,15 +675,15 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     });
 
     try {
-      const firstRuntime = cli.startAgentSession('code-master');
+      const firstRuntime = await cli.startAgentSession('code-master');
       const firstSessionId = firstRuntime.activeSessionId;
       const firstInstanceId = firstRuntime.agentInstanceId;
 
       const newSessionResult = await cli.dispatcher.dispatch({ input: '/new isolate next task' });
       expect(newSessionResult.ok).toBe(true);
-      const secondSessionId = cli.getRuntimeStatus().activeSessionId;
+      const secondSessionId = (await cli.getRuntimeStatus()).activeSessionId;
 
-      const restoredRuntime = cli.startAgentSession('code-master');
+      const restoredRuntime = await cli.startAgentSession('code-master');
 
       expect(restoredRuntime.agentInstanceId).toBe(firstInstanceId);
       expect(restoredRuntime.activeSessionId).toBe(secondSessionId);
@@ -618,7 +715,7 @@ describeIfNodeSqlite('session lifecycle integration', () => {
     });
 
     try {
-      const firstRuntime = cli.startAgentSession('code-master');
+      const firstRuntime = await cli.startAgentSession('code-master');
       const firstSessionId = firstRuntime.activeSessionId;
 
       expect(firstSessionId).toBeTruthy();
@@ -627,7 +724,7 @@ describeIfNodeSqlite('session lifecycle integration', () => {
       const newSessionResult = await cli.dispatcher.dispatch({ input: '/new isolate next task' });
       expect(newSessionResult.ok).toBe(true);
 
-      const secondSessionId = cli.getRuntimeStatus().activeSessionId;
+      const secondSessionId = (await cli.getRuntimeStatus()).activeSessionId;
       expect(secondSessionId).toBeTruthy();
       expect(secondSessionId).not.toBe(firstSessionId);
 

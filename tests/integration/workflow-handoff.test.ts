@@ -213,7 +213,7 @@ describeIfNodeSqlite('workflow handoff integration', () => {
       expect(stale.ok).toBe(false);
       expect(stale.code).toBe('WORKFLOW_CONTEXT_STALE');
 
-      const selected = cli.selectSession(startData.sessionId);
+      const selected = await cli.selectSession(startData.sessionId);
       expect(selected.session?.selectedMemoryIds).not.toContain(startData.planMemoryId);
       expect(selected.session?.selectedMemoryIds).not.toContain(startData.todoMemoryId);
     } finally {

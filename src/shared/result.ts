@@ -295,19 +295,25 @@ function buildTurnStepSummaryContent(
 export function summarizeTaskTurnTrace(
   stepTrace: readonly TaskStepTraceEntry[] | null | undefined,
   taskContext?: { subtaskGoal?: string; constraints?: readonly string[] },
+  maxSteps?: number,
 ): TurnTraceSummary[] {
   if (!stepTrace || stepTrace.length === 0) {
     return [];
   }
 
+  // Apply sliding window: keep only the last maxSteps steps
+  const windowedTrace = (maxSteps !== undefined && maxSteps > 0 && stepTrace.length > maxSteps)
+    ? stepTrace.slice(-maxSteps)
+    : stepTrace;
+
   // Only enrich when contextual information is actually available, otherwise
   // fall back to the plain step summary.
   if (!taskContext?.subtaskGoal && !taskContext?.constraints?.length) {
-    return summarizeTaskStepTrace(stepTrace);
+    return summarizeTaskStepTrace(windowedTrace);
   }
 
   const grouped = new Map<number, TaskStepTraceEntry[]>();
-  for (const entry of stepTrace) {
+  for (const entry of windowedTrace) {
     const entries = grouped.get(entry.stepNumber);
     if (entries) {
       entries.push(entry);

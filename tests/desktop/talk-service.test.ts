@@ -92,7 +92,7 @@ function createTalkServicePair(turnLimit = 2): {
   const bOutputs: RendererOutputBlock[] = [];
 
   const agentA = new DesktopTalkService({
-    getRuntimeStatus: () => createRuntimeStatus('Agent A'),
+    getRuntimeStatus: () => Promise.resolve(createRuntimeStatus('Agent A')),
     executeInput: async (envelope) => ({
       result: successResult('TASK_COMPLETED', 'ok', { outputSummary: `Agent A saw: ${envelope.inputText}` }),
       blocks: [],
@@ -108,7 +108,7 @@ function createTalkServicePair(turnLimit = 2): {
   });
 
   const agentB = new DesktopTalkService({
-    getRuntimeStatus: () => createRuntimeStatus('Agent B'),
+    getRuntimeStatus: () => Promise.resolve(createRuntimeStatus('Agent B')),
     executeInput: async (envelope) => ({
       result: successResult('TASK_COMPLETED', 'ok', { outputSummary: `Agent B saw: ${envelope.inputText}` }),
       blocks: [],

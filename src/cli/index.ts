@@ -159,13 +159,13 @@ async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: stri
 export interface CliDependencies {
   readonly dispatcher: CommandDispatcher;
   readonly submitInput: (input: string | IpcInputEnvelope, signal?: AbortSignal) => Promise<import('../shared/result').CommandResult<unknown>>;
-  readonly getRuntimeStatus: () => DesktopRuntimeStatus;
+  readonly getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
   readonly listAgentProfiles: () => AgentProfileTemplate[];
-  readonly startAgentSession: (profileId: string) => DesktopRuntimeStatus;
+  readonly startAgentSession: (profileId: string) => Promise<DesktopRuntimeStatus>;
   readonly listAgentSessions: (agentInstanceId: string) => AgentSessionSummary[];
   readonly getSession: (sessionId: string) => Session | null;
   readonly listSessionMemories: (sessionId: string) => MemoryRecord[];
-  readonly selectSession: (sessionId: string) => { runtimeStatus: DesktopRuntimeStatus; session: Session | null };
+  readonly selectSession: (sessionId: string) => Promise<{ runtimeStatus: DesktopRuntimeStatus; session: Session | null }>;
   readonly setProgressReporter: (reporter: ((update: { title: string; message: string }) => void) | null) => void;
   readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
   readonly setToolApprovalBatchHandler: (handler: ToolApprovalBatchHandler | null) => void;
@@ -487,7 +487,7 @@ export function createCliDependencies(
       return failureResult('TASK_GOAL_REQUIRED', 'Task goal is required', ['Provide a task goal and retry.']);
     }
 
-    const resolvedContext = contextResolver.resolve({
+    const resolvedContext = await contextResolver.resolve({
       activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
@@ -521,7 +521,7 @@ export function createCliDependencies(
       turnIndexers.set(sessionId, turnIndexer);
     }
 
-    const executionContext = contextResolver.resolve({
+    const executionContext = await contextResolver.resolve({
       activeSessionId: sessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
@@ -1120,7 +1120,7 @@ export function createCliDependencies(
     },
   });
 
-  const syncSelectionFromSession = (sessionId: string | null): void => {
+  const syncSelectionFromSession = async (sessionId: string | null): Promise<void> => {
     const previousSessionId = selectionState.sessionId;
 
     if (previousSessionId && previousSessionId !== sessionId) {
@@ -1142,7 +1142,7 @@ export function createCliDependencies(
       pepeSupervisor.startSession(sessionId);
     }
 
-    const resolved = contextResolver.resolve({
+    const resolved = await contextResolver.resolve({
       activeSessionId: sessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
@@ -1342,15 +1342,15 @@ export function createCliDependencies(
         : input;
       return inputAbortSignalContext.run(signal, () => inputRouter.route(envelope));
     },
-    getRuntimeStatus() {
-      const runtimeStatus = contextResolver.resolve({
+    async getRuntimeStatus() {
+      const runtimeStatus = (await contextResolver.resolve({
         activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
         explicitProviderId: selectionState.providerId,
         explicitModelId: selectionState.modelId,
         puebloWorkingDirectory,
         cwd: currentWorkspace,
         workspace: currentWorkspace,
-      }).runtimeStatus;
+      })).runtimeStatus;
       const currentSession = selectionState.sessionId
         ? sessionService.getSession(selectionState.sessionId)
         : sessionService.getCurrentSession();
@@ -1385,7 +1385,7 @@ export function createCliDependencies(
     listAgentProfiles() {
       return agentInstanceService.listProfileTemplates();
     },
-    startAgentSession(profileId: string) {
+    async startAgentSession(profileId: string) {
       activeAgentProfileId = profileId;
       const agentInstance = agentInstanceService.markActive(
         agentInstanceService.getOrCreateDefaultAgentInstance(profileId, currentWorkspace).id,
@@ -1395,7 +1395,7 @@ export function createCliDependencies(
       const session = mostRecentSession
         ? sessionService.selectSession(mostRecentSession.id)
         : sessionService.createSession(`${agentInstance.profileName} session`, selectionState.modelId, agentInstance.id);
-      syncSelectionFromSession(session.id);
+      await syncSelectionFromSession(session.id);
       return this.getRuntimeStatus();
     },
     listAgentSessions(agentInstanceId: string) {
@@ -1410,11 +1410,11 @@ export function createCliDependencies(
       return memoryService.listSessionMemories(sessionId)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
     },
-    selectSession(sessionId: string) {
+    async selectSession(sessionId: string) {
       const session = sessionService.selectSession(sessionId);
-      syncSelectionFromSession(session.id);
+      await syncSelectionFromSession(session.id);
       return {
-        runtimeStatus: this.getRuntimeStatus(),
+        runtimeStatus: await this.getRuntimeStatus(),
         session,
       };
     },

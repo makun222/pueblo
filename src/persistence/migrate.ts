@@ -84,6 +84,7 @@ const foundationalMigrations = [
         derivation_type TEXT NOT NULL DEFAULT 'manual',
         summary_depth INTEGER NOT NULL DEFAULT 0,
         source_session_id TEXT,
+        content_hash TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -535,6 +536,14 @@ const foundationalMigrations = [
                  )
              )
          ), '[]')
+      `,
+    ],
+  },
+  {
+    id: '013_memory_content_hash',
+    statements: [
+      `
+      ALTER TABLE memory_records ADD COLUMN content_hash TEXT
       `,
     ],
   },

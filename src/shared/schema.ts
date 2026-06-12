@@ -124,6 +124,28 @@ export const puebloProfileSchema = z.object({
   contextPolicy: z.object({
     priorityHints: z.array(z.string()),
     truncationHints: z.array(z.string()),
+    activeTurnStepWindow: z.number().int().positive().default(3)
+      .describe('Number of recent steps to include in active turn context (sliding window)'),
+    // Task A: Weight thresholds for section-level injection filtering (Q2)
+    injectionWeightThreshold: z.object({
+      sessionSummary: z.number().min(0).max(1).default(0.2)
+        .describe('Weight threshold for session summary injection'),
+      recentConversation: z.number().min(0).max(1).default(0.3)
+        .describe('Weight threshold for recent conversation injection'),
+      relevantResultItems: z.number().min(0).max(1).default(0.4)
+        .describe('Weight threshold for result items injection'),
+    }).default({
+      sessionSummary: 0.2,
+      recentConversation: 0.3,
+      relevantResultItems: 0.4,
+    }),
+    // Task B: Reserved budget for ABCD classification guarantee (Q4)
+    reservedBudget: z.object({
+      recentConversation: z.number().min(0).max(1).default(0.3)
+        .describe('Reserved budget percentage (0-1) for B-level (recent conversation)'),
+    }).default({
+      recentConversation: 0.3,
+    }),
   }),
   summaryPolicy: puebloSummaryPolicySchema,
   loadedFromPath: z.string().min(1).nullable(),
@@ -145,6 +167,26 @@ export const agentProfileTemplateSchema = z.object({
   contextPolicy: z.object({
     priorityHints: z.array(z.string()),
     truncationHints: z.array(z.string()),
+    activeTurnStepWindow: z.number().int().positive().default(3)
+      .describe('Number of recent steps to include in active turn context (overridable in profile)'),
+    injectionWeightThreshold: z.object({
+      sessionSummary: z.number().min(0).max(1).default(0.2)
+        .describe('Weight threshold for session summary injection'),
+      recentConversation: z.number().min(0).max(1).default(0.3)
+        .describe('Weight threshold for recent conversation injection'),
+      relevantResultItems: z.number().min(0).max(1).default(0.4)
+        .describe('Weight threshold for result items injection'),
+    }).default({
+      sessionSummary: 0.2,
+      recentConversation: 0.3,
+      relevantResultItems: 0.4,
+    }),
+    reservedBudget: z.object({
+      recentConversation: z.number().min(0).max(1).default(0.3)
+        .describe('Reserved budget percentage (0-1) for B-level (recent conversation)'),
+    }).default({
+      recentConversation: 0.3,
+    }),
   }),
   summaryPolicy: puebloSummaryPolicySchema,
 });
@@ -250,6 +292,7 @@ export const memoryRecordSchema = z.object({
   memoryKind: memoryKindSchema.default('generic'),
   title: z.string().min(1),
   content: z.string().min(1),
+  contentHash: z.string().optional(),
   scope: memoryScopeSchema,
   status: memoryStatusSchema,
   tags: z.array(z.string()),

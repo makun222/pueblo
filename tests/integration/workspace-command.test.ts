@@ -43,11 +43,11 @@ describeIfNodeSqlite('workspace command integration', () => {
     const firstCli = createCliDependencies(config, { deferAgentSelection: true });
 
     try {
-      expect(firstCli.getRuntimeStatus().workspace).toBe(workspaceA);
+      expect((await firstCli.getRuntimeStatus()).workspace).toBe(workspaceA);
 
       const result = await firstCli.submitInput(`/set workspace ${workspaceB}`);
       expect(result.ok).toBe(true);
-      expect(firstCli.getRuntimeStatus().workspace).toBe(workspaceB);
+      expect((await firstCli.getRuntimeStatus()).workspace).toBe(workspaceB);
     } finally {
       firstCli.databaseClose();
     }
@@ -56,7 +56,7 @@ describeIfNodeSqlite('workspace command integration', () => {
     const secondCli = createCliDependencies(config, { deferAgentSelection: true });
 
     try {
-      expect(secondCli.getRuntimeStatus().workspace).toBe(workspaceB);
+      expect((await secondCli.getRuntimeStatus()).workspace).toBe(workspaceB);
     } finally {
       secondCli.databaseClose();
     }

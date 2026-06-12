@@ -141,7 +141,7 @@ describeIfNodeSqlite('cli auth login command', () => {
       const loginResult = await cli.dispatcher.dispatch({
         input: '/provider-config deepseek set-key deepseek-secret deepseek-v4-pro https://api.deepseek.com',
       });
-      const runtimeStatus = cli.getRuntimeStatus();
+      const runtimeStatus = await cli.getRuntimeStatus();
 
       expect(loginResult.ok).toBe(true);
       expect(loginResult.code).toBe('DEEPSEEK_AUTH_COMPLETED');

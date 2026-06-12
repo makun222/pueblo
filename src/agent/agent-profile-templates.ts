@@ -17,6 +17,9 @@ export function mergeAgentTemplateWithPuebloProfile(template: AgentProfileTempla
     contextPolicy: {
       priorityHints: [...template.contextPolicy.priorityHints, ...workspaceProfile.contextPolicy.priorityHints],
       truncationHints: [...template.contextPolicy.truncationHints, ...workspaceProfile.contextPolicy.truncationHints],
+      activeTurnStepWindow: workspaceProfile.contextPolicy.activeTurnStepWindow ?? template.contextPolicy.activeTurnStepWindow,
+      injectionWeightThreshold: workspaceProfile.contextPolicy.injectionWeightThreshold ?? template.contextPolicy.injectionWeightThreshold,
+      reservedBudget: workspaceProfile.contextPolicy.reservedBudget ?? template.contextPolicy.reservedBudget,
     },
     summaryPolicy: {
       autoSummarize: template.summaryPolicy.autoSummarize && workspaceProfile.summaryPolicy.autoSummarize,

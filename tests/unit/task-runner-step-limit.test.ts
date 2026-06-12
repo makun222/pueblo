@@ -1122,7 +1122,7 @@ describe('AgentTaskRunner step limit', () => {
           constraintDirectives: [],
           styleDirectives: [],
           memoryPolicy: { retentionHints: [], summaryHints: [] },
-          contextPolicy: { priorityHints: [], truncationHints: [] },
+          contextPolicy: { priorityHints: [], truncationHints: [], activeTurnStepWindow: 3, injectionWeightThreshold: { sessionSummary: 0.2, recentConversation: 0.3, relevantResultItems: 0.4 }, reservedBudget: { recentConversation: 0.3 } },
           summaryPolicy: { autoSummarize: false, thresholdHint: null, lineageHint: null },
         },
         contextCount: {
@@ -1218,7 +1218,7 @@ describe('AgentTaskRunner step limit', () => {
           constraintDirectives: [],
           styleDirectives: [],
           memoryPolicy: { retentionHints: [], summaryHints: [] },
-          contextPolicy: { priorityHints: [], truncationHints: [] },
+          contextPolicy: { priorityHints: [], truncationHints: [], activeTurnStepWindow: 3, injectionWeightThreshold: { sessionSummary: 0.2, recentConversation: 0.3, relevantResultItems: 0.4 }, reservedBudget: { recentConversation: 0.3 } },
           summaryPolicy: { autoSummarize: false, thresholdHint: null, lineageHint: null },
         },
         contextCount: {

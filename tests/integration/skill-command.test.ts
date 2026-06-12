@@ -46,7 +46,7 @@ describeIfNodeSqlite('skill command integration', () => {
     });
 
     try {
-      const runtimeStatus = cli.startAgentSession('code-master');
+      const runtimeStatus = await cli.startAgentSession('code-master');
       const agentInstanceId = runtimeStatus.agentInstanceId;
       expect(agentInstanceId).toBeTruthy();
 

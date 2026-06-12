@@ -18,7 +18,7 @@ describe('interactive cli session', () => {
         handledInputs.push(normalizedInput);
         return successResult('HANDLED', `Handled ${normalizedInput}`);
       },
-      getRuntimeStatus() {
+      async getRuntimeStatus() {
         return {
           providerId: null,
           providerName: null,
@@ -122,7 +122,7 @@ describe('interactive cli session', () => {
       async submitInput() {
         return successResult('HANDLED', 'Handled');
       },
-      getRuntimeStatus() {
+      async getRuntimeStatus() {
         return {
           providerId: null,
           providerName: null,
