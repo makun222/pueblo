@@ -969,14 +969,14 @@ function selectRecentContextMessages(
       const content = userMsgs
         .map(m => m.content)
         .join('\n')
-        .slice(0, 300);
+        //.slice(0, 1000);
       parts.push(`User: ${content}`);
     }
     if (assistantMsgs.length > 0) {
       const content = assistantMsgs
         .map(m => m.content)
         .join('\n')
-        .slice(0, 300);
+        //.slice(0, 10000);
       parts.push(`Assistant: ${content}`);
     }
     if (toolMsgs.length > 0) {
