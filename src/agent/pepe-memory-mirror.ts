@@ -46,7 +46,9 @@ export class PepeMemoryMirror {
     }
 
     for (const memory of input.memories) {
-      writeJsonAtomically(path.join(memoryDirectory, `${resolveMemoryFileName(memory)}.json`), memory);
+      // 直接写入，省去每个 memory 的 write temp + rm + rename（3→1 fs 操作）
+      const memoryPath = path.join(memoryDirectory, `${resolveMemoryFileName(memory)}.json`);
+      fs.writeFileSync(memoryPath, `${JSON.stringify(memory, null, 2)}\n`, 'utf8');
     }
   }
 

@@ -7,6 +7,8 @@ import { createReadTool } from './read-tool';
 import { createShellExecTool } from './shell-exec-tool';
 import { createWriteTool, type WriteToolRequest } from './write-tool';
 import { createUndoEditTool, type UndoEditToolRequest } from './undo-edit-tool';
+import { MemoRecallTool, type MemoRecallRequest } from './memo-recall-tool';
+import type { MemoryQueries } from '../memory/memory-queries';
 import {
   getToolExecutionPolicy,
   providerEditToolInputSchema,
@@ -28,8 +30,10 @@ import {
   type ProviderToolName,
   type ProviderWriteToolArgs,
   type ProviderUndoEditToolArgs,
+  type ProviderMemoRecallToolArgs,
   providerUndoEditToolArgsSchema,
   providerUndoEditToolInputSchema,
+  providerMemoRecallToolInputSchema,
 } from '../providers/provider-adapter';
 import { throwIfTaskCancelled } from '../shared/task-cancellation';
 
@@ -38,6 +42,7 @@ export interface ToolServiceDependencies {
   readonly cwd: string | (() => string);
   readonly resolveEditReviewHandler?: () => EditReviewHandler | null;
   readonly editShadowRoot?: string | (() => string);
+  readonly memoRecallTool?: MemoRecallTool;
 }
 
 export interface ExecuteToolInput {
@@ -85,6 +90,10 @@ export type ExecuteToolRequest =
   | (ExecuteToolInput & {
       readonly toolName: 'undo_edit';
       readonly args: ProviderUndoEditToolArgs;
+    })
+  | (ExecuteToolInput & {
+      readonly toolName: 'memo_recall';
+      readonly args: ProviderMemoRecallToolArgs;
     });
 
 export class ToolService {
@@ -96,8 +105,10 @@ export class ToolService {
   private readonly readTool = createReadTool();
   private readonly writeTool = createWriteTool();
   private readonly undoEditTool = createUndoEditTool();
+  private readonly memoRecallTool?: MemoRecallTool;
 
   constructor(private readonly dependencies: ToolServiceDependencies) {
+    this.memoRecallTool = dependencies.memoRecallTool;
     this.editTool = createEditTool({
       getReviewHandler: () => this.dependencies.resolveEditReviewHandler?.() ?? null,
       shadowRoot: this.dependencies.editShadowRoot,
@@ -163,6 +174,16 @@ export class ToolService {
         description: `Reverts a previous edit or write operation on a file. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerUndoEditToolInputSchema,
         executionPolicy: getToolExecutionPolicy('undo_edit'),
+      },
+      {
+        name: 'memo_recall' as const,
+        description:
+          'Search memory notes stored during this session by keyword. ' +
+          'Use this when you have doubts about earlier decisions, constraints, ' +
+          'or context that may have been lost due to conversation truncation. ' +
+          'Returns matching notes with their turn numbers and relevance scores.',
+        inputSchema: providerMemoRecallToolInputSchema,
+        executionPolicy: getToolExecutionPolicy('memo_recall'),
       },
     ];
   }
@@ -236,6 +257,7 @@ export class ToolService {
           detail: JSON.stringify(input.args, null, 2),
         };
       case 'glob':
+      case 'memo_recall':
       case 'grep':
       case 'read':
       case 'undo_edit':
@@ -309,6 +331,8 @@ export class ToolService {
         return this.runWrite(parseProviderToolArgs('write', input.args), executionCwd);
       case 'undo_edit':
         return this.runUndoEdit(parseProviderToolArgs('undo_edit', input.args), executionCwd);
+      case 'memo_recall':
+        return this.runMemoRecall(parseProviderToolArgs('memo_recall', input.args));
     }
   }
 
@@ -367,5 +391,29 @@ export class ToolService {
       path: args.path,
       cwd: executionCwd,
     });
+  }
+
+  private async runMemoRecall(
+    args: ProviderMemoRecallToolArgs,
+  ): Promise<ToolExecutionResult> {
+    if (!this.memoRecallTool) {
+      return {
+        toolName: 'memo_recall',
+        status: 'failed',
+        output: ['MemoRecallTool is not initialized'],
+        summary: 'memo-recall unavailable: MemoRecallTool not provided in ToolServiceDependencies',
+      };
+    }
+    const response = await this.memoRecallTool.execute({
+      keyword: args.keyword,
+      turn_count: args.turnCount,
+      mode: (args.matchMode ?? 'fuzzy') as MemoRecallRequest['mode'],
+    });
+    return {
+      toolName: 'memo_recall',
+      status: 'succeeded',
+      output: [JSON.stringify(response)],
+      summary: `memo_recall found ${response.hits.length} hit(s) for '${args.keyword}'`,
+    };
   }
 }

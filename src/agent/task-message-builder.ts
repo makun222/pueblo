@@ -281,7 +281,9 @@ function buildTargetDirectoryMessage(targetDirectory: string | null): string | n
 }
 
 export function selectRecentMessagesForPrompt(recentMessages: readonly string[]): string[] {
-  return recentMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT);
+  // Content-level reduction already happens in selectRecentContextMessages;
+  // the hard limit is applied downstream in buildRecentConversationMessage.
+  return recentMessages as string[];
 }
 
 function buildRecentConversationMessage(recentMessages: readonly string[], messageLimit = RECENT_CONTEXT_MESSAGE_LIMIT): string | null {

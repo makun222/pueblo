@@ -10,11 +10,11 @@ import type { PromptService } from '../prompts/prompt-service';
 import type { ProviderRegistry } from '../providers/provider-registry';
 import type { SessionService } from '../sessions/session-service';
 import type { WorkflowService } from '../workflow/workflow-service';
+import { perfEnd, perfStart } from '../utils/perf-logger';
 import {
   contextCountSchema,
   type BackgroundSummaryStatus,
   type ContextCount,
-  type ContextCountBreakdown,
   type InputAttachmentManifest,
   type MemoryRecord,
   type ProviderProfile,
@@ -92,24 +92,54 @@ export class ContextBudgetService {
     readonly memoryTexts: string[];
     readonly transientTexts: string[];
     readonly recentMessages: string[];
+    readonly sessionMessages: readonly SessionMessage[];
     readonly pendingUserInput?: string;
     readonly modelContextWindow: number | null;
     readonly derivedMemoryCount: number;
-    readonly contextBreakdown?: ContextCountBreakdown;
+    readonly fixedContextTokens?: number;
   }): ContextCount {
     const nonEmptyMemoryTexts = args.memoryTexts.filter(Boolean);
-    const textParts = [
+    // Reuse pre-computed fixed context tokens from budget truncation when available
+    const fixedTokens = args.fixedContextTokens ?? estimateContextBucketTokens([
       ...args.puebloTexts,
       ...args.promptTexts,
-      ...nonEmptyMemoryTexts,
       ...args.transientTexts.filter(Boolean),
       ...args.recentMessages,
       args.pendingUserInput ?? '',
-    ].filter(Boolean);
-    const estimatedTokens = textParts.reduce((sum, part) => sum + estimateTokens(part), 0);
+    ]);
+    const nonEmptyMemoryTokens = nonEmptyMemoryTexts.reduce((sum, part) => sum + estimateTokens(part), 0);
+    const estimatedTokens = fixedTokens + nonEmptyMemoryTokens;
     const utilizationRatio = args.modelContextWindow && args.modelContextWindow > 0
       ? Number((estimatedTokens / args.modelContextWindow).toFixed(4))
       : null;
+
+    // Context count breakdown
+    let systemPromptTokens =
+      estimateTokens(args.puebloTexts.filter(Boolean).join('\n')) +
+      estimateTokens(args.promptTexts.filter(Boolean).join('\n')) +
+      estimateTokens(args.memoryTexts.filter(Boolean).join('\n')) +
+      estimateTokens(args.transientTexts.filter(Boolean).join('\n'));
+    let userInputTokens = estimateTokens(args.pendingUserInput ?? '');
+    let toolResultTokens = 0;
+
+    for (const message of args.sessionMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT)) {
+      const compactedMessage = compactRecentMessageForPrompt(
+        formatSessionMessageForContext(message),
+      );
+      const messageTokens = estimateTokens(compactedMessage);
+
+      if (message.role === 'user') {
+        userInputTokens += messageTokens;
+        continue;
+      }
+
+      if (message.role === 'tool') {
+        toolResultTokens += messageTokens;
+        continue;
+      }
+
+      systemPromptTokens += messageTokens;
+    }
 
     return contextCountSchema.parse({
       estimatedTokens,
@@ -119,7 +149,11 @@ export class ContextBudgetService {
       selectedPromptCount: args.promptTexts.length,
       selectedMemoryCount: nonEmptyMemoryTexts.length,
       derivedMemoryCount: args.derivedMemoryCount,
-      breakdown: args.contextBreakdown,
+      breakdown: {
+        systemPromptTokens,
+        userInputTokens,
+        toolResultTokens,
+      },
     });
   }
 }
@@ -138,6 +172,7 @@ export class ContextResolver {
   }
 
   async resolve(input: ResolveContextInput = {}): Promise<ResolvedContext> {
+    const _resolveT0 = perfStart('  contextResolver.resolve.inner');
     const session = this.resolveSession(input.activeSessionId);
     const profiles = this.dependencies.providerRegistry.listProfiles();
     const selection = resolveProviderModelSelection({
@@ -170,25 +205,22 @@ export class ContextResolver {
       workspace: input.workspace ?? input.cwd ?? null,
     });
     const selectedMemoryIds = session?.selectedMemoryIds ?? [];
-    const baseResolvedPepeResult = this.pepeResultService.resolve({
-      sessionId: session?.id ?? input.activeSessionId ?? null,
-      agentInstanceId: agentInstance?.id ?? null,
-      selectedMemoryIds,
-      pendingUserInput: input.pendingUserInput,
-    });
     const workflowContext = session?.id
       ? this.dependencies.workflowService?.getWorkflowContext(session.id) ?? null
       : null;
     const uploadedAttachments = input.uploadedAttachments ?? [];
     const attachmentContextTexts = uploadedAttachments.map((attachment) => summarizeAttachmentForContext(attachment));
     const latestTaskPayload = session?.id ? extractLatestTaskPayload(this.dependencies.taskRepository, session.id) : null;
+   /*
     const activeTurnStepSummaries = summarizeTaskTurnTrace(latestTaskPayload?.stepTrace, {
       subtaskGoal: puebloProfile.goalDirectives.join('\n'),
       constraints: puebloProfile.constraintDirectives,
     }, puebloProfile.contextPolicy.activeTurnStepWindow);
     const activeTurnStepContext = activeTurnStepSummaries.length > 0
       ? ['Active turn step context:', ...activeTurnStepSummaries.map((entry) => entry.content)].join('\n')
-      : null;
+      : null;//0614-zero
+      */
+    const activeTurnStepContext = null; 
     const recallMemoryIds = resolveDeterministicRecallMemoryIds({
       enabled: this.dependencies.config.pepe.enableDeterministicRecall,
       memoryService: this.dependencies.memoryService,
@@ -217,14 +249,12 @@ export class ContextResolver {
       config: this.dependencies.config.pepe,
     });
     const effectiveSelectedMemoryIds = uniqueMemoryIds([...selectedMemoryIds, ...recallMemoryIds]);
-    const resolvedPepeResult = recallMemoryIds.length > 0
-      ? this.pepeResultService.resolve({
-        sessionId: session?.id ?? input.activeSessionId ?? null,
-        agentInstanceId: agentInstance?.id ?? null,
-        selectedMemoryIds: effectiveSelectedMemoryIds,
-        pendingUserInput: input.pendingUserInput,
-      })
-      : baseResolvedPepeResult;
+    const resolvedPepeResult = this.pepeResultService.resolve({
+      sessionId: session?.id ?? input.activeSessionId ?? null,
+      agentInstanceId: agentInstance?.id ?? null,
+      selectedMemoryIds: effectiveSelectedMemoryIds,
+      pendingUserInput: input.pendingUserInput,
+    });
     const filteredResultItems = filterPinnedWorkflowResultItems(resolvedPepeResult.resultItems, workflowContext);
     const selectedMemories = this.dependencies.memoryService.resolveMemorySelection(effectiveSelectedMemoryIds)
       .filter((memory) => !memory.tags.includes('task-step-summary'));
@@ -263,6 +293,7 @@ export class ContextResolver {
         .map((memory) => memory.id),
     );
     // Use selectForContext for unified dedup + sort of non-legacy result items
+    const _selectT0 = perfStart('    selectForContext');
     const contextSelection = await this.dependencies.memoryService.selectForContext({
       candidates: nonLegacyResultItemMemories,
       totalBudget: Number.MAX_SAFE_INTEGER, // Skip truncation — handled by applyBudgetAwareResultTruncation below
@@ -277,32 +308,38 @@ export class ContextResolver {
     const filteredNonOvershadowed = filteredResultItemsWithoutLegacySteps.filter(
       (item) => !overshadowedResultMemoryIds.has(item.memoryId) && selectedContextMemoryIds.has(item.memoryId),
     );
+    perfEnd('    selectForContext', _selectT0);
     const prioritizedResultItems = filteredNonOvershadowed.sort(
       (a, b) => (contextMemoryRank.get(a.memoryId) ?? Infinity) - (contextMemoryRank.get(b.memoryId) ?? Infinity),
     );
-    const budgetedResultItems = applyBudgetAwareResultTruncation({
+    const puebloTexts = [
+      ...puebloProfile.roleDirectives,
+      ...puebloProfile.goalDirectives,
+      ...puebloProfile.constraintDirectives,
+      ...puebloProfile.styleDirectives,
+      ...puebloProfile.memoryPolicy.retentionHints,
+      ...puebloProfile.memoryPolicy.summaryHints,
+      ...puebloProfile.contextPolicy.priorityHints,
+      ...puebloProfile.contextPolicy.truncationHints,
+      puebloProfile.summaryPolicy.lineageHint ?? '',
+      skillContextText ?? '',
+    ];
+    const promptTexts = prompts.map((prompt) => prompt.content);
+    const workflowTexts = [workflowContext?.planSummary ?? '', workflowContext?.todoSummary ?? ''];
+    const transientTexts = [activeTurnStepContext ?? ''];
+
+    const { resultItems: budgetedResultItems, fixedContextTokens } = applyBudgetAwareResultTruncation({
       enabled: this.dependencies.config.pepe.enableBudgetAwareResultTruncation,
       resultItems: prioritizedResultItems,
       resultItemMemories: nonLegacyResultItemMemories,
       modelContextWindow: selection.model?.contextWindow ?? null,
       memoryConfig: this.dependencies.config.memory,
-      puebloTexts: [
-        ...puebloProfile.roleDirectives,
-        ...puebloProfile.goalDirectives,
-        ...puebloProfile.constraintDirectives,
-        ...puebloProfile.styleDirectives,
-        ...puebloProfile.memoryPolicy.retentionHints,
-        ...puebloProfile.memoryPolicy.summaryHints,
-        ...puebloProfile.contextPolicy.priorityHints,
-        ...puebloProfile.contextPolicy.truncationHints,
-        puebloProfile.summaryPolicy.lineageHint ?? '',
-        skillContextText ?? '',
-      ],
-      promptTexts: prompts.map((prompt) => prompt.content),
+      puebloTexts,
+      promptTexts,
       sessionSummaryMemories,
-      workflowTexts: [workflowContext?.planSummary ?? '', workflowContext?.todoSummary ?? ''],
+      workflowTexts,
       attachmentContextTexts,
-      transientTexts: [activeTurnStepContext ?? ''],
+      transientTexts,
       recentMessages: promptRecentMessages,
       pendingUserInput: input.pendingUserInput,
     });
@@ -312,60 +349,26 @@ export class ContextResolver {
         items: budgetedResultItems,
       }
       : null;
-    const contextBreakdown = buildContextCountBreakdown({
-      puebloTexts: [
-        ...puebloProfile.roleDirectives,
-        ...puebloProfile.goalDirectives,
-        ...puebloProfile.constraintDirectives,
-        ...puebloProfile.styleDirectives,
-        ...puebloProfile.memoryPolicy.retentionHints,
-        ...puebloProfile.memoryPolicy.summaryHints,
-        ...puebloProfile.contextPolicy.priorityHints,
-        ...puebloProfile.contextPolicy.truncationHints,
-        puebloProfile.summaryPolicy.lineageHint ?? '',
-        skillContextText ?? '',
-      ],
-      promptTexts: prompts.map((prompt) => prompt.content),
-      memoryTexts: [
-        ...sessionSummaryMemories.map((memory) => memory.content),
-        ...budgetedResultItems.map((item) => item.summary),
-        workflowContext?.planSummary ?? '',
-        workflowContext?.todoSummary ?? '',
-        ...attachmentContextTexts,
-      ],
-      transientTexts: [activeTurnStepContext ?? ''],
-      sessionMessages,
-      pendingUserInput: input.pendingUserInput,
-    });
+    const memoryTexts = [
+      ...sessionSummaryMemories.map((memory) => memory.content),
+      ...budgetedResultItems.map((item) => item.summary),
+      ...workflowTexts,
+      ...attachmentContextTexts,
+    ];
+
     const contextCount = this.budgetService.compute({
-      puebloTexts: [
-        ...puebloProfile.roleDirectives,
-        ...puebloProfile.goalDirectives,
-        ...puebloProfile.constraintDirectives,
-        ...puebloProfile.styleDirectives,
-        ...puebloProfile.memoryPolicy.retentionHints,
-        ...puebloProfile.memoryPolicy.summaryHints,
-        ...puebloProfile.contextPolicy.priorityHints,
-        ...puebloProfile.contextPolicy.truncationHints,
-        puebloProfile.summaryPolicy.lineageHint ?? '',
-        skillContextText ?? '',
-      ],
-      promptTexts: prompts.map((prompt) => prompt.content),
-      memoryTexts: [
-        ...sessionSummaryMemories.map((memory) => memory.content),
-        ...budgetedResultItems.map((item) => item.summary),
-        workflowContext?.planSummary ?? '',
-        workflowContext?.todoSummary ?? '',
-        ...attachmentContextTexts,
-      ],
-      transientTexts: [activeTurnStepContext ?? ''],
+      puebloTexts,
+      promptTexts,
+      memoryTexts,
+      transientTexts,
       recentMessages: promptRecentMessages,
+      sessionMessages,
       pendingUserInput: input.pendingUserInput,
       modelContextWindow: selection.model?.contextWindow ?? null,
       derivedMemoryCount: resolvedPepeResult.sourceMemories.filter(
         (memory) => !memory.tags.includes('task-step-summary') && (memory.derivationType === 'summary' || memory.summaryDepth > 0),
       ).length,
-      contextBreakdown,
+      fixedContextTokens,
     });
     const backgroundSummaryStatus = this.dependencies.resolveBackgroundSummaryStatus?.(session?.id ?? input.activeSessionId ?? null) ?? {
       state: 'idle',
@@ -373,7 +376,8 @@ export class ContextResolver {
       lastSummaryAt: null,
       lastSummaryMemoryId: null,
     };
-    const selectedStepSummaryCount = activeTurnStepSummaries.length;
+    //const selectedStepSummaryCount = activeTurnStepSummaries.length;//0614-zero
+    const selectedStepSummaryCount = 0;
     const compactContextMode = isCompactContextModeEnabled(contextCount);
     const taskContext = createTaskContext({
       config: this.dependencies.config,
@@ -745,12 +749,8 @@ function applyBudgetAwareResultTruncation(args: {
   readonly transientTexts: readonly string[];
   readonly recentMessages: readonly string[];
   readonly pendingUserInput?: string;
-}): TaskContext['resultItems'] {
-  if (!args.enabled || !args.modelContextWindow || args.modelContextWindow <= 0 || args.resultItems.length === 0) {
-    return [...args.resultItems];
-  }
-
-  const memoryById = new Map(args.resultItemMemories.map((memory) => [memory.id, memory]));
+}): { resultItems: TaskContext['resultItems']; fixedContextTokens: number } {
+  // Compute fixed context token overhead once, reused by caller for budget diagnostics
   const fixedTokens = estimateContextBucketTokens([
     ...args.puebloTexts,
     ...args.promptTexts,
@@ -761,10 +761,16 @@ function applyBudgetAwareResultTruncation(args: {
     ...args.recentMessages,
     args.pendingUserInput ?? '',
   ]);
+
+  if (!args.enabled || !args.modelContextWindow || args.modelContextWindow <= 0 || args.resultItems.length === 0) {
+    return { resultItems: [...args.resultItems], fixedContextTokens: fixedTokens };
+  }
+
+  const memoryById = new Map(args.resultItemMemories.map((memory) => [memory.id, memory]));
   const utilizationRatio = estimateResultItemUtilization(args.resultItems, fixedTokens, args.modelContextWindow);
 
   if (utilizationRatio <= BUDGET_TRUNCATION_START_RATIO) {
-    return [...args.resultItems];
+    return { resultItems: [...args.resultItems], fixedContextTokens: fixedTokens };
   }
 
   let retainedItems = args.resultItems.filter((item) => {
@@ -777,21 +783,41 @@ function applyBudgetAwareResultTruncation(args: {
   });
 
   if (retainedItems.length === 0) {
-    return retainedItems;
+    return { resultItems: retainedItems, fixedContextTokens: fixedTokens };
   }
 
-  while (
-    estimateResultItemUtilization(retainedItems, fixedTokens, args.modelContextWindow) > BUDGET_TRUNCATION_TAIL_RATIO
-  ) {
-    const removableIndex = findLastRemovableResultItemIndex(retainedItems, memoryById);
-    if (removableIndex === -1) {
-      break;
+  // Pre-compute per-item token costs for single-pass budget truncation
+  const itemTokenCosts = retainedItems.map((item) => estimateTokens(item.summary));
+  let runningTokens = fixedTokens + itemTokenCosts.reduce((sum, t) => sum + t, 0);
+
+  // If already within budget, return all retained items
+  if (runningTokens / args.modelContextWindow <= BUDGET_TRUNCATION_TAIL_RATIO) {
+    return { resultItems: retainedItems, fixedContextTokens: fixedTokens };
+  }
+
+  // Trim from the end (lowest priority), skipping protected items
+  for (let i = retainedItems.length - 1; i >= 0; i--) {
+    const item = retainedItems[i];
+    const memory = memoryById.get(item.memoryId);
+    if (resolveMemoryPriorityRank(memory) >= PROTECTED_PRIORITY_RANK) {
+      continue;
     }
 
-    retainedItems = retainedItems.filter((_, index) => index !== removableIndex);
+    runningTokens -= itemTokenCosts[i];
+
+    if (runningTokens / args.modelContextWindow <= BUDGET_TRUNCATION_TAIL_RATIO) {
+      return { resultItems: retainedItems.slice(0, i), fixedContextTokens: fixedTokens };
+    }
   }
 
-  return retainedItems;
+  // All non-protected items exhausted — keep only protected items
+  return {
+    resultItems: retainedItems.filter((item) => {
+      const memory = memoryById.get(item.memoryId);
+      return resolveMemoryPriorityRank(memory) >= PROTECTED_PRIORITY_RANK;
+    }),
+    fixedContextTokens: fixedTokens,
+  };
 }
 
 function estimateContextBucketTokens(texts: readonly string[]): number {
@@ -835,61 +861,6 @@ function resolvePromptMergeThreshold(
     default:
       return 0;
   }
-}
-
-function findLastRemovableResultItemIndex(
-  resultItems: readonly TaskContext['resultItems'][number][],
-  memoryById: ReadonlyMap<string, MemoryRecord>,
-): number {
-  for (let index = resultItems.length - 1; index >= 0; index -= 1) {
-    const item = resultItems[index];
-    if (resolveMemoryPriorityRank(memoryById.get(item.memoryId)) >= PROTECTED_PRIORITY_RANK) {
-      continue;
-    }
-
-    return index;
-  }
-
-  return -1;
-}
-
-function buildContextCountBreakdown(args: {
-  readonly puebloTexts: readonly string[];
-  readonly promptTexts: readonly string[];
-  readonly memoryTexts: readonly string[];
-  readonly transientTexts: readonly string[];
-  readonly sessionMessages: readonly SessionMessage[];
-  readonly pendingUserInput?: string;
-}): ContextCountBreakdown {
-  let systemPromptTokens = estimateTokens(args.puebloTexts.filter(Boolean).join('\n'))
-    + estimateTokens(args.promptTexts.filter(Boolean).join('\n'))
-    + estimateTokens(args.memoryTexts.filter(Boolean).join('\n'))
-    + estimateTokens(args.transientTexts.filter(Boolean).join('\n'));
-  let userInputTokens = estimateTokens(args.pendingUserInput ?? '');
-  let toolResultTokens = 0;
-
-  for (const message of args.sessionMessages.slice(-RECENT_CONTEXT_MESSAGE_LIMIT)) {
-    const compactedMessage = compactRecentMessageForPrompt(formatSessionMessageForContext(message));
-    const messageTokens = estimateTokens(compactedMessage);
-
-    if (message.role === 'user') {
-      userInputTokens += messageTokens;
-      continue;
-    }
-
-    if (message.role === 'tool') {
-      toolResultTokens += messageTokens;
-      continue;
-    }
-
-    systemPromptTokens += messageTokens;
-  }
-
-  return {
-    systemPromptTokens,
-    userInputTokens,
-    toolResultTokens,
-  };
 }
 
 function summarizeAttachmentForContext(attachment: InputAttachmentManifest): string {
@@ -976,11 +947,25 @@ function selectRecentContextMessages(
       const content = assistantMsgs
         .map(m => m.content)
         .join('\n')
-        //.slice(0, 10000);
+        //.slice(0, 50000);
       parts.push(`Assistant: ${content}`);
     }
     if (toolMsgs.length > 0) {
-      parts.push(`Tool results: ${toolMsgs.length} message(s)`);
+      // Show actual tool result content, limited to 3 most recent, each truncated to 500 chars
+      const maxToolResults = 3;
+      const maxContentLen = 500;
+      const recentTools = toolMsgs.slice(-maxToolResults);
+      for (const t of recentTools) {
+        const truncated = t.content && t.content.length > maxContentLen
+          ? t.content.slice(0, maxContentLen) + '...'
+          : t.content;
+        // Include tool name if available (Anthropic-style tool_result has no name, so use id)
+        const label = t.toolName || (t as any).name || 'tool';
+        parts.push(`Tool result [${label}]: ${truncated}`);
+      }
+      if (toolMsgs.length > maxToolResults) {
+        parts.push(`... and ${toolMsgs.length - maxToolResults} more tool result(s)`);
+      }
     }
 
     if (turnId === '__unassigned__') {

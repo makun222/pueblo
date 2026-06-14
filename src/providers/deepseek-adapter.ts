@@ -969,6 +969,12 @@ function parseDeepSeekToolCall(
         toolName,
         args: parseProviderToolArgsOrThrow('deepseek', 'undo_edit', parsedArguments),
       };
+    case 'memo_recall':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('deepseek', 'memo_recall', parsedArguments),
+      };
   }
 }
 

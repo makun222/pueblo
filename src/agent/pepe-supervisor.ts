@@ -17,6 +17,7 @@ import type {
   PepeWorkerSessionSnapshot,
 } from './pepe-worker-protocol';
 import { toPepeResultItem } from './pepe-result-ranking';
+import { perfStart, perfEnd } from '../utils/perf-logger.js';
 
 interface PepeSessionMonitor {
   readonly sessionId: string;
@@ -124,33 +125,38 @@ export class PepeSupervisor {
   }
 
   async flushSession(sessionId: string | null | undefined): Promise<void> {
-    if (!this.dependencies.config.enabled || !sessionId) {
-      return;
-    }
-
-    const existingFlush = this.pendingFlushes.get(sessionId);
-    if (existingFlush) {
-      await existingFlush;
-      return;
-    }
-
-    const flushPromise = this.flushSessionInternal(sessionId);
-    this.pendingFlushes.set(sessionId, flushPromise);
-
+    const _perfId = perfStart(`[pepe-supervisor] flushSession sessionId=${sessionId}`);
     try {
-      await flushPromise;
-      const monitor = this.monitors.get(sessionId);
-      if (monitor) {
-        monitor.status = 'running';
+      if (!this.dependencies.config.enabled || !sessionId) {
+        return;
       }
-    } catch (error) {
-      const monitor = this.monitors.get(sessionId);
-      if (monitor) {
-        monitor.status = 'failed';
+
+      const existingFlush = this.pendingFlushes.get(sessionId);
+      if (existingFlush) {
+        await existingFlush;
+        return;
       }
-      throw error;
+
+      const flushPromise = this.flushSessionInternal(sessionId);
+      this.pendingFlushes.set(sessionId, flushPromise);
+
+      try {
+        await flushPromise;
+        const monitor = this.monitors.get(sessionId);
+        if (monitor) {
+          monitor.status = 'running';
+        }
+      } catch (error) {
+        const monitor = this.monitors.get(sessionId);
+        if (monitor) {
+          monitor.status = 'failed';
+        }
+        throw error;
+      } finally {
+        this.pendingFlushes.delete(sessionId);
+      }
     } finally {
-      this.pendingFlushes.delete(sessionId);
+      perfEnd(`[pepe-supervisor] flushSession sessionId=${sessionId}`, _perfId);
     }
   }
 
@@ -159,58 +165,67 @@ export class PepeSupervisor {
       return;
     }
 
-    const monitor = this.monitors.get(sessionId);
-    const session = this.dependencies.sessionService.getSession(sessionId);
-    if (!monitor || !session?.agentInstanceId) {
-      return;
+    const _perfId = perfStart(`[pepe-supervisor] flushSessionInternal`);
+    try {
+      const monitor = this.monitors.get(sessionId);
+      const session = this.dependencies.sessionService.getSession(sessionId);
+      if (!monitor || !session?.agentInstanceId) {
+        return;
+      }
+
+      const agentInstance = this.dependencies.agentInstanceService.getAgentInstance(session.agentInstanceId);
+      if (!agentInstance) {
+        return;
+      }
+
+      let memories = this.dependencies.memoryService.listSessionMemories(sessionId);
+      const _pswId = perfStart(`[pepe-supervisor] processSnapshotInWorker sessionId=${sessionId}`);
+      const workerResult = await this.processSnapshotInWorker({
+        sessionId,
+        selectedMemoryIds: session.selectedMemoryIds,
+        pendingInput: monitor.lastInput ?? undefined,
+        memories,
+      });
+      perfEnd(`[pepe-supervisor] processSnapshotInWorker sessionId=${sessionId}`, _pswId);
+      const appliedSummaries = this.applyWorkerSummaries(sessionId, memories, workerResult);
+      memories = appliedSummaries.memories;
+
+      const refreshedSession = this.dependencies.sessionService.getSession(sessionId);
+      const summaryMemoryIdsByParent = buildSummaryMemoryMap(memories);
+      const resolvedResultItems = resolveWorkerResultItems(workerResult?.resultCandidates ?? [], summaryMemoryIdsByParent);
+      this.dependencies.resultService.cacheSessionResult({
+        sessionId,
+        agentInstanceId: agentInstance.id,
+        selectedMemoryIds: refreshedSession?.selectedMemoryIds ?? session.selectedMemoryIds,
+        pendingUserInput: monitor.lastInput ?? undefined,
+        resultItems: resolvedResultItems,
+      });
+      const resolvedResult = this.dependencies.resultService.resolve({
+        sessionId,
+        agentInstanceId: agentInstance.id,
+        selectedMemoryIds: refreshedSession?.selectedMemoryIds ?? session.selectedMemoryIds,
+        pendingUserInput: monitor.lastInput ?? undefined,
+      });
+
+      const _flushId = perfStart(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`);
+      this.memoryMirror.flush({
+        agentInstanceId: agentInstance.id,
+        workspaceRoot: agentInstance.workspaceRoot,
+        sessionId,
+        memories,
+        resultSet: resolvedResult.resultSet,
+      });
+      perfEnd(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`, _flushId);
+
+      monitor.lastSummaryAt = workerResult?.lastSummaryAt ?? new Date().toISOString();
+      monitor.lastSummaryMemoryId = appliedSummaries.sessionSummaryMemory?.id
+        ?? workerResult?.lastSummaryMemoryId
+        ?? memories.at(-1)?.id
+        ?? resolvedResult.resultItems.at(0)?.memoryId
+        ?? null;
+    } finally {
+      perfEnd(`[pepe-supervisor] flushSessionInternal sessionId=${sessionId}`, _perfId);
     }
-
-    const agentInstance = this.dependencies.agentInstanceService.getAgentInstance(session.agentInstanceId);
-    if (!agentInstance) {
-      return;
-    }
-
-    let memories = this.dependencies.memoryService.listSessionMemories(sessionId);
-    const workerResult = await this.processSnapshotInWorker({
-      sessionId,
-      selectedMemoryIds: session.selectedMemoryIds,
-      pendingInput: monitor.lastInput ?? undefined,
-      memories,
-    });
-    const appliedSummaries = this.applyWorkerSummaries(sessionId, memories, workerResult);
-    memories = appliedSummaries.memories;
-
-    const refreshedSession = this.dependencies.sessionService.getSession(sessionId);
-    const summaryMemoryIdsByParent = buildSummaryMemoryMap(memories);
-    const resolvedResultItems = resolveWorkerResultItems(workerResult?.resultCandidates ?? [], summaryMemoryIdsByParent);
-    this.dependencies.resultService.cacheSessionResult({
-      sessionId,
-      agentInstanceId: agentInstance.id,
-      selectedMemoryIds: refreshedSession?.selectedMemoryIds ?? session.selectedMemoryIds,
-      pendingUserInput: monitor.lastInput ?? undefined,
-      resultItems: resolvedResultItems,
-    });
-    const resolvedResult = this.dependencies.resultService.resolve({
-      sessionId,
-      agentInstanceId: agentInstance.id,
-      selectedMemoryIds: refreshedSession?.selectedMemoryIds ?? session.selectedMemoryIds,
-      pendingUserInput: monitor.lastInput ?? undefined,
-    });
-
-    this.memoryMirror.flush({
-      agentInstanceId: agentInstance.id,
-      workspaceRoot: agentInstance.workspaceRoot,
-      sessionId,
-      memories,
-      resultSet: resolvedResult.resultSet,
-    });
-
-    monitor.lastSummaryAt = workerResult?.lastSummaryAt ?? new Date().toISOString();
-    monitor.lastSummaryMemoryId = appliedSummaries.sessionSummaryMemory?.id
-      ?? workerResult?.lastSummaryMemoryId
-      ?? memories.at(-1)?.id
-      ?? resolvedResult.resultItems.at(0)?.memoryId
-      ?? null;
   }
 
   getBackgroundSummaryStatus(sessionId: string | null | undefined): BackgroundSummaryStatus {

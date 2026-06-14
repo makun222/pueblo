@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write' | 'undo_edit';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write' | 'undo_edit' | 'memo_recall';
 export type ToolExecutionPolicy = 'free' | 'approval-required';
 
 interface ProviderJsonSchemaStringProperty {
@@ -131,6 +131,28 @@ export const providerUndoEditToolInputSchema: ProviderToolInputSchema = {
   additionalProperties: false,
 };
 
+export const providerMemoRecallToolArgsSchema = z.object({
+  keyword: z.string().trim().min(1),
+  turnCount: z.number().int().positive(),
+  matchMode: z.enum(['exact', 'fuzzy', 'semantic']).optional(),
+});
+
+export const providerMemoRecallToolInputSchema: ProviderToolInputSchema = {
+  type: 'object',
+  properties: {
+    keyword: {
+      type: 'string',
+      description: 'The keyword to search for in stored memory records.',
+    },
+    turnCount: {
+      type: 'integer',
+      description: 'Maximum number of recent turns to search (1 turn = 1 user+assistant exchange).',
+    },
+  },
+  required: ['keyword', 'turnCount'],
+  additionalProperties: false,
+};
+
 const providerLegacyWriteToolArgsSchema = z.object({
   path: z.string().trim().min(1),
   content: z.string(),
@@ -149,8 +171,9 @@ export type ProviderReadToolArgs = z.infer<typeof providerReadToolArgsSchema>;
 export type ProviderEditToolArgs = z.infer<typeof providerEditToolArgsSchema>;
 export type ProviderWriteToolArgs = z.infer<typeof providerWriteToolArgsSchema>;
 export type ProviderUndoEditToolArgs = z.infer<typeof providerUndoEditToolArgsSchema>;
+export type ProviderMemoRecallToolArgs = z.infer<typeof providerMemoRecallToolArgsSchema>;
 
-export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderShellExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs | ProviderUndoEditToolArgs;
+export type ProviderToolArgs = ProviderGlobToolArgs | ProviderGrepToolArgs | ProviderExecToolArgs | ProviderShellExecToolArgs | ProviderReadToolArgs | ProviderEditToolArgs | ProviderWriteToolArgs | ProviderUndoEditToolArgs | ProviderMemoRecallToolArgs;
 export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
   TToolName extends 'glob' ? ProviderGlobToolArgs :
     TToolName extends 'grep' ? ProviderGrepToolArgs :
@@ -159,7 +182,8 @@ export type ProviderToolArgsByName<TToolName extends ProviderToolName> =
           TToolName extends 'read' ? ProviderReadToolArgs :
             TToolName extends 'edit' ? ProviderEditToolArgs :
               TToolName extends 'undo_edit' ? ProviderUndoEditToolArgs :
-                ProviderWriteToolArgs;
+                TToolName extends 'memo_recall' ? ProviderMemoRecallToolArgs :
+                  ProviderWriteToolArgs;
 export type ProviderToolCall =
   | {
       readonly toolCallId: string;
@@ -200,6 +224,11 @@ export type ProviderToolCall =
       readonly toolCallId: string;
       readonly toolName: 'undo_edit';
       readonly args: ProviderUndoEditToolArgs;
+    }
+  | {
+      readonly toolCallId: string;
+      readonly toolName: 'memo_recall';
+      readonly args: ProviderMemoRecallToolArgs;
     };
 
 export const providerGlobToolInputSchema: ProviderToolInputSchema = {
@@ -466,6 +495,16 @@ export type ProviderStepResult =
       readonly requestMetrics?: ProviderRequestMetrics;
     }
   | {
+      readonly type: 'tool-call';
+      readonly toolCallId: string;
+      readonly toolName: 'memo_recall';
+      readonly args: ProviderMemoRecallToolArgs;
+      readonly rationale?: string;
+      readonly reasoningContent?: string;
+      readonly usage?: ProviderUsage;
+      readonly requestMetrics?: ProviderRequestMetrics;
+    }
+  | {
       readonly type: 'tool-calls';
       readonly toolCalls: readonly ProviderToolCall[];
       readonly rationale?: string;
@@ -555,6 +594,8 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
       return providerWriteToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'undo_edit':
       return providerUndoEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
+    case 'memo_recall':
+      return providerMemoRecallToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
   }
 }
 
@@ -595,6 +636,7 @@ export function normalizeProviderToolName(value: string | undefined): ProviderTo
     case 'read':
     case 'edit':
     case 'write':
+    case 'memo_recall':
       return normalizedValue;
     default:
       return undefined;
@@ -612,6 +654,7 @@ export function getToolExecutionPolicy(toolName: string): ToolExecutionPolicy {
     case 'glob':
     case 'grep':
     case 'read':
+    case 'memo_recall':
       return 'free';
     default:
       // Unknown tools (e.g. provider-specific extensions) default to

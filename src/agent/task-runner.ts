@@ -20,6 +20,8 @@ import { withSourceAttribution } from '../shared/result';
 import { ToolService } from '../tools/tool-service';
 import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
+import fs from 'node:fs';
+import path from 'node:path';
 import { throwIfTaskCancelled } from '../shared/task-cancellation';
 
 export interface RunAgentTaskInput {
@@ -203,6 +205,24 @@ export class AgentTaskRunner {
         providerRequestMetricsRef,
         signal: input.signal,
       });
+
+      // Dump modelMessageTrace and stepTrace to logs/ for debugging context issues
+      try {
+        const logsDir = path.resolve(process.cwd(), 'logs');
+        fs.mkdirSync(logsDir, { recursive: true });
+        const taskId = task.id;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const dumpPath = path.join(logsDir, `task-${taskId}-${ts}.json`);
+        fs.writeFileSync(
+          dumpPath,
+          JSON.stringify({ taskId, modelMessageTrace, stepTrace }, null, 2),
+          'utf-8',
+        );
+        console.log(`[task-runner] Context trace dumped: ${dumpPath}`);
+      } catch (dumpErr) {
+        console.warn('[task-runner] Failed to dump context trace:', dumpErr);
+      }
+
       const enrichedOutput = this.createCompletedOutputSummary(
         input,
         response,
@@ -302,6 +322,18 @@ export class AgentTaskRunner {
         }
       }
     }
+
+    // Log turn-start context (step 0) for diagnostic analysis
+    args.modelMessageTrace.push({
+      stepNumber: 0,
+      messages: messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        toolCallId: message.toolCallId,
+        toolName: message.toolName,
+        toolArgs: message.toolArgs,
+      })),
+    });
 
     for (let stepIndex = 0; stepIndex < this.maxSteps; stepIndex += 1) {
       throwIfTaskCancelled(args.signal, 'Task cancelled during agent execution.');
@@ -1035,6 +1067,15 @@ export class AgentTaskRunner {
           executionCwd: args.executionCwd,
           signal: args.signal,
         });
+      case 'memo_recall':
+        return this.toolService.execute({
+          taskId: args.taskId,
+          toolName: 'memo_recall',
+          args: args.result.args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
+          signal: args.signal,
+        });
     }
   }
 
@@ -1083,6 +1124,12 @@ export class AgentTaskRunner {
           args: result.args,
         };
       case 'undo_edit':
+        return {
+          toolCallId: result.toolCallId,
+          toolName: result.toolName,
+          args: result.args,
+        };
+      case 'memo_recall':
         return {
           toolCallId: result.toolCallId,
           toolName: result.toolName,
@@ -1337,7 +1384,7 @@ function createToolLoopFingerprint(
       toolName: toolCall.toolName,
       args: toolCall.args,
     })),
-    toolResults: toolExecutions.map((execution) => ({
+    toolResults: toolExecutions.filter((e): e is NonNullable<typeof e> => e != null).map((execution) => ({
       toolName: execution.output.toolName,
       status: execution.output.status,
       output: execution.output.output,
@@ -1581,6 +1628,10 @@ function formatProgressToolCall(toolCall: ProviderToolCall): string {
     case 'undo_edit': {
       const path = 'path' in toolCall.args ? String(toolCall.args.path) : 'undo edit';
       return `${toolCall.toolName} ${truncateProgressMessage(path)}`;
+    }
+    case 'memo_recall': {
+      const keyword = 'keyword' in toolCall.args ? String(toolCall.args.keyword) : 'memo recall';
+      return `${toolCall.toolName} ${truncateProgressMessage(keyword)}`;
     }
   }
 }

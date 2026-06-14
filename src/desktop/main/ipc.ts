@@ -24,6 +24,7 @@ import type {
   DesktopToolApprovalResponse,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
+import { perfEnd, perfStart } from '../../utils/perf-logger';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
 const TALK_STATE_CHANNEL = 'talk-state';
@@ -141,6 +142,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
     readonly blocks: ReturnType<typeof createResultBlocks>;
     readonly runtimeStatus: DesktopRuntimeStatus;
   }> => {
+    const _execT0 = perfStart('ipc.executeInput');
     const result = await routeInput({ input: envelope, runtime, signal });
     const { primaryBlock, supplementalBlocks } = createPhasedResultBlocks(result);
     const blocks = primaryBlock ? [primaryBlock, ...supplementalBlocks] : supplementalBlocks;
@@ -157,10 +159,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
       });
     }
 
+    const runtimeStatus = await resolveRuntimeStatus(cli);
+    perfEnd('ipc.executeInput', _execT0);
     return {
       result,
       blocks: primaryBlock ? [primaryBlock] : [],
-      runtimeStatus: await resolveRuntimeStatus(cli),
+      runtimeStatus,
     };
   };
 
@@ -402,8 +406,11 @@ function removeDesktopIpcHandlers(): void {
 async function resolveRuntimeStatus(
   cli: ReturnType<typeof createCliDependencies>,
 ): Promise<DesktopRuntimeStatus> {
+  const t0 = perfStart('resolveRuntimeStatus');
+  const runtimeStatus = await cli.getRuntimeStatus();
+  perfEnd('resolveRuntimeStatus', t0);
   return {
-    ...(await cli.getRuntimeStatus()),
+    ...runtimeStatus,
     desktopProcessId: process.pid,
   };
 }

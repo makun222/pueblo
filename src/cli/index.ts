@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import fs from 'node:fs';
 import path from 'node:path';
+import { perfEnd, perfLog, perfStart } from '../utils/perf-logger';
 import { Command } from 'commander';
 import { createTaskContext } from '../agent/task-context';
 import { TurnIndexer } from '../agent/turn-indexer';
@@ -34,6 +35,7 @@ import {
   createMemoryWeightCommand,
 } from '../commands/memory-command';
 import { createWorkflowStartCommand } from '../commands/workflow-command';
+import { createLoopCommand } from '../commands/loop-command';
 import {
   createPromptAddCommand,
   createPromptDeleteCommand,
@@ -94,6 +96,8 @@ import { SessionService } from '../sessions/session-service';
 import type { EditReviewHandler } from '../tools/edit-tool';
 import { ToolInvocationRepository } from '../tools/tool-invocation-repository';
 import { ToolService } from '../tools/tool-service';
+import { MemoRecallTool } from '../tools/memo-recall-tool';
+import { MemoryQueries } from '../memory/memory-queries';
 import { PUEBLO_PLAN_WORKFLOW_TYPE } from '../workflow/pueblo-plan/pueblo-plan-workflow';
 import { createInitialPuebloPlanOutline } from '../workflow/pueblo-plan/pueblo-plan-planner';
 import { applyTodoRound, selectNextTodoRound } from '../workflow/pueblo-plan/pueblo-plan-rounds';
@@ -378,6 +382,8 @@ export function createCliDependencies(
   const puebloWorkingDirectory = path.resolve(options.puebloWorkingDirectory ?? process.cwd());
   const promptService = new PromptService(promptRepository);
   const memoryService = new MemoryService(memoryRepository, currentConfig.memory);
+  const memoryQueries = new MemoryQueries(memoryRepository);
+  const memoRecallTool = new MemoRecallTool(memoryQueries);
   let currentWorkspace = initializeWorkspacePath(memoryService, process.cwd());
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
   const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
@@ -387,6 +393,7 @@ export function createCliDependencies(
     cwd: () => currentWorkspace,
     resolveEditReviewHandler: () => fileReviewHandler,
     editShadowRoot: () => path.resolve(currentWorkspace, '.pueblo', 'shadow-edits'),
+    memoRecallTool,
   });
   const workflowRepository = new WorkflowRepository({ connection: database.connection });
   const workflowRegistry = new WorkflowRegistry([
@@ -563,6 +570,7 @@ export function createCliDependencies(
         signal: submitAbortSignal,
       });
 
+      const _postId = perfStart(`[cli:runTask] post-processing sessionId=${sessionId}`);
       const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
       const messageTraceTotals = summarizeModelMessageTrace(outputPayload?.modelMessageTrace);
       lastModelMessageCount = messageTraceTotals.messageCount;
@@ -594,7 +602,12 @@ export function createCliDependencies(
         memoryService,
         sessionService,
       });
-      await pepeSupervisor.flushSession(sessionId);
+      const _flushId = perfStart(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`);
+      pepeSupervisor.flushSession(sessionId).catch(err => {
+          perfLog(`flushSession-error-${sessionId}`, 0, (err as Error).message);
+      });
+      perfEnd(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`, _flushId);
+      perfEnd(`[cli:runTask] post-processing sessionId=${sessionId}`, _postId);
 
       return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
         ...task,
@@ -634,7 +647,9 @@ export function createCliDependencies(
           memoryService,
           sessionService,
         });
-        await pepeSupervisor.flushSession(sessionId);
+        pepeSupervisor.flushSession(sessionId).catch(err => {
+            perfLog(`flushSession-error-${sessionId}`, 0, (err as Error).message);
+        });
         return failureResult('TASK_RUN_FAILED', error.message, [
           'Use /model to review the active provider configuration.',
           'Use /provider-config github-copilot login when GitHub Copilot credentials are missing.',
@@ -1242,6 +1257,11 @@ export function createCliDependencies(
   dispatcher.register('/workflow-continue', (args) => continueActiveWorkflow(args.join(' ').trim() || null, 'Manual workflow continuation'));
   dispatcher.register('/workflow-cancel', (args) => cancelActiveWorkflow(args.join(' ').trim() || null));
   dispatcher.register('/workflow-clear-stale', (args) => clearStaleWorkflowMemories(args.join(' ').trim() || null));
+  dispatcher.register('/loop', createLoopCommand({
+    taskRunner,
+    contextResolver,
+    sessionService,
+  }));
   dispatcher.register('/set', (args) => {
     const [settingName, ...settingArgs] = args;
 
@@ -1343,6 +1363,8 @@ export function createCliDependencies(
       return inputAbortSignalContext.run(signal, () => inputRouter.route(envelope));
     },
     async getRuntimeStatus() {
+      const t0 = perfStart('cli.getRuntimeStatus');
+      const resolveT0 = perfStart('  contextResolver.resolve');
       const runtimeStatus = (await contextResolver.resolve({
         activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
         explicitProviderId: selectionState.providerId,
@@ -1351,6 +1373,7 @@ export function createCliDependencies(
         cwd: currentWorkspace,
         workspace: currentWorkspace,
       })).runtimeStatus;
+      perfEnd('  contextResolver.resolve', resolveT0);
       const currentSession = selectionState.sessionId
         ? sessionService.getSession(selectionState.sessionId)
         : sessionService.getCurrentSession();
@@ -1360,6 +1383,7 @@ export function createCliDependencies(
       const activeWorkflow = currentSession?.id
         ? workflowService.getActiveWorkflowForSession(currentSession.id)
         : null;
+      perfEnd('cli.getRuntimeStatus', t0);
 
       return {
         ...runtimeStatus,

@@ -610,6 +610,12 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
         toolName,
         args: parseProviderToolArgsOrThrow('github-copilot', 'undo_edit', parsedArguments),
       };
+    case 'memo_recall':
+      return {
+        toolCallId,
+        toolName,
+        args: parseProviderToolArgsOrThrow('github-copilot', 'memo_recall', parsedArguments),
+      };
   }
 }
 
