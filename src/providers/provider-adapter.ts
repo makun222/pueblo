@@ -375,6 +375,9 @@ export interface ProviderStepContext {
   readonly availableTools: ProviderToolDefinition[];
   readonly onTextDelta?: (text: string) => void;
   readonly signal?: AbortSignal;
+  /** Unique identifier for the agent job (loop job), used to distinguish
+   *  concurrent agent runs. Falls back to process PID if not provided. */
+  readonly userId?: string;
 }
 
 export interface ProviderPromptUsageDetails {
@@ -517,6 +520,7 @@ export interface ProviderRunRequest {
   readonly modelId: string;
   readonly goal: string;
   readonly inputContextSummary: string;
+  readonly userId?: string;
 }
 
 export interface ProviderRunResult {
@@ -570,6 +574,7 @@ export function createLegacyStepContext(request: ProviderRunRequest): ProviderSt
       },
     ],
     availableTools: [],
+    userId: request.userId,
   };
 }
 

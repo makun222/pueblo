@@ -1,4 +1,4 @@
-import type { CommandResult } from '../../shared/result';
+import type { CommandResult, LoopJobStatus, LoopProgressEvent } from '../../shared/result';
 import type { ProviderRequestMetrics } from '../../providers/provider-adapter';
 import type {
   AgentProfileTemplate,
@@ -167,6 +167,17 @@ export interface DesktopSessionSelectionResponse {
   readonly session: Session | null;
 }
 
+// ---------------------------------------------------------------------------
+// Loop job IPC types (Phase 2+)
+// ---------------------------------------------------------------------------
+
+/** Progress event sent main→renderer after each loop round completes. */
+export interface DesktopLoopJobProgress {
+  readonly jobId: string;
+  readonly event: LoopProgressEvent;
+  readonly status: LoopJobStatus;
+}
+
 export interface DesktopBridge {
   submitInput(envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse>;
   cancelActiveSubmit(): Promise<void>;
@@ -189,4 +200,23 @@ export interface DesktopBridge {
   onTalkState(listener: (state: DesktopTalkState) => void): () => void;
   getSessionSnapshot(): Promise<DesktopWindowSession | null>;
   subscribeSession(listener: (session: DesktopWindowSession) => void): () => void;
+
+  // -------------------------------------------------------------------------
+  // Loop / progress (Phase 2+)
+  // -------------------------------------------------------------------------
+
+  /** Start a new loop job (renderer → main, returns jobId). */
+  'loop:start'(config: {
+    modelId: string;
+    goal: string;
+    inputContextSummary: string;
+    totalRounds: number;
+    userId?: string;
+  }): Promise<{ jobId: string }>;
+
+  /** Cancel a running loop job. */
+  'loop:cancel'(jobId: string): Promise<{ ok: boolean }>;
+
+  /** Listen for per-round progress events (main → renderer). */
+  'loop:job-progress'(listener: (progress: DesktopLoopJobProgress) => void): () => void;
 }

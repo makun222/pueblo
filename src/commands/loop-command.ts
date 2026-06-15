@@ -1,8 +1,8 @@
 import type { CommandHandler } from './dispatcher.js';
 import type { CommandResult } from '../shared/result.js';
-import { successResult, failureResult } from '../shared/result.js';
+import { successResult, failureResult, createOutputBlock } from '../shared/result.js';
 import { LoopRunner } from '../agent/loop-runner.js';
-import type { LoopConfig, RunRoundFn } from '../agent/loop-runner.js';
+import type { LoopConfig, LoopResult, RunRoundFn, OnRoundProgress } from '../agent/loop-runner.js';
 import { AgentTaskRunner } from '../agent/task-runner.js';
 import type { RunAgentTaskInput } from '../agent/task-runner.js';
 import { ContextResolver } from '../agent/context-resolver.js';
@@ -16,6 +16,10 @@ export interface LoopCommandDependencies {
   taskRunner: AgentTaskRunner;
   contextResolver: ContextResolver;
   sessionService: SessionService;
+  /** Publish incremental output blocks during loop execution (Desktop: IPC to Renderer, CLI: stdout). */
+  publishOutput?: (block: ReturnType<typeof createOutputBlock>) => void;
+  /** Lock/unlock the submit button while loop is running (Desktop only). */
+  setInputLocked?: (locked: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------

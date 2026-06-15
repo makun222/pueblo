@@ -174,6 +174,8 @@ export interface CliDependencies {
   readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
   readonly setToolApprovalBatchHandler: (handler: ToolApprovalBatchHandler | null) => void;
   readonly setFileReviewHandler: (handler: EditReviewHandler | null) => void;
+  readonly getTaskRunner: () => AgentTaskRunner;
+  readonly getContextResolver: () => ContextResolver;
   readonly databaseClose: () => void;
 }
 
@@ -1453,6 +1455,12 @@ export function createCliDependencies(
     },
     setFileReviewHandler(handler: EditReviewHandler | null): void {
       fileReviewHandler = handler;
+    },
+    getTaskRunner(): AgentTaskRunner {
+      return taskRunner;
+    },
+    getContextResolver(): ContextResolver {
+      return contextResolver;
     },
     databaseClose(): void {
       pepeSupervisor.stopAll();

@@ -2,18 +2,19 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { createOutputBlock } from '../../shared/result';
 import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 import { setupIpcHandlers } from './ipc';
-import { installDesktopApplicationMenu } from './menu';
-import { createWindow } from './window';
+import { AppWindow } from './app-window';
+import { LoopJobManager } from './loop-job-manager';
 
+let appWindow: AppWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
 let disposeDesktopRuntime: (() => void) | null = null;
 
 function createMainWindow(): void {
   disposeDesktopRuntime?.();
   disposeDesktopRuntime = null;
-  mainWindow = createWindow();
-  installDesktopApplicationMenu(mainWindow);
-  mainWindow.on('closed', () => {
+  appWindow = new AppWindow();
+  mainWindow = appWindow.browserWindow;
+  appWindow.onClosed(() => {
     disposeDesktopRuntime?.();
     disposeDesktopRuntime = null;
     mainWindow = null;
@@ -21,6 +22,37 @@ function createMainWindow(): void {
 
   try {
     disposeDesktopRuntime = setupIpcHandlers(mainWindow);
+
+    // === Phase 2: Loop IPC registration (skeleton) ===
+    const loopJobManager = new LoopJobManager();
+    const monitorWindow = appWindow!.getOrCreateMonitor();
+
+    ipcMain.removeHandler('loop:start');
+    ipcMain.handle('loop:start', async (_event, params) => {
+      const jobId = `job-${Date.now()}`;
+      const onProgress = appWindow!.createLoopProgressSender(jobId);
+      // Phase 3 will replace startJob with the real async loop runner.
+      loopJobManager.startJob(jobId, params, onProgress);
+      monitorWindow.create();
+      return { jobId, status: 'accepted' as const };
+    });
+
+    ipcMain.removeHandler('loop:cancel');
+    ipcMain.handle('loop:cancel', async (_event, params) => {
+      // TODO: Phase 5 — implement cancel logic via loopJobManager
+      return { cancelled: true };
+    });
+
+    ipcMain.removeHandler('loop:list-active');
+    ipcMain.handle('loop:list-active', async () => {
+      return loopJobManager.listJobs();
+    });
+
+    ipcMain.removeHandler('loop:focus-monitor');
+    ipcMain.handle('loop:focus-monitor', async () => {
+      monitorWindow.create();
+      return { focused: true };
+    });
   } catch (error) {
     publishDesktopStartupError(mainWindow, error);
   }

@@ -38,6 +38,9 @@ export interface TaskContext {
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
   readonly uploadedAttachments: InputAttachmentManifest[];
   readonly config: AppConfig;
+  /** Unique identifier for the agent job (loop job).
+   *  Set by LoopJobManager; defaults to process PID for single-run scenarios. */
+  readonly userId: string;
 }
 
 export interface TaskContextInput {
@@ -62,6 +65,8 @@ export interface TaskContextInput {
   readonly backgroundSummaryStatus?: BackgroundSummaryStatus;
   readonly uploadedAttachments?: InputAttachmentManifest[];
   readonly config: AppConfig;
+  /** Unique identifier for the agent job. Defaults to process PID if not provided. */
+  readonly userId?: string;
 }
 
 export function createTaskContext(input: TaskContextInput): TaskContext {
@@ -101,6 +106,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
       lastSummaryMemoryId: null,
     },
     config: input.config,
+    userId: input.userId ?? String(process.pid),
   };
 }
 

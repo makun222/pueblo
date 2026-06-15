@@ -1,3 +1,5 @@
+import type { LoopProgressEvent, OnRoundProgress } from '../shared/result.ts';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -92,7 +94,13 @@ export class LoopRunner {
    * Run the loop: repeatedly invoke `runRound` until a termination condition
    * is met or the loop budget is exhausted.
    */
-  async run(configArg: LoopConfig, runRound: RunRoundFn): Promise<LoopResult> {
+  async run(
+    configArg: LoopConfig,
+    runRound: RunRoundFn,
+    jobId?: string,
+    onProgress?: OnRoundProgress,
+  ): Promise<LoopResult> {
+    const jid = jobId ?? `loop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const config = {
       goal: configArg.goal,
       maxRounds: configArg.maxRounds > 0 ? configArg.maxRounds : DEFAULT_MAX_ROUNDS,
@@ -111,6 +119,14 @@ export class LoopRunner {
       // -- cancellation check -------------------------------------------------
       if (config.signal?.aborted) {
         finalState = 'cancelled';
+        onProgress?.({
+          jobId: jid,
+          round,
+          totalRounds: config.maxRounds,
+          content: '',
+          ok: false,
+          elapsedMs: 0,
+        });
         break;
       }
 
@@ -118,18 +134,33 @@ export class LoopRunner {
       let output: string;
       let tokenUsage: number;
 
+      let roundElapsed = 0;
+
       try {
+        const roundStart = performance.now();
         const roundResult = await runRound(round, config.maxRounds, config.goal, accumulatedContext);
+        roundElapsed = performance.now() - roundStart;
         output = roundResult.output;
         tokenUsage = roundResult.tokenUsage;
       } catch (err) {
         finalState = 'error';
+        const errorMsg = err instanceof Error ? err.message : String(err);
         rounds.push({
           round,
           state: 'error',
-          output: err instanceof Error ? err.message : String(err),
+          output: errorMsg,
           tokenUsage: 0,
         });
+        if (onProgress) {
+          onProgress({
+            jobId: jid,
+            round,
+            totalRounds: config.maxRounds,
+            content: errorMsg,
+            ok: false,
+            elapsedMs: 0,
+          });
+        }
         break;
       }
 
@@ -168,8 +199,20 @@ export class LoopRunner {
         tokenUsage,
       });
 
+      // -- notify progress ----------------------------------------------------
+      if (onProgress) {
+        onProgress({
+          jobId: jid,
+          round,
+          totalRounds: config.maxRounds,
+          content: output,
+          ok: true, // round succeeded (error branches exit earlier)
+          elapsedMs: roundElapsed,
+        });
+      }
+
       // -- accumulate context for next round ----------------------------------
-      accumulatedContext += `\n--- Round ${round} Output ---\n${output}\n`;
+      accumulatedContext += `\n--- Round ${round}Output ---\n${output}\n`;
 
       if (goalMet) {
         finalState = 'goal_met';

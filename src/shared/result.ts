@@ -95,6 +95,77 @@ export interface CommandResult<TData = unknown> {
   readonly suggestions: string[];
 }
 
+// ── Loop progress types (方案 B: background job + monitor window) ──
+
+/** Per-round progress emitted during loop execution. */
+export interface LoopProgressEvent {
+  /** Unique job identifier assigned when the loop starts. */
+  readonly jobId: string;
+  /** 1-based round index. */
+  readonly round: number;
+  /** Total rounds configured for this loop. */
+  readonly totalRounds: number;
+  /** The LLM's final content text for this round. */
+  readonly content: string;
+  /** Round outcome. */
+  readonly ok: boolean;
+  /** Elapsed wall-clock ms for this round. */
+  readonly elapsedMs: number;
+}
+
+/** Lifecycle state of a background loop job. */
+export type LoopJobState = 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** Full snapshot of a loop job, returned by status queries. */
+export interface LoopJobStatus {
+  readonly jobId: string;
+  readonly state: LoopJobState;
+  readonly round: number;
+  readonly totalRounds: number;
+  /** Rounds that have already completed (ordered). */
+  readonly results: LoopProgressEvent[];
+  readonly startedAt: number;
+  readonly error?: string;
+}
+
+/** Callback signature for per-round progress. */
+export type OnRoundProgress = (event: LoopProgressEvent) => void;
+
+/**
+ * Abstract output publisher.
+ * Desktop: publishes output blocks to a target BrowserWindow.
+ * CLI: writes to stdout / terminal.
+ */
+// ── Loop result types (方案 B: structured round result) ──
+
+/** Why a loop round stopped. */
+export type LoopExtraOutputSource = 'continue' | 'limit-reached' | 'error' | 'user-interrupt';
+
+/** Optional user input for the next iteration. */
+export type LoopExtraInput = string | undefined;
+
+/** Result of a single round in the loop. */
+export type LoopResult =
+  | { readonly ok: true; readonly output: string; readonly extra: LoopExtraOutputSource }
+  | { readonly ok: false; readonly error: string };
+
+/** Create a successful LoopResult. */
+export function loopResultOk(extra: LoopExtraOutputSource, output?: string): LoopResult {
+  return { ok: true, output: output ?? '', extra };
+}
+
+/** Create a failed LoopResult. */
+export function loopResultErr(error: string): LoopResult {
+  return { ok: false, error };
+}
+
+export interface OutputPublisher {
+  /** Push a renderer output block to the target consumer. */
+  publishOutput(block: RendererOutputBlock): void;
+  /** Notify the consumer that input should be (un)locked. */
+  setInputLocked?(locked: boolean): void;
+}
+
 export function successResult<TData>(code: string, message: string, data?: TData): CommandResult<TData> {
   return {
     ok: true,

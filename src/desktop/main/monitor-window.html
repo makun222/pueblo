@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pueblo Loop Monitor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      padding: 16px;
+    }
+    h1 { font-size: 18px; margin-bottom: 16px; color: #58a6ff; }
+    .job-list { display: flex; flex-direction: column; gap: 8px; }
+    .job-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .job-card .job-id { font-family: monospace; font-size: 12px; color: #8b949e; }
+    .job-card .job-status { font-size: 14px; margin-top: 4px; }
+    .job-card .job-status.running { color: #3fb950; }
+    .job-card .job-status.completed { color: #58a6ff; }
+    .job-card .job-status.error { color: #f85149; }
+    .job-card .job-progress { font-size: 12px; color: #8b949e; margin-top: 4px; }
+    .empty-state { color: #484f58; font-style: italic; padding: 24px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Loop Monitor</h1>
+  <div id="jobList" class="job-list">
+    <div class="empty-state">No active loop jobs.</div>
+  </div>
+  <script src="./monitor-renderer.js"></script>
+</body>
+</html>

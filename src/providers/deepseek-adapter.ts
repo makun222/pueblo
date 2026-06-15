@@ -621,7 +621,7 @@ function buildDeepSeekRequestPayload(
 ): DeepSeekRequestPayload {
   return {
     model: context.modelId,
-    user_id: String(process.pid),
+    user_id: context.userId ?? String(process.pid),
     stream: streamingEnabled,
     stream_options: streamingEnabled ? { include_usage: true } : undefined,
     messages: promptMessages.map(toDeepSeekMessage),
