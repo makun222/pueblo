@@ -1,4 +1,4 @@
-import type { RendererFileChange } from './schema';
+import type { RendererFileChange, RendererOutputBlock } from './schema';
 import type { ProviderRequestMetrics, ProviderUsage } from '../providers/provider-adapter';
 
 export interface ResultMessage {
@@ -77,7 +77,7 @@ interface WorkflowBlockData {
 }
 
 export interface OutputBlockInput {
-  readonly type: 'command-result' | 'task-result' | 'tool-result' | 'error' | 'system';
+  readonly type: 'command-result' | 'task-result' | 'tool-result' | 'error' | 'system' | 'loop-launch';
   readonly title: string;
   readonly content: string;
   readonly collapsed?: boolean;

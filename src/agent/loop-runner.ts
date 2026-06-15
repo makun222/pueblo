@@ -1,4 +1,5 @@
 import type { LoopProgressEvent, OnRoundProgress } from '../shared/result.ts';
+export type { LoopProgressEvent, OnRoundProgress };
 
 // ---------------------------------------------------------------------------
 // Types

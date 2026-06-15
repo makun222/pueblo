@@ -10,12 +10,15 @@
 import {
 	LoopJobManager as AgentLoopJobManager,
 } from '../../agent/loop-job-manager.js';
+import {
+	LoopRunner,
+} from '../../agent/loop-runner.js';
 import type {
 	RunRoundFn,
 	LoopConfig,
 	LoopProgressEvent,
 } from '../../agent/loop-runner.js';
-import type { LoopJobStatus } from '../../shared/result.js';
+import type { LoopJobStatus, OnRoundProgress } from '../../shared/result.js';
 
 // ---------------------------------------------------------------------------
 // Options
@@ -32,11 +35,12 @@ export interface DesktopLoopJobManagerOptions {
 // Manager
 // ---------------------------------------------------------------------------
 
-export class LoopJobManager {
+export class DesktopLoopJobManager {
 	private readonly agentManager: AgentLoopJobManager;
 
 	constructor(options: DesktopLoopJobManagerOptions) {
 		this.agentManager = new AgentLoopJobManager({
+			loopRunner: new LoopRunner(),
 			runRound: options.runRound,
 			maxConcurrent: options.maxConcurrent ?? 1,
 		});
@@ -54,13 +58,20 @@ export class LoopJobManager {
 	startJob(
 		config: LoopConfig,
 		onProgress?: (event: LoopProgressEvent) => void,
+		_jobId?: string,
 	): { jobId: string } {
-		return this.agentManager.start(config, onProgress);
+		return this.agentManager.start(config, onProgress, _jobId);
 	}
 
 	/** Cancel a running or pending loop job. */
-	cancelJob(jobId: string): void {
-		this.agentManager.cancel(jobId);
+	cancelJob(jobId: string): { ok: boolean } {
+		try {
+			this.agentManager.cancel(jobId);
+			return { ok: true };
+		} catch (e) {
+			console.error(`cancelLoopJob: agent cancel failed:`, e);
+			return { ok: false };
+		}
 	}
 
 	/** Get the status of a single job. */

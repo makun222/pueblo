@@ -3,7 +3,8 @@ import { createOutputBlock } from '../../shared/result';
 import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 import { setupIpcHandlers } from './ipc';
 import { AppWindow } from './app-window';
-import { LoopJobManager } from './loop-job-manager';
+import type { LoopConfig } from '../../agent/loop-runner.js';
+import { DesktopLoopJobManager } from './loop-job-manager';
 
 let appWindow: AppWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -21,26 +22,27 @@ function createMainWindow(): void {
   });
 
   try {
-    disposeDesktopRuntime = setupIpcHandlers(mainWindow);
-
-    // === Phase 2: Loop IPC registration (skeleton) ===
-    const loopJobManager = new LoopJobManager();
+    // === Phase 2: Loop IPC registration ===
+    // Phase 3.1: runRound will be wired to the actual LLM round execution
+    const loopJobManager = new DesktopLoopJobManager({
+      runRound: async () => { throw new Error('runRound not wired'); },
+    });
     const monitorWindow = appWindow!.getOrCreateMonitor();
+
+    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager);
 
     ipcMain.removeHandler('loop:start');
     ipcMain.handle('loop:start', async (_event, params) => {
       const jobId = `job-${Date.now()}`;
+      const config: LoopConfig = {
+        goal: params.goal,
+        maxRounds: params.totalRounds,
+        judge: params.modelId,
+      };
       const onProgress = appWindow!.createLoopProgressSender(jobId);
-      // Phase 3 will replace startJob with the real async loop runner.
-      loopJobManager.startJob(jobId, params, onProgress);
+      loopJobManager.startJob(config, onProgress, jobId);
       monitorWindow.create();
       return { jobId, status: 'accepted' as const };
-    });
-
-    ipcMain.removeHandler('loop:cancel');
-    ipcMain.handle('loop:cancel', async (_event, params) => {
-      // TODO: Phase 5 — implement cancel logic via loopJobManager
-      return { cancelled: true };
     });
 
     ipcMain.removeHandler('loop:list-active');

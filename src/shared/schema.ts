@@ -515,7 +515,7 @@ export const toolInvocationSchema = z.object({
 });
 
 export const desktopWindowStatusSchema = z.enum(['starting', 'ready', 'busy', 'closing', 'closed']);
-export const rendererOutputBlockTypeSchema = z.enum(['command-result', 'task-result', 'tool-result', 'error', 'system']);
+export const rendererOutputBlockTypeSchema = z.enum(['command-result', 'task-result', 'tool-result', 'error', 'system', 'loop-launch']);
 
 export const rendererMessageTraceMessageSchema = z.object({
   role: z.string().min(1),

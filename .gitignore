@@ -30,5 +30,5 @@ logs/
 .pueblo/*.db-shm
 *.bak
 .pueblo/pueblo.db
-agent-*
+
 Skills-*/

@@ -14,15 +14,13 @@ interface JobProgressData {
   error?: string;
 }
 
-declare global {
-  interface Window {
-    monitorAPI: {
-      onJobProgress: (cb: (data: JobProgressData) => void) => () => void;
-      onJobComplete: (cb: (data: { jobId: string }) => void) => () => void;
-      onJobError: (cb: (data: { jobId: string; error: string }) => void) => () => void;
-      getActiveJobs: () => Promise<unknown>;
-    };
-  }
+interface Window {
+  monitorAPI: {
+    onJobProgress: (cb: (data: JobProgressData) => void) => () => void;
+    onJobComplete: (cb: (data: { jobId: string }) => void) => () => void;
+    onJobError: (cb: (data: { jobId: string; error: string }) => void) => () => void;
+    getActiveJobs: () => Promise<unknown>;
+  };
 }
 
 const jobCards = new Map<string, HTMLElement>();

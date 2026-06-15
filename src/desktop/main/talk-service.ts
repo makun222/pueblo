@@ -696,7 +696,23 @@ export class DesktopTalkService {
       return result.message.trim() || null;
     }
 
-    const outputSummary = (result.data as { outputSummary?: string }).outputSummary;
+    const data = result.data as Record<string, unknown>;
+
+    // Loop completed result: extract finalSummary (contains accumulated text from all rounds).
+    if ('finalSummary' in data) {
+      const { finalSummary } = data as { finalSummary?: string };
+      return finalSummary?.trim() || result.message.trim() || null;
+    }
+
+    // Loop started (Desktop async): extract the launch message to forward to peer.
+    if ('jobId' in data && 'config' in data) {
+      const config = (data as { config?: { goal?: string } }).config;
+      const goalText = config?.goal ? `"${config.goal}"` : '';
+      return goalText || result.message.trim() || null;
+    }
+
+    // Task result: extract outputSummary.
+    const outputSummary = (data as { outputSummary?: string }).outputSummary;
     return extractTaskOutputSummaryText(outputSummary)?.trim() || result.message.trim() || null;
   }
 

@@ -86,12 +86,12 @@ export class LoopJobManager {
    * thrown.  Otherwise a jobId is returned immediately and execution
    * proceeds in the background (potentially after queuing).
    */
-  start(config: LoopConfig, onProgress?: OnRoundProgress): { jobId: string } {
+  start(config: LoopConfig, onProgress?: OnRoundProgress, _jobId?: string): { jobId: string } {
     if (config.maxRounds < 1) {
       throw new Error('LoopJobManager.start: maxRounds must be >= 1');
     }
 
-    const jobId = randomUUID();
+    const jobId = _jobId ?? randomUUID();
     const abortController = new AbortController();
 
     // Build the signal-wired config once and store it.
@@ -161,6 +161,22 @@ export class LoopJobManager {
     return result;
   }
 
+  /** Return all jobs in the manager (alias for getActiveJobs). */
+  getAllJobs(): LoopJobStatus[] {
+    return this.getActiveJobs();
+  }
+
+  /** Cancel all running jobs and clear the internal state. */
+  dispose(): void {
+    for (const [jobId, record] of this.jobs) {
+      if (record.state === 'running') {
+        this.cancel(jobId);
+      }
+    }
+    this.jobs.clear();
+    this.queue.length = 0;
+  }
+
   /**
    * Return a promise that resolves when a job reaches a terminal state.
    * Useful for callers that need to await loop completion after start().
@@ -186,7 +202,7 @@ export class LoopJobManager {
   // Internals
   // -----------------------------------------------------------------------
 
-  private activeCount(): number {
+  public activeCount(): number {
     let count = 0;
     for (const [, r] of this.jobs) {
       if (r.state === 'running' && r.runPromise !== null) count++;

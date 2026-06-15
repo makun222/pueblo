@@ -25,6 +25,8 @@ import type {
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
 import { perfEnd, perfStart } from '../../utils/perf-logger';
+import type { DesktopLoopJobManager } from './loop-job-manager.js';
+import type { LoopConfig } from '../../agent/loop-runner.js';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
 const TALK_STATE_CHANNEL = 'talk-state';
@@ -58,7 +60,7 @@ interface PendingFileReview {
   readonly reject: (error: Error) => void;
 }
 
-export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
+export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager): () => void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
   let activeToolApprovalBatch: PendingToolApprovalBatch | null = null;
@@ -345,6 +347,31 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
         };
       }
 
+      // --- /loop command ---
+      if (envelope.inputText.trim().startsWith('/loop')) {
+        const workspaceRoot = (await resolveRuntimeStatus(cli)).workspace ?? process.cwd();
+        const inputText = envelope.inputText.trim();
+        const goal = inputText.slice('/loop'.length).trim() || 'loop execution';
+        const config: LoopConfig = {
+          goal,
+          maxRounds: 5,
+          judge: 'llm',
+        };
+        const { jobId } = loopJobManager.startJob(config);
+        const loopBlock = createOutputBlock({
+          type: 'loop-launch',
+          title: 'Loop Job Started',
+          content: `Loop started with job ID: ${jobId}`,
+          sourceRefs: [],
+        });
+        runtime.publish({ block: loopBlock });
+        return {
+          result: { id: jobId, type: 'loop', kind: 'loop-job-started', sessionId: envelope.sessionId },
+          blocks: [loopBlock],
+          runtimeStatus: await resolveRuntimeStatus(cli),
+        };
+      }
+
       if (talkService && !talkService.canAcceptUserInput()) {
         const result = talkService.createLockedResult();
         const blocks = createResultBlocks(result);
@@ -390,6 +417,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): () => void {
       controller.abort(createTaskCancellationError('Task cancelled by user.'));
     }
     activeSubmitControllers.clear();
+  });
+
+  ipcMain.handle('loop:start', async (_event, config) => {
+    return loopJobManager.startJob(config);
+  });
+
+  ipcMain.handle('loop:cancel', async (_event, jobId: string) => {
+    return loopJobManager.cancelJob(jobId);
   });
 
   mainWindow.once('closed', cleanup);
