@@ -66,8 +66,8 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
 
     // -- build the runRound closure (Q1: outer wrapper) ----------------------
     // Build a RunRoundFn that delegates to AgentTaskRunner.
-    // Signature: (round, totalRounds, goal, accumulatedContext) => Promise<{output; tokenUsage}>
-    const runRound: RunRoundFn = async (_round, _totalRounds, goal, accumulatedContext) => {
+    // Signature: (config, prevResult, signal) => Promise<{output; tokenUsage}>
+    const runRound: RunRoundFn = async (config, _prevResult, _signal) => {
       // Resolve context to get provider/model selection
       const resolved = await contextResolver.resolve({ activeSessionId: session.id });
 
@@ -81,11 +81,11 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
       // Build the task input for this round.
       // Prepend round number so the LLM sees its progress within the loop.
       const taskInput: RunAgentTaskInput = {
-        goal: `[Round ${_round + 1}] ${goal}`,
+        goal: `[Round ${config.round + 1}] ${config.goal}`,
         sessionId: session.id,
         providerId,
         modelId,
-        inputContextSummary: accumulatedContext,
+        inputContextSummary: config.accumulatedContext,
         taskContext: resolved.taskContext,
         prompts: resolved.taskContext.prompts,
       };
@@ -94,8 +94,7 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
       const output = task.outputSummary ?? '';
 
       // Token usage is accumulated by the LoopRunner.
-      // We return 0 here because AgentTask does not directly expose per-request
-      // token metrics; a future enhancement can wire reportRequestMetrics.
+      // We return 0 here because AgentTask does not directly expose per-request metrics.
       return { output, tokenUsage: 0 };
     };
 

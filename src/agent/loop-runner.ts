@@ -44,12 +44,23 @@ export interface LoopResult {
 }
 
 /** Signature of the function that runs a single agent-loop round. */
+export interface RunRoundConfig {
+  round: number;
+  totalRounds: number;
+  goal: string;
+  accumulatedContext: string;
+}
+
+export interface RunRoundResult {
+  output: string;
+  tokenUsage: number;
+}
+
 export type RunRoundFn = (
-  round: number,
-  totalRounds: number,
-  goal: string,
-  accumulatedContext: string,
-) => Promise<{ output: string; tokenUsage: number }>;
+  config: RunRoundConfig,
+  prevResult: RunRoundResult | null,
+  signal: AbortSignal,
+) => Promise<RunRoundResult>;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -114,6 +125,7 @@ export class LoopRunner {
     const rounds: LoopRoundResult[] = [];
     let totalTokens = 0;
     let accumulatedContext = '';
+    let lastResult: RunRoundResult | null = null;
     let finalState: LoopTerminationState = 'max_rounds';
 
     for (let round = 1; round <= config.maxRounds; round++) {
@@ -139,10 +151,17 @@ export class LoopRunner {
 
       try {
         const roundStart = performance.now();
-        const roundResult = await runRound(round, config.maxRounds, config.goal, accumulatedContext);
+        const roundConfig: RunRoundConfig = {
+          round,
+          totalRounds: config.maxRounds,
+          goal: config.goal,
+          accumulatedContext,
+        };
+        const roundResult = await runRound(roundConfig, lastResult, config.signal ?? new AbortController().signal);
         roundElapsed = performance.now() - roundStart;
         output = roundResult.output;
         tokenUsage = roundResult.tokenUsage;
+        lastResult = roundResult;
       } catch (err) {
         finalState = 'error';
         const errorMsg = err instanceof Error ? err.message : String(err);

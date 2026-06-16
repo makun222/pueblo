@@ -927,45 +927,41 @@ function selectRecentContextMessages(
 
   // Pick the last `turnLimit` turns ordered by first appearance.
   const orderedTurns = [...turnMap.entries()]
-    .sort((a, b) => a[1].firstSeenIndex - b[1].firstSeenIndex)
-    .slice(-turnLimit);
+    .sort((a, b) => b[1].firstSeenIndex - a[1].firstSeenIndex)
+    .slice(0, turnLimit);
 
   return orderedTurns.flatMap(([turnId, { messages }]) => {
-    const userMsgs = messages.filter(m => m.role === 'user');
-    const assistantMsgs = messages.filter(m => m.role === 'assistant');
-    const toolMsgs = messages.filter(m => m.role === 'tool');
-
     const parts: string[] = [];
-    if (userMsgs.length > 0) {
-      const content = userMsgs
-        .map(m => m.content)
-        .join('\n')
-        //.slice(0, 1000);
-      parts.push(`User: ${content}`);
-    }
-    if (assistantMsgs.length > 0) {
-      const content = assistantMsgs
-        .map(m => m.content)
-        .join('\n')
-        //.slice(0, 50000);
-      parts.push(`Assistant: ${content}`);
-    }
-    if (toolMsgs.length > 0) {
-      // Show actual tool result content, limited to 3 most recent, each truncated to 500 chars
-      const maxToolResults = 3;
-      const maxContentLen = 500;
-      const recentTools = toolMsgs.slice(-maxToolResults);
-      for (const t of recentTools) {
-        const truncated = t.content && t.content.length > maxContentLen
-          ? t.content.slice(0, maxContentLen) + '...'
-          : t.content;
-        // Include tool name if available (Anthropic-style tool_result has no name, so use id)
-        const label = t.toolName || (t as any).name || 'tool';
-        parts.push(`Tool result [${label}]: ${truncated}`);
+    const maxToolResults = 3;
+    const maxContentLen = 500;
+    let toolCount = 0;
+    let skippedToolCount = 0;
+
+    for (const m of messages) {
+      switch (m.role) {
+        case 'user':
+          parts.push(`User: ${m.content}`);
+          break;
+        case 'assistant':
+          parts.push(`Assistant: ${m.content}`);
+          break;
+        case 'tool': {
+          toolCount++;
+          if (toolCount <= maxToolResults) {
+            const truncated = m.content && m.content.length > maxContentLen
+              ? m.content.slice(0, maxContentLen) + '...'
+              : m.content;
+            const label = m.toolName || (m as any).name || 'tool';
+            parts.push(`Tool result [${label}]: ${truncated}`);
+          } else {
+            skippedToolCount++;
+          }
+          break;
+        }
       }
-      if (toolMsgs.length > maxToolResults) {
-        parts.push(`... and ${toolMsgs.length - maxToolResults} more tool result(s)`);
-      }
+    }
+    if (skippedToolCount > 0) {
+      parts.push(`... and ${skippedToolCount} more tool result(s)`);
     }
 
     if (turnId === '__unassigned__') {

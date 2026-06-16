@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { dialog, ipcMain, BrowserWindow } from 'electron';
 import { createRuntimeCoordinator, RuntimeMessage } from '../../app/runtime';
-import type { ToolApprovalDecision, ToolApprovalRequest } from '../../agent/task-runner';
+import type { ToolApprovalDecision, ToolApprovalRequest, RunAgentTaskInput } from '../../agent/task-runner';
+import type { RunRoundFn } from '../../agent/loop-runner';
 import { createCliDependencies } from '../../cli/index';
 import { tokenizeCommandInput } from '../../commands/dispatcher';
 import { routeInput } from '../../commands/input-router';
@@ -351,12 +352,39 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
       if (envelope.inputText.trim().startsWith('/loop')) {
         const workspaceRoot = (await resolveRuntimeStatus(cli)).workspace ?? process.cwd();
         const inputText = envelope.inputText.trim();
-        const goal = inputText.slice('/loop'.length).trim() || 'loop execution';
+
+        // Parse --max-rounds from input, default to 5
+        const maxRoundsMatch = inputText.match(/--max-rounds[=](\d+)/);
+        const maxRounds = maxRoundsMatch ? parseInt(maxRoundsMatch[1], 10) : 5;
+        const goal = inputText.replace(/--max-rounds[=]\d+/, '').slice('/loop'.length).trim() || 'loop execution';
+
         const config: LoopConfig = {
           goal,
-          maxRounds: 5,
+          maxRounds,
           judge: 'llm',
         };
+
+        const runRound: RunRoundFn = async (config, prevResult, signal) => {
+          const resolved = await cli.getContextResolver().resolve({
+            workspace: workspaceRoot,
+          });
+          const taskInput: RunAgentTaskInput = {
+            goal: config.goal,
+            sessionId: null,
+            providerId: resolved.taskContext.providerId ?? 'openai',
+            modelId: resolved.taskContext.selectedModelId ?? 'gpt-4',
+            inputContextSummary: config.accumulatedContext?.length > 0 ? config.accumulatedContext : '...',
+            taskContext: resolved.taskContext,
+            prompts: resolved.taskContext.prompts,
+            signal,
+          };
+          const taskRunner = cli.getTaskRunner();
+          const task = await taskRunner.run(taskInput);
+          const output = task.outputSummary ?? '';
+          return { output, tokenUsage: 0 };
+        };
+        loopJobManager.setRunRound(runRound);
+
         const { jobId } = loopJobManager.startJob(config);
         const loopBlock = createOutputBlock({
           type: 'loop-launch',

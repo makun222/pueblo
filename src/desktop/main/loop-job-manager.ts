@@ -25,8 +25,8 @@ import type { LoopJobStatus, OnRoundProgress } from '../../shared/result.js';
 // ---------------------------------------------------------------------------
 
 export interface DesktopLoopJobManagerOptions {
-	/** Round execution function (delegates to agent) */
-	runRound: RunRoundFn;
+	/** Round execution function (delegates to agent) — optional, can be wired later via setRunRound() */
+	runRound?: RunRoundFn;
 	/** Maximum concurrent loop jobs (default 1) */
 	maxConcurrent?: number;
 }
@@ -37,13 +37,29 @@ export interface DesktopLoopJobManagerOptions {
 
 export class DesktopLoopJobManager {
 	private readonly agentManager: AgentLoopJobManager;
+	private _runRound: RunRoundFn = async () => {
+		throw new Error('runRound not wired — call setRunRound() first');
+	};
 
-	constructor(options: DesktopLoopJobManagerOptions) {
+	constructor(options?: DesktopLoopJobManagerOptions) {
+		if (options?.runRound) {
+			this._runRound = options.runRound;
+		}
 		this.agentManager = new AgentLoopJobManager({
 			loopRunner: new LoopRunner(),
-			runRound: options.runRound,
-			maxConcurrent: options.maxConcurrent ?? 1,
+			runRound: (config, prevResult, signal) =>
+				this._runRound(config, prevResult, signal),
+			maxConcurrent: options?.maxConcurrent ?? 1,
 		});
+	}
+
+	/**
+	 * Wire the round execution function after construction.
+	 * Used when the real `runRound` depends on objects (e.g. CLI taskRunner)
+	 * created after this manager is instantiated.
+	 */
+	setRunRound(fn: RunRoundFn): void {
+		this._runRound = fn;
 	}
 
 	// -----------------------------------------------------------------------

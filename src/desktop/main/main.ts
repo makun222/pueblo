@@ -24,9 +24,7 @@ function createMainWindow(): void {
   try {
     // === Phase 2: Loop IPC registration ===
     // Phase 3.1: runRound will be wired to the actual LLM round execution
-    const loopJobManager = new DesktopLoopJobManager({
-      runRound: async () => { throw new Error('runRound not wired'); },
-    });
+    const loopJobManager = new DesktopLoopJobManager();
     const monitorWindow = appWindow!.getOrCreateMonitor();
 
     disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager);
