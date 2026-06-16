@@ -39,7 +39,7 @@ export class MonitorWindow {
       },
     });
 
-    const htmlPath = path.join(__dirname, 'monitor-window.html');
+    const htmlPath = path.join(__dirname, '..', '..', 'desktop', 'renderer', 'monitor', 'monitor-window.html');
     this.window.loadFile(htmlPath);
 
     this.window.once('ready-to-show', () => {
