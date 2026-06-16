@@ -27,7 +27,7 @@ function createMainWindow(): void {
     const loopJobManager = new DesktopLoopJobManager();
     const monitorWindow = appWindow!.getOrCreateMonitor();
 
-    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager);
+    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager, appWindow);
 
     ipcMain.removeHandler('loop:start');
     ipcMain.handle('loop:start', async (_event, params) => {

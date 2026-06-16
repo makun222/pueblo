@@ -27,6 +27,7 @@ import type {
 } from '../shared/ipc-contract';
 import { perfEnd, perfStart } from '../../utils/perf-logger';
 import type { DesktopLoopJobManager } from './loop-job-manager.js';
+import { AppWindow } from './app-window.js';
 import type { LoopConfig } from '../../agent/loop-runner.js';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
@@ -61,7 +62,7 @@ interface PendingFileReview {
   readonly reject: (error: Error) => void;
 }
 
-export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager): () => void {
+export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager, appWindow?: AppWindow): () => void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
   let activeToolApprovalBatch: PendingToolApprovalBatch | null = null;
@@ -371,8 +372,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
           const taskInput: RunAgentTaskInput = {
             goal: config.goal,
             sessionId: null,
-            providerId: resolved.taskContext.providerId ?? 'openai',
-            modelId: resolved.taskContext.selectedModelId ?? 'gpt-4',
+            providerId: resolved.taskContext.providerId ?? 'deepseek',
+            modelId: resolved.taskContext.selectedModelId ?? 'deepseek-v4-pro',
             inputContextSummary: config.accumulatedContext?.length > 0 ? config.accumulatedContext : '...',
             taskContext: resolved.taskContext,
             prompts: resolved.taskContext.prompts,
@@ -385,7 +386,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
         };
         loopJobManager.setRunRound(runRound);
 
-        const { jobId } = loopJobManager.startJob(config);
+        const jobId = `job-${Date.now()}`;
+        if (appWindow) {
+          const monitorWindow = appWindow.getOrCreateMonitor();
+          monitorWindow.create();
+        }
+        const onProgress = appWindow ? appWindow.createLoopProgressSender(jobId) : undefined;
+        loopJobManager.startJob(config, onProgress, jobId);
         const loopBlock = createOutputBlock({
           type: 'loop-launch',
           title: 'Loop Job Started',

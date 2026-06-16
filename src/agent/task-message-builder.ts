@@ -230,6 +230,19 @@ function buildPuebloSystemMessage(taskContext: TaskContext): string | null {
   appendSection(sections, 'Context priority hints', taskContext.puebloProfile.contextPolicy.priorityHints);
   appendSection(sections, 'Context truncation hints', taskContext.puebloProfile.contextPolicy.truncationHints);
 
+  // Inject workflow-aware hints when an active plan is being tracked
+  const wf = taskContext.workflowContext;
+  if (wf && wf.planSummary) {
+    const roundNote = wf.activeRoundNumber ? ` Current round: ${wf.activeRoundNumber}.` : '';
+    sections.push(
+      'Workflow-aware hints:',
+      `- Active plan: ${wf.planSummary}.${roundNote}`,
+      `- Priority: focus on the active round's todo items and reject unrelated changes.`,
+      `- Retention: retain implementation decisions relevant to the current plan phase.`,
+      `- Truncation: drop content unrelated to the active plan round when summarizing.`,
+    );
+  }
+
   if (taskContext.puebloProfile.summaryPolicy.lineageHint) {
     sections.push(`Summary lineage hint:\n- ${taskContext.puebloProfile.summaryPolicy.lineageHint}`);
   }
