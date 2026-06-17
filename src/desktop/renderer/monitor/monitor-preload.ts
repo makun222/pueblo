@@ -44,4 +44,9 @@ contextBridge.exposeInMainWorld('monitorAPI', {
   getActiveJobs: (): Promise<unknown> => {
     return ipcRenderer.invoke('loop:list-active');
   },
+
+  /** Cancel a loop job by its ID. */
+  cancelJob: (jobId: string): Promise<unknown> => {
+    return ipcRenderer.invoke('loop:cancel', jobId);
+  },
 });

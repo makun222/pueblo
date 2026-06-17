@@ -101,16 +101,24 @@ export interface CommandResult<TData = unknown> {
 export interface LoopProgressEvent {
   /** Unique job identifier assigned when the loop starts. */
   readonly jobId: string;
+  /** Lifecycle status of this event. */
+  readonly status: 'running' | 'round-completed' | 'completed' | 'error';
   /** 1-based round index. */
   readonly round: number;
   /** Total rounds configured for this loop. */
   readonly totalRounds: number;
-  /** The LLM's final content text for this round. */
-  readonly content: string;
-  /** Round outcome. */
-  readonly ok: boolean;
-  /** Elapsed wall-clock ms for this round. */
-  readonly elapsedMs: number;
+  /** Human-readable status message. */
+  readonly message?: string;
+  /** The LLM's final content text for this round (only for 'round-completed'). */
+  readonly content?: string;
+  /** Consolidated final output text when the loop completes. */
+  readonly finalOutput?: string;
+  /** Round outcome (only for 'round-completed'). */
+  readonly ok?: boolean;
+  /** Elapsed wall-clock ms for this round (only for 'round-completed'). */
+  readonly elapsedMs?: number;
+  /** Error details (only for 'error'). */
+  readonly error?: string;
 }
 
 /** Lifecycle state of a background loop job. */

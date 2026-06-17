@@ -393,16 +393,9 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
         }
         const onProgress = appWindow ? appWindow.createLoopProgressSender(jobId) : undefined;
         loopJobManager.startJob(config, onProgress, jobId);
-        const loopBlock = createOutputBlock({
-          type: 'loop-launch',
-          title: 'Loop Job Started',
-          content: `Loop started with job ID: ${jobId}`,
-          sourceRefs: [],
-        });
-        runtime.publish({ block: loopBlock });
         return {
           result: { id: jobId, type: 'loop', kind: 'loop-job-started', sessionId: envelope.sessionId },
-          blocks: [loopBlock],
+          blocks: [],
           runtimeStatus: await resolveRuntimeStatus(cli),
         };
       }

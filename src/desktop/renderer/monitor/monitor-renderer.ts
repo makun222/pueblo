@@ -12,6 +12,8 @@ interface JobProgressData {
   totalRounds?: number;
   message?: string;
   error?: string;
+  content?: string;
+  finalOutput?: string;
 }
 
 interface Window {
@@ -20,10 +22,12 @@ interface Window {
     onJobComplete: (cb: (data: { jobId: string }) => void) => () => void;
     onJobError: (cb: (data: { jobId: string; error: string }) => void) => () => void;
     getActiveJobs: () => Promise<unknown>;
+    cancelJob: (jobId: string) => Promise<unknown>;
   };
 }
 
 const jobCards = new Map<string, HTMLElement>();
+const outputsByJob = new Map<string, string[]>();
 
 function getJobListElement(): HTMLElement {
   const el = document.getElementById('jobList');
@@ -48,7 +52,16 @@ function renderJobCard(data: JobProgressData): void {
       <div class="job-id">${escapeHtml(data.jobId)}</div>
       <div class="job-status"></div>
       <div class="job-progress"></div>
+      <div class="job-output"></div>
+      <button class="cancel-btn" data-job-id="${escapeHtml(data.jobId)}">Cancel</button>
     `;
+    const cancelBtn = card.querySelector('.cancel-btn') as HTMLButtonElement;
+    cancelBtn.addEventListener('click', () => {
+      cancelBtn.disabled = true;
+      window.monitorAPI.cancelJob(data.jobId).catch(() => {
+        cancelBtn.disabled = false;
+      });
+    });
     jobList.appendChild(card);
     jobCards.set(data.jobId, card);
   }
@@ -65,6 +78,25 @@ function renderJobCard(data: JobProgressData): void {
   } else if (data.message) {
     progressEl.textContent = data.message;
   }
+
+  // Render accumulated output content
+  const outputEl = card.querySelector('.job-output') as HTMLElement;
+  if (outputEl) {
+    if (data.status === 'completed' && data.finalOutput) {
+      outputEl.innerHTML = `<div class="final-output">${escapeHtml(data.finalOutput)}</div>`;
+      outputEl.style.display = 'block';
+    } else {
+      const outputs = outputsByJob.get(data.jobId);
+      if (outputs && outputs.length > 0) {
+        outputEl.innerHTML = outputs
+          .map((o, i) => `<div class="round-output">Round ${i + 1}: ${escapeHtml(o)}</div>`)
+          .join('');
+        outputEl.style.display = 'block';
+      } else {
+        outputEl.style.display = 'none';
+      }
+    }
+  }
 }
 
 function escapeHtml(text: string): string {
@@ -75,8 +107,25 @@ function escapeHtml(text: string): string {
 
 // Register IPC listeners from main process
 window.monitorAPI.onJobProgress((data: JobProgressData) => {
+  // Accumulate per-round content for output display
+  if (data.content) {
+    let outputs = outputsByJob.get(data.jobId);
+    if (!outputs) {
+      outputs = [];
+      outputsByJob.set(data.jobId, outputs);
+    }
+    outputs.push(data.content);
+  }
   renderJobCard(data);
 });
+
+function disableCancelButton(jobId: string): void {
+  const card = jobCards.get(jobId);
+  if (card) {
+    const btn = card.querySelector('.cancel-btn') as HTMLButtonElement | null;
+    if (btn) btn.disabled = true;
+  }
+}
 
 window.monitorAPI.onJobComplete((data: { jobId: string }) => {
   const card = jobCards.get(data.jobId);
@@ -84,6 +133,7 @@ window.monitorAPI.onJobComplete((data: { jobId: string }) => {
     const statusEl = card.querySelector('.job-status')!;
     statusEl.textContent = '✓ Completed';
     statusEl.className = 'job-status completed';
+    disableCancelButton(data.jobId);
   }
 });
 
@@ -95,5 +145,6 @@ window.monitorAPI.onJobError((data: { jobId: string; error: string }) => {
     statusEl.className = 'job-status error';
     const progressEl = card.querySelector('.job-progress')! as HTMLElement;
     progressEl.textContent = data.error;
+    disableCancelButton(data.jobId);
   }
 });

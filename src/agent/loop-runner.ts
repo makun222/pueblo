@@ -121,6 +121,17 @@ export class LoopRunner {
       flag: configArg.flag || DEFAULT_FLAG,
       signal: configArg.signal,
     };
+    const signal = config.signal ?? new AbortController().signal;
+
+    // -- structured logging helper ------------------------------------------------
+    const logRound = (phase: 'start' | 'end', data: {
+      round: number; totalRounds: number; elapsed?: number;
+      ok?: boolean; tokens?: number; outputLen?: number;
+    }) => {
+      console.log(JSON.stringify({
+        event: 'loop_round', phase, timestamp: new Date().toISOString(), ...data,
+      }));
+    };
 
     const rounds: LoopRoundResult[] = [];
     let totalTokens = 0;
@@ -130,10 +141,11 @@ export class LoopRunner {
 
     for (let round = 1; round <= config.maxRounds; round++) {
       // -- cancellation check -------------------------------------------------
-      if (config.signal?.aborted) {
+      if (signal.aborted) {
         finalState = 'cancelled';
         onProgress?.({
           jobId: jid,
+          status: 'completed',
           round,
           totalRounds: config.maxRounds,
           content: '',
@@ -149,6 +161,18 @@ export class LoopRunner {
 
       let roundElapsed = 0;
 
+      // -- emit running event --------------------------------------------------
+      onProgress?.({
+        jobId: jid,
+        status: 'running',
+        round,
+        totalRounds: config.maxRounds,
+        message: `Starting round ${round}/${config.maxRounds}`,
+        ok: true,
+        elapsedMs: 0,
+      });
+      logRound('start', { round, totalRounds: config.maxRounds });
+
       try {
         const roundStart = performance.now();
         const roundConfig: RunRoundConfig = {
@@ -157,7 +181,7 @@ export class LoopRunner {
           goal: config.goal,
           accumulatedContext,
         };
-        const roundResult = await runRound(roundConfig, lastResult, config.signal ?? new AbortController().signal);
+        const roundResult = await runRound(roundConfig, lastResult, signal);
         roundElapsed = performance.now() - roundStart;
         output = roundResult.output;
         tokenUsage = roundResult.tokenUsage;
@@ -174,6 +198,7 @@ export class LoopRunner {
         if (onProgress) {
           onProgress({
             jobId: jid,
+            status: 'error',
             round,
             totalRounds: config.maxRounds,
             content: errorMsg,
@@ -223,6 +248,7 @@ export class LoopRunner {
       if (onProgress) {
         onProgress({
           jobId: jid,
+          status: 'round-completed',
           round,
           totalRounds: config.maxRounds,
           content: output,
@@ -232,7 +258,13 @@ export class LoopRunner {
       }
 
       // -- accumulate context for next round ----------------------------------
-      accumulatedContext += `\n--- Round ${round}Output ---\n${output}\n`;
+      const roundLabel = `[Round ${round}]`;
+      accumulatedContext += `\n${roundLabel}\n${output}\n`;
+
+      logRound('end', {
+        round, totalRounds: config.maxRounds, elapsed: roundElapsed,
+        ok: true, tokens: totalTokens, outputLen: output.length,
+      });
 
       if (goalMet) {
         finalState = 'goal_met';
@@ -252,6 +284,16 @@ export class LoopRunner {
     }
 
     const finalSummary = this.buildFinalSummary(finalState, rounds, totalTokens);
+
+    // Emit completed event so the progress sender can forward finalOutput to the monitor
+    onProgress?.({
+      jobId: jid,
+      status: 'completed' as const,
+      round: rounds.length,
+      totalRounds: config.maxRounds,
+      message: 'Loop completed',
+      finalOutput: finalSummary,
+    });
 
     return {
       state: finalState,
