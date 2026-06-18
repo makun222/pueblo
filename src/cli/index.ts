@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 
 import type { AppConfig } from '../shared/config';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -125,7 +125,7 @@ async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: stri
   const program = new Command();
   program
     .name('pueblo')
-    .description('Pueblo CLI foundation')
+    .description('Pueblo CLI foundation').allowUnknownOption(true)
     .argument('[commandInput]', 'slash command to execute')
     .action(async (commandInput?: string) => {
       let resolvedConfig = config;
