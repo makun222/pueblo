@@ -17,6 +17,7 @@ export interface LoopCommandDependencies {
   taskRunner: AgentTaskRunner;
   contextResolver: ContextResolver;
   sessionService: SessionService;
+  cwd: string;
   /** Publish incremental output blocks during loop execution (Desktop: IPC to Renderer, CLI: stdout). */
   publishOutput?: (block: ReturnType<typeof createOutputBlock>) => void;
   /** Lock/unlock the submit button while loop is running (Desktop only). */
@@ -28,7 +29,7 @@ export interface LoopCommandDependencies {
 // ---------------------------------------------------------------------------
 
 export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler {
-  const { taskRunner, contextResolver, sessionService } = deps;
+  const { taskRunner, contextResolver, sessionService, cwd } = deps;
 
   return async (args: string[]): Promise<CommandResult<unknown>> => {
     // -- parse arguments -----------------------------------------------------
@@ -69,7 +70,7 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
     // Signature: (config, prevResult, signal) => Promise<{output; tokenUsage}>
     const runRound: RunRoundFn = async (config, _prevResult, _signal) => {
       // Resolve context to get provider/model selection
-      const resolved = await contextResolver.resolve({ activeSessionId: session.id });
+      const resolved = await contextResolver.resolve({ activeSessionId: session.id, cwd, workspace: cwd });
 
       const providerId = resolved.taskContext.providerId;
       const modelId = resolved.taskContext.selectedModelId;

@@ -122,7 +122,7 @@ export interface LoopProgressEvent {
 }
 
 /** Lifecycle state of a background loop job. */
-export type LoopJobState = 'running' | 'completed' | 'failed' | 'cancelled';
+export type LoopJobState = 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 /** Full snapshot of a loop job, returned by status queries. */
 export interface LoopJobStatus {

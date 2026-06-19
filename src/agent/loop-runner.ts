@@ -101,6 +101,80 @@ function buildJudgePrompt(goal: string, lastOutput: string): string {
 // LoopRunner
 // ---------------------------------------------------------------------------
 
+/**
+ * Controls pause/resume for a single loop job.
+ * Pause is per-job: after the current round finishes, the runner blocks
+ * until resume() is called, the abort signal fires, or a 30-minute timeout elapses.
+ */
+export class PauseController {
+  private _paused = false;
+  private _resolve: (() => void) | null = null;
+  private _timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  private readonly _timeoutMs = 30 * 60 * 1000; // 30 minutes
+
+  /** Request pause after current round. */
+  pause(): void {
+    this._paused = true;
+    this._startTimeout();
+  }
+
+  /** Release the pause and continue execution. */
+  resume(): void {
+    this._clearTimeout();
+    this._paused = false;
+    if (this._resolve) {
+      this._resolve();
+      this._resolve = null;
+    }
+  }
+
+  /** Whether pause has been requested (may not yet be blocking). */
+  isPaused(): boolean {
+    return this._paused;
+  }
+
+  /**
+   * Block until resumed, aborted, or timeout.
+   * @returns 'resumed' | 'cancelled' | 'timeout'
+   */
+  async waitIfPaused(signal?: AbortSignal): Promise<'resumed' | 'cancelled' | 'timeout'> {
+    if (!this._paused) {
+      return 'resumed';
+    }
+    try {
+      return await new Promise<'resumed' | 'cancelled' | 'timeout'>((resolve) => {
+        this._resolve = () => resolve('resumed');
+        if (signal) {
+          signal.addEventListener('abort', () => resolve('cancelled'), { once: true });
+        }
+      });
+    } finally {
+      this._clearTimeout();
+      this._paused = false;
+    }
+  }
+
+  private _startTimeout(): void {
+    if (this._timeoutHandle) return;
+    this._timeoutHandle = setTimeout(() => {
+      this._paused = false;
+      if (this._resolve) {
+        this._resolve();
+        this._resolve = null;
+      }
+    }, this._timeoutMs);
+  }
+
+  private _clearTimeout(): void {
+    if (this._timeoutHandle) {
+      clearTimeout(this._timeoutHandle);
+      this._timeoutHandle = null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 export class LoopRunner {
   /**
    * Run the loop: repeatedly invoke `runRound` until a termination condition
@@ -111,6 +185,7 @@ export class LoopRunner {
     runRound: RunRoundFn,
     jobId?: string,
     onProgress?: OnRoundProgress,
+    pauseController?: PauseController,
   ): Promise<LoopResult> {
     const jid = jobId ?? `loop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const config = {
@@ -275,6 +350,14 @@ export class LoopRunner {
       if (config.maxTokens && totalTokens >= config.maxTokens) {
         finalState = 'token_budget';
         break;
+      }
+    }
+
+    // -- pause-after-round check -------------------------------------------
+    if (pauseController) {
+      const pauseResult = await pauseController.waitIfPaused(signal);
+      if (pauseResult === 'cancelled' || pauseResult === 'timeout') {
+        finalState = 'cancelled';
       }
     }
 

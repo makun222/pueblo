@@ -26,7 +26,7 @@ import type {
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
 import { perfEnd, perfStart } from '../../utils/perf-logger';
-import type { DesktopLoopJobManager } from './loop-job-manager.js';
+import type { DesktopLoopJobManager, CallModelFn } from './loop-job-manager.js';
 import { AppWindow } from './app-window.js';
 import type { LoopConfig } from '../../agent/loop-runner.js';
 
@@ -65,6 +65,21 @@ interface PendingFileReview {
 export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager, appWindow?: AppWindow): () => void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
+
+  // Wire callModel for pre-flight goal validation
+  const callModel: CallModelFn = async (modelId: string, prompt: string) => {
+    const taskRunner = cli.getTaskRunner();
+    const taskInput: RunAgentTaskInput = {
+      goal: prompt,
+      sessionId: null,
+      providerId: 'deepseek',
+      modelId,
+      inputContextSummary: 'pre-flight goal validation',
+    };
+    const result = await taskRunner.run(taskInput);
+    return result.outputSummary ?? '';
+  };
+  loopJobManager.setCallModel(callModel);
   let activeToolApprovalBatch: PendingToolApprovalBatch | null = null;
   let activeFileReview: PendingFileReview | null = null;
   const activeSubmitControllers = new Set<AbortController>();
@@ -368,6 +383,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
         const runRound: RunRoundFn = async (config, prevResult, signal) => {
           const resolved = await cli.getContextResolver().resolve({
             workspace: workspaceRoot,
+            cwd: workspaceRoot,
           });
           const taskInput: RunAgentTaskInput = {
             goal: config.goal,
@@ -392,7 +408,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
           monitorWindow.create();
         }
         const onProgress = appWindow ? appWindow.createLoopProgressSender(jobId) : undefined;
-        loopJobManager.startJob(config, onProgress, jobId);
+        const resolvedCtx = await cli.getContextResolver().resolve({
+          workspace: workspaceRoot,
+          cwd: workspaceRoot,
+        });
+        const modelId = resolvedCtx.taskContext.selectedModelId;
+        await loopJobManager.startJob(config, onProgress, jobId, modelId ?? undefined);
         return {
           result: { id: jobId, type: 'loop', kind: 'loop-job-started', sessionId: envelope.sessionId },
           blocks: [],
@@ -453,6 +474,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
 
   ipcMain.handle('loop:cancel', async (_event, jobId: string) => {
     return loopJobManager.cancelJob(jobId);
+  });
+
+  ipcMain.handle('loop:pause', async (_event, jobId: string) => {
+    return loopJobManager.pauseJob(jobId);
+  });
+
+  ipcMain.handle('loop:resume', async (_event, jobId: string) => {
+    return loopJobManager.resumeJob(jobId);
   });
 
   mainWindow.once('closed', cleanup);

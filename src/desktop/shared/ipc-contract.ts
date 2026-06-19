@@ -217,6 +217,11 @@ export interface DesktopBridge {
   /** Cancel a running loop job. */
   'loop:cancel'(jobId: string): Promise<{ ok: boolean }>;
 
+  /** Pause a running loop job. */
+  'loop:pause'(jobId: string): Promise<{ ok: boolean }>;
+  /** Resume a paused loop job. */
+  'loop:resume'(jobId: string): Promise<{ ok: boolean }>;
+
   /** Listen for per-round progress events (main → renderer). */
   'loop:job-progress'(listener: (progress: DesktopLoopJobProgress) => void): () => void;
 }

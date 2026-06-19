@@ -38,7 +38,7 @@ function createMainWindow(): void {
         judge: params.modelId,
       };
       const onProgress = appWindow!.createLoopProgressSender(jobId);
-      loopJobManager.startJob(config, onProgress, jobId);
+      await loopJobManager.startJob(config, onProgress, jobId, params.modelId);
       monitorWindow.create();
       return { jobId, status: 'accepted' as const };
     });

@@ -49,4 +49,14 @@ contextBridge.exposeInMainWorld('monitorAPI', {
   cancelJob: (jobId: string): Promise<unknown> => {
     return ipcRenderer.invoke('loop:cancel', jobId);
   },
+
+  /** Pause a loop job by its ID. */
+  pauseJob: (jobId: string): Promise<unknown> => {
+    return ipcRenderer.invoke('loop:pause', jobId);
+  },
+
+  /** Resume a paused loop job by its ID. */
+  resumeJob: (jobId: string): Promise<unknown> => {
+    return ipcRenderer.invoke('loop:resume', jobId);
+  },
 });

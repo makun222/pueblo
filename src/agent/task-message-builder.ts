@@ -2,7 +2,7 @@ import type { ProviderMessage } from '../providers/provider-adapter';
 import { buildSkillSystemMessage } from './skill-context';
 import type { TaskContext } from './task-context';
 
-export const RECENT_CONTEXT_MESSAGE_LIMIT = 6;
+export const RECENT_CONTEXT_MESSAGE_LIMIT = 3;
 export const RECENT_CONTEXT_MESSAGE_CHAR_LIMIT = 480;
 const SYSTEM_CONTEXT_TOTAL_CHAR_BUDGET = 24_000;
 const PUEBLO_SYSTEM_MESSAGE_CHAR_LIMIT = 6_000;

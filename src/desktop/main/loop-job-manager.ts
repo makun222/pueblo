@@ -7,6 +7,9 @@
  * Phase 3: Wired to call real loopRunner.run() via agent LoopJobManager.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
 	LoopJobManager as AgentLoopJobManager,
 } from '../../agent/loop-job-manager.js';
@@ -21,11 +24,18 @@ import type {
 import type { LoopJobStatus, OnRoundProgress } from '../../shared/result.js';
 
 // ---------------------------------------------------------------------------
+// Call-model callback type
+// ---------------------------------------------------------------------------
+
+/** Lightweight LLM callback used for pre-flight goal validation. */
+export type CallModelFn = (modelId: string, prompt: string) => Promise<string>;
+
+// ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
 
 export interface DesktopLoopJobManagerOptions {
-	/** Round execution function (delegates to agent) â€” optional, can be wired later via setRunRound() */
+	/** Round execution function (delegates to agent) ¡ª optional, can be wired later via setRunRound() */
 	runRound?: RunRoundFn;
 	/** Maximum concurrent loop jobs (default 1) */
 	maxConcurrent?: number;
@@ -37,8 +47,9 @@ export interface DesktopLoopJobManagerOptions {
 
 export class DesktopLoopJobManager {
 	private readonly agentManager: AgentLoopJobManager;
+	private _callModel: CallModelFn | null = null;
 	private _runRound: RunRoundFn = async () => {
-		throw new Error('runRound not wired â€” call setRunRound() first');
+		throw new Error('runRound not wired ¡ª call setRunRound() first');
 	};
 
 	constructor(options?: DesktopLoopJobManagerOptions) {
@@ -62,8 +73,13 @@ export class DesktopLoopJobManager {
 		this._runRound = fn;
 	}
 
+	/** Wires the LLM call-back used by validateGoal() ¡ª same injection pattern as setRunRound(). */
+	setCallModel(fn: CallModelFn): void {
+		this._callModel = fn;
+	}
+
 	// -----------------------------------------------------------------------
-	// Public API â€” mirrors agent LoopJobManager, adding IPC-friendly types
+	// Public API ¡ª mirrors agent LoopJobManager, adding IPC-friendly types
 	// -----------------------------------------------------------------------
 
 	/**
@@ -71,11 +87,70 @@ export class DesktopLoopJobManager {
 	 * Delegates to agent LoopJobManager.start() which internally calls
 	 * loopRunner.run().
 	 */
-	startJob(
+	// ------------------------------------------------------------------
+	// Pre-flight goal validation
+	// ------------------------------------------------------------------
+
+	private isFilePath(goal: string): boolean {
+		try {
+			const resolved = path.resolve(goal);
+			if (fs.existsSync(resolved)) return true;
+		} catch {
+			// ignore resolution errors
+		}
+		return false;
+	}
+
+	private async validateGoal(
+		goal: string,
+		modelId: string,
+	): Promise<{ valid: boolean; reason: string }> {
+		// Existing file paths are inherently concrete -- skip LLM validation.
+		if (this.isFilePath(goal)) {
+			return { valid: true, reason: 'goal is an existing file path' };
+		}
+
+		const prompt = `You are a task goal validator. Evaluate whether the following goal is concrete, verifiable, and actionable: "${goal}"
+
+Return ONLY a JSON object: {"valid": true/false, "reason": "brief explanation in Chinese"}
+
+A goal is invalid if it is vague (e.g., ×öÒ»¸öÊ±¼ä, ¸ÄÒ»ÏÂ), has no clear deliverable, or cannot be verified as done.`;
+
+		const response = await this._callModel!(modelId, prompt);
+
+		try {
+			const jsonMatch = response.match(/\{[\s\S]*\}/);
+			if (!jsonMatch) {
+				return { valid: true, reason: 'unable to parse validation response -- proceeding' };
+			}
+			const parsed = JSON.parse(jsonMatch[0]);
+			if (typeof parsed.valid === 'boolean' && typeof parsed.reason === 'string') {
+				return { valid: parsed.valid, reason: parsed.reason };
+			}
+			return { valid: true, reason: 'unexpected validation response format -- proceeding' };
+		} catch {
+			return { valid: true, reason: 'validation parse error -- proceeding' };
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// startJob
+	// ------------------------------------------------------------------
+
+	async startJob(
 		config: LoopConfig,
 		onProgress?: (event: LoopProgressEvent) => void,
 		_jobId?: string,
-	): { jobId: string } {
+		modelId?: string,
+	): Promise<{ jobId: string }> {
+		// Pre-flight goal validation (only when callModel is wired)
+		if (this._callModel && modelId) {
+			const { valid, reason } = await this.validateGoal(config.goal, modelId);
+			if (!valid) {
+				throw new Error(`Goal validation failed: ${reason}`);
+			}
+		}
+
 		return this.agentManager.start(config, onProgress, _jobId);
 	}
 
@@ -86,6 +161,28 @@ export class DesktopLoopJobManager {
 			return { ok: true };
 		} catch (e) {
 			console.error(`cancelLoopJob: agent cancel failed:`, e);
+			return { ok: false };
+		}
+	}
+
+	/** Pause a running loop job. */
+	pauseJob(jobId: string): { ok: boolean } {
+		try {
+			this.agentManager.pauseJob(jobId);
+			return { ok: true };
+		} catch (e) {
+			console.error(`pauseJob: agent pause failed:`, e);
+			return { ok: false };
+		}
+	}
+
+	/** Resume a paused loop job. */
+	resumeJob(jobId: string): { ok: boolean } {
+		try {
+			this.agentManager.resumeJob(jobId);
+			return { ok: true };
+		} catch (e) {
+			console.error(`resumeJob: agent resume failed:`, e);
 			return { ok: false };
 		}
 	}

@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import fs from 'node:fs';
 import path from 'node:path';
 import { perfEnd, perfLog, perfStart } from '../utils/perf-logger';
+import { guardVagueGoal } from '../utils/guard-vague-goal';
 import { Command } from 'commander';
 import { createTaskContext } from '../agent/task-context';
 import { TurnIndexer } from '../agent/turn-indexer';
@@ -496,6 +497,11 @@ export function createCliDependencies(
       return failureResult('TASK_GOAL_REQUIRED', 'Task goal is required', ['Provide a task goal and retry.']);
     }
 
+    // Guard against short/vague user inputs: when the goal is very brief,
+    // inject clarification instructions so the LLM asks clarifying questions
+    // rather than making assumptions or degrading into a generic response.
+    const guardedGoal = guardVagueGoal(trimmedGoal);
+
     const resolvedContext = await contextResolver.resolve({
       activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
       explicitProviderId: selectionState.providerId,
@@ -552,7 +558,7 @@ export function createCliDependencies(
 
     try {
       const task = await taskRunner.run({
-        goal: trimmedGoal,
+        goal: guardedGoal,
         sessionId,
         providerId,
         modelId,
@@ -593,7 +599,7 @@ export function createCliDependencies(
 
       const turnMemory = memoryService.createConversationTurnMemory({
         sessionId,
-        turnNumber: memoryService.listSessionMemories(sessionId).length + 1,
+        turnNumber: turnIndexer.turnNumber,
         userInput: normalizedUserInput,
         assistantOutput: assistantOutput ?? 'No assistant output recorded.',
         turnId: currentTurnId,
@@ -638,7 +644,7 @@ export function createCliDependencies(
         sessionService.addAssistantMessage(sessionId, `Task failed: ${error.message}`, currentTurnId);
         const turnMemory = memoryService.createConversationTurnMemory({
           sessionId,
-          turnNumber: memoryService.listSessionMemories(sessionId).length + 1,
+          turnNumber: turnIndexer.turnNumber,
           userInput: normalizedUserInput,
           assistantOutput: `Task failed: ${error.message}`,
           turnId: currentTurnId,
@@ -1263,6 +1269,7 @@ export function createCliDependencies(
     taskRunner,
     contextResolver,
     sessionService,
+    cwd: currentWorkspace,
   }));
   dispatcher.register('/set', (args) => {
     const [settingName, ...settingArgs] = args;
@@ -1590,9 +1597,48 @@ function initializeWorkspacePath(memoryService: MemoryService, fallbackPath: str
     }
   }
 
-  const defaultWorkspace = resolveWorkspaceDirectory(fallbackPath);
+  // Search upward for a project root to avoid defaulting to a non-project directory like C:\Users\xxx
+  const projectRoot = findProjectRoot(fallbackPath) ?? fallbackPath;
+  const defaultWorkspace = resolveWorkspaceDirectory(projectRoot);
   memoryService.setWorkspacePath(defaultWorkspace);
   return defaultWorkspace;
+}
+
+/**
+ * Searches upward from {@link startDir} for a directory containing
+ * common project markers (package.json, pyproject.toml, src/, etc.).
+ * Returns the first matching directory, or null if none found.
+ */
+function findProjectRoot(startDir: string): string | null {
+  const markerNames = [
+    'package.json',
+    'pyproject.toml',
+    'Cargo.toml',
+    'go.mod',
+    'CMakeLists.txt',
+    'pom.xml',
+    'build.gradle',
+    'src',
+  ];
+
+  let current = path.resolve(startDir);
+  // Avoid infinite loops by bounding depth
+  const maxDepth = 32;
+  for (let i = 0; i < maxDepth; i++) {
+    for (const marker of markerNames) {
+      if (fs.existsSync(path.join(current, marker))) {
+        return current;
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      // Reached filesystem root
+      break;
+    }
+    current = parent;
+  }
+
+  return null;
 }
 
 function addTaskMemoriesToSession(args: {

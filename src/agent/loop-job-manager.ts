@@ -18,7 +18,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { LoopRunner, type LoopConfig, type LoopTerminationState, type RunRoundFn } from './loop-runner.js';
+import { LoopRunner, PauseController, type LoopConfig, type LoopTerminationState, type RunRoundFn } from './loop-runner.js';
 import type { LoopProgressEvent, LoopJobState, LoopJobStatus, OnRoundProgress } from '../shared/result.js';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,10 @@ interface JobRecord {
   runPromise: Promise<void> | null;
   /** Optional external callback invoked alongside internal progress recording. */
   externalOnProgress?: OnRoundProgress;
+
+  /** Pause/resume controller for cooperative round-boundary pausing. */
+  pauseController: PauseController;
+
   error?: string;
 }
 
@@ -108,6 +112,7 @@ export class LoopJobManager {
       config: configWithSignal,
       runPromise: null,
       externalOnProgress: onProgress,
+      pauseController: new PauseController(),
     };
 
     this.jobs.set(jobId, record);
@@ -221,7 +226,7 @@ export class LoopJobManager {
     };
 
     record.runPromise = this.loopRunner
-      .run(record.config, this.runRound, record.jobId, onProgress)
+      .run(record.config, this.runRound, record.jobId, onProgress, record.pauseController)
       .then((result) => {
         record.state = terminationStateToJobState(result.state);
       })
@@ -233,6 +238,32 @@ export class LoopJobManager {
         record.runPromise = null;
         this.drainQueue();
       });
+  }
+
+  /**
+   * Pause a running loop job at the next round boundary.
+   * Returns true if the job was found and a pause signal was delivered.
+   */
+  pauseJob(jobId: string): boolean {
+    const record = this.jobs.get(jobId);
+    if (!record) {
+      return false;
+    }
+    record.pauseController.pause();
+    return true;
+  }
+
+  /**
+   * Resume a paused loop job.
+   * Returns true if the job was found and a resume signal was delivered.
+   */
+  resumeJob(jobId: string): boolean {
+    const record = this.jobs.get(jobId);
+    if (!record) {
+      return false;
+    }
+    record.pauseController.resume();
+    return true;
   }
 
   /** Start the next queued job if slots are available. */

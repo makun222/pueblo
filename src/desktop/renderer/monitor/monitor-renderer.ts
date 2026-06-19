@@ -23,6 +23,8 @@ interface Window {
     onJobError: (cb: (data: { jobId: string; error: string }) => void) => () => void;
     getActiveJobs: () => Promise<unknown>;
     cancelJob: (jobId: string) => Promise<unknown>;
+    pauseJob: (jobId: string) => Promise<unknown>;
+    resumeJob: (jobId: string) => Promise<unknown>;
   };
 }
 
@@ -54,6 +56,8 @@ function renderJobCard(data: JobProgressData): void {
       <div class="job-progress"></div>
       <div class="job-output"></div>
       <button class="cancel-btn" data-job-id="${escapeHtml(data.jobId)}">Cancel</button>
+      <button class="pause-btn" data-job-id="${escapeHtml(data.jobId)}">Pause</button>
+      <button class="resume-btn" data-job-id="${escapeHtml(data.jobId)}">Resume</button>
     `;
     const cancelBtn = card.querySelector('.cancel-btn') as HTMLButtonElement;
     cancelBtn.addEventListener('click', () => {
@@ -61,6 +65,22 @@ function renderJobCard(data: JobProgressData): void {
       window.monitorAPI.cancelJob(data.jobId).catch(() => {
         cancelBtn.disabled = false;
       });
+    });
+    const pauseBtn = card.querySelector('.pause-btn') as HTMLButtonElement;
+    pauseBtn.addEventListener('click', () => {
+      pauseBtn.disabled = true;
+      window.monitorAPI.pauseJob(data.jobId).then((r: unknown) => {
+        const result = r as { ok: boolean };
+        if (!result.ok) pauseBtn.disabled = false;
+      }).catch(() => { pauseBtn.disabled = false; });
+    });
+    const resumeBtn = card.querySelector('.resume-btn') as HTMLButtonElement;
+    resumeBtn.addEventListener('click', () => {
+      resumeBtn.disabled = true;
+      window.monitorAPI.resumeJob(data.jobId).then((r: unknown) => {
+        const result = r as { ok: boolean };
+        if (!result.ok) resumeBtn.disabled = false;
+      }).catch(() => { resumeBtn.disabled = false; });
     });
     jobList.appendChild(card);
     jobCards.set(data.jobId, card);

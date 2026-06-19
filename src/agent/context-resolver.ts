@@ -560,7 +560,7 @@ function extractAbsolutePaths(inputText: string): string[] {
   return matches.map((match) => match.replace(/[，。；;,.!?)\]]+$/u, ''));
 }
 
-function resolveDirectoryCandidate(candidatePath: string): string | null {
+export function resolveDirectoryCandidate(candidatePath: string): string | null {
   try {
     const normalizedPath = path.normalize(candidatePath);
     if (!fs.existsSync(normalizedPath)) {
@@ -568,15 +568,24 @@ function resolveDirectoryCandidate(candidatePath: string): string | null {
     }
 
     const stat = fs.statSync(normalizedPath);
+    let resolvedDir: string | null = null;
     if (stat.isDirectory()) {
-      return normalizedPath;
+      resolvedDir = normalizedPath;
+    } else if (stat.isFile()) {
+      resolvedDir = path.dirname(normalizedPath);
     }
 
-    if (stat.isFile()) {
-      return path.dirname(normalizedPath);
+    if (resolvedDir === null) {
+      return null;
     }
 
-    return null;
+    // Reject filesystem roots (e.g., C:\, D:\, /).
+    // The target directory must be a real project/repo folder, not a drive root.
+    if (path.parse(resolvedDir).root === resolvedDir) {
+      return null;
+    }
+
+    return resolvedDir;
   } catch {
     return null;
   }
@@ -952,7 +961,7 @@ function selectRecentContextMessages(
               ? m.content.slice(0, maxContentLen) + '...'
               : m.content;
             const label = m.toolName || (m as any).name || 'tool';
-            parts.push(`Tool result [${label}]: ${truncated}`);
+          //  parts.push(`Tool result [${label}]: ${truncated}`);
           } else {
             skippedToolCount++;
           }
@@ -964,8 +973,11 @@ function selectRecentContextMessages(
       parts.push(`... and ${skippedToolCount} more tool result(s)`);
     }
 
+    if (parts.length === 0) {
+      return [];
+    }
     if (turnId === '__unassigned__') {
-      return parts;
+      return [`__Unassigned__:\n${parts.join('\n')}`];
     }
     return [`Turn ${turnId}:\n${parts.join('\n')}`];
   });

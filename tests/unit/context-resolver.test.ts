@@ -147,8 +147,7 @@ describe('context resolver', () => {
     expect(resolved.taskContext.resultItems[0]?.summary).toContain('Cached result');
     expect(resolved.taskContext.sessionMessages).toHaveLength(2);
     expect(resolved.taskContext.recentMessages).toEqual([
-      'User: Inspect the failing workflow',
-      'Assistant: I will inspect the failing workflow.',
+      '__Unassigned__:\nUser: Inspect the failing workflow\nAssistant: I will inspect the failing workflow.',
     ]);
     expect(resolved.runtimeStatus.activeSessionId).toBe(session.id);
     expect(resolved.runtimeStatus.agentProfileId).toBe('code-master');
@@ -1043,12 +1042,7 @@ describe('context resolver', () => {
       'Answer 12',
     ]);
     expect(resolved.taskContext.recentMessages).toEqual([
-      'User: Question 10',
-      'Assistant: Answer 10',
-      'User: Question 11',
-      'Assistant: Answer 11',
-      'User: Question 12',
-      'Assistant: Answer 12',
+      '__Unassigned__:\nUser: Question 10\nAssistant: Answer 10\nUser: Question 11\nAssistant: Answer 11\nUser: Question 12\nAssistant: Answer 12',
     ]);
     expect(resolved.runtimeStatus.contextCount.messageCount).toBe(6);
   });
