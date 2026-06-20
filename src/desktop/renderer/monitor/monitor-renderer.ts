@@ -109,7 +109,7 @@ function renderJobCard(data: JobProgressData): void {
       const outputs = outputsByJob.get(data.jobId);
       if (outputs && outputs.length > 0) {
         outputEl.innerHTML = outputs
-          .map((o, i) => `<div class="round-output">Round ${i + 1}: ${escapeHtml(o)}</div>`)
+          .map((o, i) => `<div class="round-output">Round ${i + 1}: ${escapeHtml(extractOutputSummary(o))}</div>`)
           .join('');
         outputEl.style.display = 'block';
       } else {
@@ -123,6 +123,19 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+/** Extract the value of "outputSummary" from a JSON-like key-value string. */
+function extractOutputSummary(raw: string): string {
+  try {
+    const parsed = JSON.parse(`{${raw}}`);
+    const summary = parsed.outputSummary;
+    return typeof summary === 'string' ? summary : raw;
+  } catch {
+    // Fallback: try regex extraction
+    const match = raw.match(/"outputSummary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    return match ? match[1] : raw;
+  }
 }
 
 // Register IPC listeners from main process

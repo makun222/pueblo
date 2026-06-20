@@ -19,6 +19,15 @@ function buildDesktopMenuTemplate(mainWindow: BrowserWindow): MenuItemConstructo
     {
       label: 'File',
       submenu: [
+        {
+          label: 'New Conversation',
+          click: () => emitMenuAction(mainWindow, 'new-conversation'),
+        },
+        {
+          label: 'Switch Agent',
+          click: () => emitMenuAction(mainWindow, 'switch-agent'),
+        },
+        { type: 'separator' },
         process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
       ],
     },
@@ -46,23 +55,39 @@ function buildDesktopMenuTemplate(mainWindow: BrowserWindow): MenuItemConstructo
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        {
+          label: 'Show Monitor',
+          click: () => emitMenuAction(mainWindow, 'show-monitor'),
+        },
+        {
+          label: 'Show Tool Approvals',
+          click: () => emitMenuAction(mainWindow, 'show-tool-approvals'),
+        },
       ],
     },
     {
-      label: 'Settings',
+      label: 'Tools',
       submenu: [
         {
           label: 'Configure Provider',
-          click: () => emitMenuAction(mainWindow, 'open-provider-config'),
+          click: () => emitMenuAction(mainWindow, 'configure-provider'),
         },
         {
           label: 'Switch Agent',
-          click: () => emitMenuAction(mainWindow, 'open-agent-picker'),
+          click: () => emitMenuAction(mainWindow, 'switch-agent'),
         },
         { type: 'separator' },
         {
-          label: 'Monitor',
-          click: () => emitMenuAction(mainWindow, 'open-monitor'),
+          label: 'MCP Manager',
+          enabled: false,
+        },
+        {
+          label: 'Cron Scheduler',
+          enabled: false,
+        },
+        {
+          label: 'Hooks',
+          enabled: false,
         },
       ],
     },

@@ -69,7 +69,19 @@ export interface DesktopFileReviewResponse {
   readonly decision: 'keep' | 'discard';
 }
 
-export type DesktopMenuAction = 'open-monitor' | 'open-provider-config' | 'open-agent-picker';
+export type DesktopMenuAction =
+  // File
+  | 'new-conversation'
+  | 'switch-agent'
+  // View
+  | 'show-monitor'
+  | 'show-tool-approvals'
+  // Tools
+  | 'configure-provider'
+  // Tools — future placeholders
+  | 'open-mcp-manager'
+  | 'open-cron-scheduler'
+  | 'open-hooks';
 
 export interface DesktopProviderStatus {
   readonly providerId: 'github-copilot' | 'deepseek';

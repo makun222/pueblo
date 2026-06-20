@@ -442,14 +442,14 @@ export function App() {
 
   useEffect(() => {
     const disposeMenuAction = window.electronAPI.onMenuAction((action) => {
-      if (action === 'open-monitor') {
+      if (action === 'show-monitor') {
         window.electronAPI.focusMonitor();
         return;
       }
 
       const currentRuntimeStatus = runtimeStatusRef.current;
 
-      if (action === 'open-provider-config') {
+      if (action === 'configure-provider') {
         setProviderConfigError(null);
         setProviderConfigMode(currentRuntimeStatus.providerId === 'deepseek' ? 'deepseek' : 'github-copilot');
         setIsDeepSeekEditing((currentRuntimeStatus.providerId === 'deepseek'
@@ -460,6 +460,31 @@ export function App() {
         return;
       }
 
+      if (action === 'new-conversation') {
+        console.log('TODO: implement new conversation');
+        return;
+      }
+
+      if (action === 'show-tool-approvals') {
+        console.log('TODO: implement instrumentation panel');
+        return;
+      }
+
+      if (action === 'open-mcp-manager') {
+        console.log('TODO: implement MCP Manager');
+        return;
+      }
+      if (action === 'open-cron-scheduler') {
+        console.log('TODO: implement Cron Scheduler');
+        return;
+      }
+      if (action === 'open-hooks') {
+        console.log('TODO: implement Hooks');
+        return;
+      }
+
+
+      // default: switch-agent
       setStartupError(null);
       setIsAgentPickerOpen(true);
       setIsProviderConfigOpen(false);

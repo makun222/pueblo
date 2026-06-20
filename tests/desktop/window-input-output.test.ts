@@ -6,7 +6,7 @@ import { App } from '../../src/desktop/renderer/App';
 import type { ProviderProfile, RendererMessageTraceStep, RendererOutputBlock } from '../../src/shared/schema';
 
 let outputListener: ((event: unknown, data: RendererOutputBlock) => void) | null = null;
-let menuActionListener: ((action: 'open-provider-config' | 'open-agent-picker') => void) | null = null;
+let menuActionListener: ((action: 'configure-provider' | 'switch-agent') => void) | null = null;
 
 const defaultProviderStatuses = {
   githubCopilot: {
@@ -258,7 +258,7 @@ beforeEach(() => {
         },
         session: null,
       }),
-      onMenuAction: vi.fn((callback: (action: 'open-provider-config' | 'open-agent-picker') => void) => {
+      onMenuAction: vi.fn((callback: (action: 'configure-provider' | 'switch-agent') => void) => {
         menuActionListener = callback;
         return () => {
           menuActionListener = null;
@@ -542,7 +542,7 @@ describe('Desktop Window Input/Output', () => {
     });
 
     act(() => {
-      menuActionListener?.('open-provider-config');
+      menuActionListener?.('configure-provider');
     });
     await user.click(screen.getByRole('button', { name: 'DeepSeek' }));
     await user.type(screen.getByPlaceholderText('DeepSeek API key'), 'deepseek-secret');
@@ -571,7 +571,7 @@ describe('Desktop Window Input/Output', () => {
     });
 
     act(() => {
-      menuActionListener?.('open-provider-config');
+      menuActionListener?.('configure-provider');
     });
 
     expect(screen.getByText("This action starts GitHub's device flow login. Pueblo opens the browser to GitHub, shows the one-time code in the output pane, then stores the resulting token in Windows Credential Manager.")).toBeTruthy();
@@ -587,7 +587,7 @@ describe('Desktop Window Input/Output', () => {
     });
 
     act(() => {
-      menuActionListener?.('open-provider-config');
+      menuActionListener?.('configure-provider');
     });
     await user.click(screen.getByRole('button', { name: 'DeepSeek' }));
 
