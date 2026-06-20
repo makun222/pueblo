@@ -132,7 +132,7 @@ export const providerUndoEditToolInputSchema: ProviderToolInputSchema = {
 };
 
 export const providerMemoRecallToolArgsSchema = z.object({
-  keyword: z.string().trim().min(1),
+  keyword: z.string().trim().optional(),
   turnCount: z.number().int().positive(),
   matchMode: z.enum(['exact', 'fuzzy', 'semantic']).optional(),
 });
@@ -149,7 +149,7 @@ export const providerMemoRecallToolInputSchema: ProviderToolInputSchema = {
       description: 'Maximum number of recent turns to search (1 turn = 1 user+assistant exchange).',
     },
   },
-  required: ['keyword', 'turnCount'],
+  required: ['turnCount'],
   additionalProperties: false,
 };
 

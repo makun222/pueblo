@@ -69,7 +69,7 @@ export interface DesktopFileReviewResponse {
   readonly decision: 'keep' | 'discard';
 }
 
-export type DesktopMenuAction = 'open-provider-config' | 'open-agent-picker';
+export type DesktopMenuAction = 'open-monitor' | 'open-provider-config' | 'open-agent-picker';
 
 export interface DesktopProviderStatus {
   readonly providerId: 'github-copilot' | 'deepseek';
@@ -224,4 +224,7 @@ export interface DesktopBridge {
 
   /** Listen for per-round progress events (main → renderer). */
   'loop:job-progress'(listener: (progress: DesktopLoopJobProgress) => void): () => void;
+
+  /** Focus / open the Monitor window. */
+  focusMonitor(): Promise<void>;
 }

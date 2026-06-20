@@ -35,7 +35,7 @@ export type CallModelFn = (modelId: string, prompt: string) => Promise<string>;
 // ---------------------------------------------------------------------------
 
 export interface DesktopLoopJobManagerOptions {
-	/** Round execution function (delegates to agent) — optional, can be wired later via setRunRound() */
+	/** Round execution function (delegates to agent) 锟斤拷 optional, can be wired later via setRunRound() */
 	runRound?: RunRoundFn;
 	/** Maximum concurrent loop jobs (default 1) */
 	maxConcurrent?: number;
@@ -49,7 +49,7 @@ export class DesktopLoopJobManager {
 	private readonly agentManager: AgentLoopJobManager;
 	private _callModel: CallModelFn | null = null;
 	private _runRound: RunRoundFn = async () => {
-		throw new Error('runRound not wired — call setRunRound() first');
+		throw new Error('runRound not wired 锟斤拷 call setRunRound() first');
 	};
 
 	constructor(options?: DesktopLoopJobManagerOptions) {
@@ -73,13 +73,13 @@ export class DesktopLoopJobManager {
 		this._runRound = fn;
 	}
 
-	/** Wires the LLM call-back used by validateGoal() — same injection pattern as setRunRound(). */
+	/** Wires the LLM call-back used by validateGoal() 锟斤拷 same injection pattern as setRunRound(). */
 	setCallModel(fn: CallModelFn): void {
 		this._callModel = fn;
 	}
 
 	// -----------------------------------------------------------------------
-	// Public API — mirrors agent LoopJobManager, adding IPC-friendly types
+	// Public API 锟斤拷 mirrors agent LoopJobManager, adding IPC-friendly types
 	// -----------------------------------------------------------------------
 
 	/**
@@ -112,9 +112,9 @@ export class DesktopLoopJobManager {
 
 		const prompt = `You are a task goal validator. Evaluate whether the following goal is concrete, verifiable, and actionable: "${goal}"
 
-Return ONLY a JSON object: {"valid": true/false, "reason": "brief explanation in Chinese"}
+        Return ONLY a JSON object: {"valid": true/false, "reason": "brief explanation in Chinese"}
 
-A goal is invalid if it is vague (e.g., 做一个时间, 改一下), has no clear deliverable, or cannot be verified as done.`;
+		A goal is invalid if it is vague, has no clear deliverable, or cannot be verified as done.`;
 
 		const response = await this._callModel!(modelId, prompt);
 

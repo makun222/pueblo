@@ -914,9 +914,29 @@ function extractWorkflowMetadataValue(content: string, fieldName: string): strin
 }
 
 function buildSessionSummaryContent(summaries: readonly MemoryRecord[]): string {
+  if (summaries.length === 0) {
+    return '# Session Summary\n\n_No session summaries available._';
+  }
+  const sections = summaries.map((summary) => {
+    const dateStr = summary.createdAt
+      ? new Date(summary.createdAt).toISOString().split('T')[0]
+      : 'unknown';
+    const tagsPart = summary.tags
+      .filter((t) => t !== 'pepe-session-summary')
+      .join(', ');
+    return [
+      `## ${stripSummaryLabel(summary.title)}`,
+      `- **Created:** ${dateStr}`,
+      ...(tagsPart ? [`- **Tags:** ${tagsPart}`] : []),
+      '',
+      inlineSummary(summary.content),
+    ].join('\n');
+  });
   return [
-    'Session Summary',
-    ...summaries.map((summary) => `- ${stripSummaryLabel(summary.title)}: ${inlineSummary(summary.content)}`),
+    '# Session Summary',
+    `_${summaries.length} session(s) found_`,
+    '',
+    ...sections,
   ].join('\n');
 }
 

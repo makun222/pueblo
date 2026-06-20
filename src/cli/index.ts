@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import fs from 'node:fs';
 import path from 'node:path';
 import { perfEnd, perfLog, perfStart } from '../utils/perf-logger';
-import { guardVagueGoal } from '../utils/guard-vague-goal';
+import { guardVagueGoal, type CallModelFn } from '../utils/guard-vague-goal';
 import { Command } from 'commander';
 import { createTaskContext } from '../agent/task-context';
 import { TurnIndexer } from '../agent/turn-indexer';
@@ -500,7 +500,7 @@ export function createCliDependencies(
     // Guard against short/vague user inputs: when the goal is very brief,
     // inject clarification instructions so the LLM asks clarifying questions
     // rather than making assumptions or degrading into a generic response.
-    const guardedGoal = guardVagueGoal(trimmedGoal);
+    // guarded goal will be validated after providerId/modelId are resolved
 
     const resolvedContext = await contextResolver.resolve({
       activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
@@ -521,7 +521,26 @@ export function createCliDependencies(
         'Use /model to choose a provider and model.',
       ]);
     }
-
+    /*
+    // LLM-based goal clarity check: validate the goal is not too vague
+    const callModel: CallModelFn = async (_modelId: string, prompt: string) => {
+      const result = await taskRunner.run({
+        goal: prompt,
+        sessionId: null,
+        providerId,
+        modelId: _modelId,
+        inputContextSummary: 'pre-flight goal validation',
+      });
+      return result.outputSummary ?? '';
+    };
+    const guardResult = await guardVagueGoal(trimmedGoal, modelId, callModel);
+    if (!guardResult.ok) {
+      return failureResult('VALIDATION_FAILED', `Goal validation failed: ${guardResult.message}`, []);
+    }
+    if (!guardResult.data!.valid) {
+      return failureResult('VAGUE_GOAL', `Goal is too vague: ${guardResult.data!.reason}`, ['Please provide a more specific task goal.']);
+    }
+    */
     let sessionId = resolvedContext.taskContext.sessionId;
     if (!sessionId) {
       const session = sessionService.createSession(createSessionTitle(trimmedGoal), modelId, ensureAgentInstance());
@@ -558,7 +577,7 @@ export function createCliDependencies(
 
     try {
       const task = await taskRunner.run({
-        goal: guardedGoal,
+        goal: trimmedGoal,
         sessionId,
         providerId,
         modelId,

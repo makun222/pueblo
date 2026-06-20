@@ -20,6 +20,7 @@ const TALK_STATE_CHANNEL = 'talk-state';
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
+  focusMonitor: (): Promise<void> => ipcRenderer.invoke('loop:focus-monitor'),
   submitInput: (envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse> => ipcRenderer.invoke('submit-input', envelope),
   cancelActiveSubmit: (): Promise<void> => ipcRenderer.invoke('cancel-active-submit'),
   selectInputFiles: (sessionId: string | null): Promise<InputAttachmentManifest[]> => ipcRenderer.invoke('select-input-files', sessionId),

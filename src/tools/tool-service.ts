@@ -178,10 +178,11 @@ export class ToolService {
       {
         name: 'memo_recall' as const,
         description:
-          'Search memory notes stored during this session by keyword. ' +
-          'Use this when you have doubts about earlier decisions, constraints, ' +
-          'or context that may have been lost due to conversation truncation. ' +
-          'Returns matching notes with their turn numbers and relevance scores.',
+          'Recalls past memory records and session histories. ' +
+          'Use this when you encounter ambiguous user input that you cannot resolve ' +
+          'based on the current context alone. When keyword is provided, performs ' +
+          'targeted search of past memories. When keyword is empty, returns session ' +
+          'summaries from previous conversations for broader context.',
         inputSchema: providerMemoRecallToolInputSchema,
         executionPolicy: getToolExecutionPolicy('memo_recall'),
       },
@@ -413,7 +414,9 @@ export class ToolService {
       toolName: 'memo_recall',
       status: 'succeeded',
       output: [JSON.stringify(response)],
-      summary: `memo_recall found ${response.hits.length} hit(s) for '${args.keyword}'`,
+      summary: args.keyword
+        ? `memo_recall found ${response.hits.length} hit(s) for '${args.keyword}'`
+        : `memo_recall returned ${response.hits.length} session summary(ies)`,
     };
   }
 }

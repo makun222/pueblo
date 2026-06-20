@@ -84,6 +84,7 @@ const pepeSchema = z.object({
   ranking: pepeRankingSchema.default(DEFAULT_PEPE_RANKING_CONFIG),
   workingDirectoryPattern: z.string().min(1).default('agent-{agentInstanceId}'),
   skillDirectoryName: z.string().trim().min(1).default('skills'),
+  memoryBasePath: z.string().min(1).default(path.join('.pueblo','memory')),
 });
 
 const workflowSchema = z.object({
@@ -217,6 +218,7 @@ const appConfigSchema = z.object({
     ranking: DEFAULT_PEPE_RANKING_CONFIG,
     workingDirectoryPattern: 'agent-{agentInstanceId}',
     skillDirectoryName: 'skills',
+    memoryBasePath: '.pueblo/memory',
   }),
   memory: memorySchema.default(DEFAULT_MEMORY_CONFIG),
   workflow: workflowSchema.default({
@@ -281,6 +283,10 @@ export function loadAppConfig(options: ConfigLoadOptions = {}): AppConfig {
   return {
     ...config,
     databasePath: path.resolve(cwd, config.databasePath),
+    pepe: {
+      ...config.pepe,
+      memoryBasePath: path.resolve(cwd, config.pepe.memoryBasePath),
+    },
     workflow: {
       ...config.workflow,
       runtimeDirectory: path.resolve(cwd, config.workflow.runtimeDirectory),

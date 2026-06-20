@@ -59,6 +59,11 @@ function buildDesktopMenuTemplate(mainWindow: BrowserWindow): MenuItemConstructo
           label: 'Switch Agent',
           click: () => emitMenuAction(mainWindow, 'open-agent-picker'),
         },
+        { type: 'separator' },
+        {
+          label: 'Monitor',
+          click: () => emitMenuAction(mainWindow, 'open-monitor'),
+        },
       ],
     },
     {

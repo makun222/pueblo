@@ -171,6 +171,14 @@ export class ContextResolver {
     );
   }
 
+  getProfileLoader(): PuebloProfileLoader {
+    return this.profileLoader;
+  }
+
+  getProviderResolver(): ProviderRegistry {
+    return this.dependencies.providerRegistry;
+  }
+
   async resolve(input: ResolveContextInput = {}): Promise<ResolvedContext> {
     const _resolveT0 = perfStart('  contextResolver.resolve.inner');
     const session = this.resolveSession(input.activeSessionId);
@@ -433,7 +441,7 @@ export class ContextResolver {
   }
 }
 
-function resolveProviderModelSelection(args: {
+export function resolveProviderModelSelection(args: {
   readonly profiles: ProviderProfile[];
   readonly explicitProviderId?: string | null;
   readonly explicitModelId?: string | null;
@@ -533,7 +541,7 @@ function shouldSkipDeterministicRecall(fixedContextTexts: readonly string[], mod
   return Number((estimatedTokens / modelContextWindow).toFixed(4)) >= DETERMINISTIC_RECALL_SKIP_RATIO;
 }
 
-function resolveTargetDirectory(args: {
+export function resolveTargetDirectory(args: {
   readonly pendingUserInput?: string;
   readonly recentUserMessages: readonly SessionMessage[];
   readonly workspace: string | null;

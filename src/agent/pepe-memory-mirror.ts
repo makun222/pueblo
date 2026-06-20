@@ -5,17 +5,16 @@ import type { MemoryRecord, PepeResultSet } from '../shared/schema';
 
 export interface FlushPepeMemoryMirrorInput {
   readonly agentInstanceId: string;
-  readonly workspaceRoot: string;
   readonly sessionId: string;
   readonly memories: MemoryRecord[];
   readonly resultSet: PepeResultSet | null;
 }
 
 export class PepeMemoryMirror {
-  constructor(private readonly config: Pick<PepeConfig, 'workingDirectoryPattern'>) {}
+  constructor(private readonly config: Pick<PepeConfig, 'workingDirectoryPattern' | 'memoryBasePath'>) {}
 
   flush(input: FlushPepeMemoryMirrorInput): void {
-    const memoryDirectory = this.resolveMemoryDirectory(input.workspaceRoot, input.agentInstanceId);
+    const memoryDirectory = this.resolveMemoryDirectory(input.agentInstanceId);
     fs.mkdirSync(memoryDirectory, { recursive: true });
 
     const manifest = {
@@ -52,9 +51,9 @@ export class PepeMemoryMirror {
     }
   }
 
-  private resolveMemoryDirectory(workspaceRoot: string, agentInstanceId: string): string {
+  private resolveMemoryDirectory(agentInstanceId: string): string {
     const agentDirectoryName = this.config.workingDirectoryPattern.replace('{agentInstanceId}', agentInstanceId);
-    return path.join(workspaceRoot, agentDirectoryName, '.memory');
+    return path.join(this.config.memoryBasePath, agentDirectoryName, '.memory');
   }
 }
 

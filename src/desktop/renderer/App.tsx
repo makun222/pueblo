@@ -176,6 +176,7 @@ declare global {
       onTalkState: (callback: (state: DesktopTalkState) => void) => (() => void);
       onOutput: (callback: (event: unknown, data: RendererOutputBlock) => void) => void;
       removeAllListeners: (event: string) => void;
+      focusMonitor: () => Promise<void>;
     };
   }
 }
@@ -441,6 +442,11 @@ export function App() {
 
   useEffect(() => {
     const disposeMenuAction = window.electronAPI.onMenuAction((action) => {
+      if (action === 'open-monitor') {
+        window.electronAPI.focusMonitor();
+        return;
+      }
+
       const currentRuntimeStatus = runtimeStatusRef.current;
 
       if (action === 'open-provider-config') {

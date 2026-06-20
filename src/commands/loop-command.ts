@@ -8,6 +8,7 @@ import { AgentTaskRunner } from '../agent/task-runner.js';
 import type { RunAgentTaskInput } from '../agent/task-runner.js';
 import { ContextResolver } from '../agent/context-resolver.js';
 import { SessionService } from '../sessions/session-service.js';
+import { guardVagueGoal, type CallModelFn } from '../utils/guard-vague-goal.js';
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -57,6 +58,41 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
       return failureResult('INVALID_ARGUMENT', 'Goal cannot be empty.', []);
     }
 
+    // -- validate goal (P0: LLM-based goal clarity check) --------------------
+    try {
+      const resolved = await contextResolver.resolve({ cwd, workspace: cwd });
+      const modelId = resolved.taskContext.selectedModelId;
+      const providerId = resolved.taskContext.providerId;
+
+      if (providerId && modelId) {
+        const callModel: CallModelFn = async (_modelId: string, prompt: string) => {
+          const validationInput: RunAgentTaskInput = {
+            goal: prompt,
+            sessionId: null,
+            providerId,
+            modelId: _modelId,
+            inputContextSummary: 'pre-flight goal validation',
+          };
+          const result = await taskRunner.run(validationInput);
+          return result.outputSummary ?? '';
+        };
+
+        const validationResult = await guardVagueGoal(goal, modelId, callModel);
+        if (!validationResult.ok) {
+          return failureResult('VALIDATION_FAILED', validationResult.message, []);
+        }
+        if (!validationResult.data!.valid) {
+          return failureResult('VAGUE_GOAL', validationResult.data!.reason, []);
+        }
+      }
+    } catch (err) {
+      return failureResult(
+        'GOAL_VALIDATION_ERROR',
+        err instanceof Error ? err.message : String(err),
+        [],
+      );
+    }
+
     // -- snapshot goal (Q3: startup snapshot) --------------------------------
     const snapshotGoal = goal;
 
@@ -68,9 +104,10 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
     // -- build the runRound closure (Q1: outer wrapper) ----------------------
     // Build a RunRoundFn that delegates to AgentTaskRunner.
     // Signature: (config, prevResult, signal) => Promise<{output; tokenUsage}>
+    // Resolve context once before the loop (not inside each round)
+    const resolved = await contextResolver.resolve({ activeSessionId: session.id, cwd, workspace: cwd });
+
     const runRound: RunRoundFn = async (config, _prevResult, _signal) => {
-      // Resolve context to get provider/model selection
-      const resolved = await contextResolver.resolve({ activeSessionId: session.id, cwd, workspace: cwd });
 
       const providerId = resolved.taskContext.providerId;
       const modelId = resolved.taskContext.selectedModelId;
@@ -80,9 +117,13 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
       }
 
       // Build the task input for this round.
-      // Prepend round number so the LLM sees its progress within the loop.
+      // Round 1: use goal as user input.
+      // Subsequent rounds: use previous LLM output as user input, with goal attached.
+      const roundGoal = _prevResult
+        ? `${_prevResult.output}\n\n[Round ${config.round + 1}] ${config.goal}`
+        : `[Round ${config.round + 1}] ${config.goal}`;
       const taskInput: RunAgentTaskInput = {
-        goal: `[Round ${config.round + 1}] ${config.goal}`,
+        goal: roundGoal,
         sessionId: session.id,
         providerId,
         modelId,

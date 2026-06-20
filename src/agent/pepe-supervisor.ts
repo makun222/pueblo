@@ -45,7 +45,7 @@ export type PepeWorkerFactory = (data: PepeWorkerData) => PepeWorkerLike;
 
 export interface PepeSupervisorDependencies {
   readonly appConfig: AppConfig;
-  readonly config: Pick<PepeConfig, 'enabled' | 'flushIntervalMs' | 'workingDirectoryPattern'>;
+  readonly config: Pick<PepeConfig, 'enabled' | 'flushIntervalMs' | 'workingDirectoryPattern' | 'memoryBasePath'>;
   readonly memoryService: Pick<MemoryService, 'listSessionMemories' | 'createDerivedSummaryMemory' | 'upsertSessionSummaryMemory' | 'reconcileWorkingMemoryIds'>;
   readonly sessionService: Pick<SessionService, 'getSession' | 'setWorkingMemoryIds'>;
   readonly agentInstanceService: Pick<AgentInstanceService, 'getAgentInstance'>;
@@ -210,7 +210,6 @@ export class PepeSupervisor {
       const _flushId = perfStart(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`);
       this.memoryMirror.flush({
         agentInstanceId: agentInstance.id,
-        workspaceRoot: agentInstance.workspaceRoot,
         sessionId,
         memories,
         resultSet: resolvedResult.resultSet,

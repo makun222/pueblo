@@ -380,13 +380,15 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
           judge: 'llm',
         };
 
+        // Resolve context once before the loop (not inside each round)
+        const resolved = await cli.getContextResolver().resolve({
+          workspace: workspaceRoot,
+          cwd: workspaceRoot,
+        });
+
         const runRound: RunRoundFn = async (config, prevResult, signal) => {
-          const resolved = await cli.getContextResolver().resolve({
-            workspace: workspaceRoot,
-            cwd: workspaceRoot,
-          });
           const taskInput: RunAgentTaskInput = {
-            goal: config.goal,
+            goal: prevResult ? `${prevResult.output}\n\n${config.goal}` : config.goal,
             sessionId: null,
             providerId: resolved.taskContext.providerId ?? 'deepseek',
             modelId: resolved.taskContext.selectedModelId ?? 'deepseek-v4-pro',

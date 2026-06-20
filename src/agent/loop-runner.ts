@@ -236,16 +236,6 @@ export class LoopRunner {
 
       let roundElapsed = 0;
 
-      // -- emit running event --------------------------------------------------
-      onProgress?.({
-        jobId: jid,
-        status: 'running',
-        round,
-        totalRounds: config.maxRounds,
-        message: `Starting round ${round}/${config.maxRounds}`,
-        ok: true,
-        elapsedMs: 0,
-      });
       logRound('start', { round, totalRounds: config.maxRounds });
 
       try {

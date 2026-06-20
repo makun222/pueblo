@@ -14,7 +14,7 @@ import type { MemoryRecord } from '../shared/schema.js';
 
 /** Matches the zod schema in provider-adapter.ts */
 export interface MemoRecallRequest {
-  keyword: string;
+  keyword?: string;
   turn_count: number;
   mode?: 'exact' | 'fuzzy' | 'semantic';
 }
@@ -43,6 +43,11 @@ export class MemoRecallTool {
     const { keyword, turn_count } = request;
     const mode = request.mode ?? 'fuzzy';
 
+    // When no keyword is provided, return session summaries list
+    if (!keyword) {
+      return this.recallSessionSummaries();
+    }
+
     // Phase 1: only fuzzy mode is implemented
     if (mode !== 'fuzzy') {
       // Fall back to fuzzy for unimplemented modes
@@ -69,6 +74,25 @@ export class MemoRecallTool {
     return {
       hits,
       already_in_context: hits.map(() => false), // Phase 3
+    };
+  }
+
+  /**
+   * Recall all session summaries (tagged with 'pepe-session-summary')
+   * when no keyword is provided to memo_recall.
+   */
+  private recallSessionSummaries(): MemoRecallResult {
+    const allMemories = this.queries.listMemories();
+    const summaries = allMemories.filter((r) =>
+      r.tags.includes('pepe-session-summary'),
+    );
+    return {
+      hits: summaries.map((record, index) => ({
+        turn: index + 1,
+        memo: formatMemoSnippet(record),
+        relevance: 1.0,
+      })),
+      already_in_context: summaries.map(() => false),
     };
   }
 }
