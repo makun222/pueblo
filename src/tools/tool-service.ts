@@ -8,6 +8,7 @@ import { createShellExecTool } from './shell-exec-tool';
 import { createWriteTool, type WriteToolRequest } from './write-tool';
 import { createUndoEditTool, type UndoEditToolRequest } from './undo-edit-tool';
 import { MemoRecallTool, type MemoRecallRequest } from './memo-recall-tool';
+import type { McpClientManager } from '../mcp/mcp-client';
 import type { MemoryQueries } from '../memory/memory-queries';
 import {
   getToolExecutionPolicy,
@@ -43,6 +44,7 @@ export interface ToolServiceDependencies {
   readonly resolveEditReviewHandler?: () => EditReviewHandler | null;
   readonly editShadowRoot?: string | (() => string);
   readonly memoRecallTool?: MemoRecallTool;
+  readonly mcpClientManager?: McpClientManager;
 }
 
 export interface ExecuteToolInput {
@@ -106,9 +108,11 @@ export class ToolService {
   private readonly writeTool = createWriteTool();
   private readonly undoEditTool = createUndoEditTool();
   private readonly memoRecallTool?: MemoRecallTool;
+  private readonly mcpClientManager?: McpClientManager;
 
   constructor(private readonly dependencies: ToolServiceDependencies) {
     this.memoRecallTool = dependencies.memoRecallTool;
+    this.mcpClientManager = dependencies.mcpClientManager;
     this.editTool = createEditTool({
       getReviewHandler: () => this.dependencies.resolveEditReviewHandler?.() ?? null,
       shadowRoot: this.dependencies.editShadowRoot,
@@ -126,7 +130,7 @@ export class ToolService {
   describeTools(): ProviderToolDefinition[] {
     const taskRootExplanation = 'The task root is the task target directory when one is set; otherwise it is the workspace root.';
 
-    return [
+    const tools: ProviderToolDefinition[] = [
       {
         name: 'glob',
         description: `Match repository paths by glob pattern relative to the current task root. ${taskRootExplanation}`,
@@ -187,6 +191,21 @@ export class ToolService {
         executionPolicy: getToolExecutionPolicy('memo_recall'),
       },
     ];
+
+    // Merge MCP tools if mcpClientManager is available
+    const mcpTools = this.mcpClientManager?.getAllTools() ?? [];
+    if (mcpTools.length > 0) {
+      for (const mcpTool of mcpTools) {
+        tools.push({
+          name: mcpTool.qualifiedName,
+          description: mcpTool.definition.description ?? `${mcpTool.qualifiedName} (MCP tool)`,
+          inputSchema: (mcpTool.definition.inputSchema ?? { type: 'object' as const, properties: {}, required: [], additionalProperties: false }) as any,
+          executionPolicy: 'approval-required' as const,
+        });
+      }
+    }
+
+    return tools;
   }
 
   async execute(input: ExecuteToolRequest): Promise<{ invocation: ReturnType<ToolInvocationRepository['create']>; output: ToolExecutionResult }> {
@@ -211,7 +230,7 @@ export class ToolService {
     readonly resultSummary: string;
   }): ReturnType<ToolInvocationRepository['create']> {
     const invocation = this.dependencies.repository.create({
-      toolName: input.toolName,
+      toolName: input.toolName as any,
       taskId: input.taskId,
       inputSummary: input.inputSummary,
       resultStatus: input.resultStatus,
@@ -313,6 +332,30 @@ export class ToolService {
   }
 
   private async executeTool(input: ExecuteToolRequest): Promise<ToolExecutionResult> {
+    // mcp__ 工具委托给 MCP Client Manager
+    if (input.toolName.startsWith('mcp__')) {
+      try {
+        if (!this.mcpClientManager) {
+          throw new Error('MCP client manager not initialized. Cannot execute MCP tool.');
+        }
+        const rawResult = await this.mcpClientManager.executeTool(input.toolName, input.args as Record<string, unknown>);
+        return {
+          toolName: input.toolName,
+          status: 'succeeded',
+          output: [typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult)],
+          summary: `MCP tool executed: ${input.toolName}`,
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          toolName: input.toolName,
+          status: 'failed',
+          output: [msg],
+          summary: `MCP tool failed: ${input.toolName}`,
+        };
+      }
+    }
+
     const executionCwd = input.executionCwd ?? this.resolveDefaultExecutionCwd();
 
     switch (input.toolName) {

@@ -14,9 +14,12 @@ import type {
   DesktopTalkState,
   DesktopToolApprovalBatch,
   DesktopToolApprovalState,
+  McpServerConfig,
+  McpConnectionState,
 } from '../shared/ipc-contract';
 import { isTaskCancellationError } from '../../shared/task-cancellation.js';
 import './styles.css';
+import { McpManager } from './mcp-manager';
 
 const THINKING_PLACEHOLDER = 'Thinking through the next step...';
 const STREAM_CHUNK_SIZE = 24;
@@ -177,6 +180,14 @@ declare global {
       onOutput: (callback: (event: unknown, data: RendererOutputBlock) => void) => void;
       removeAllListeners: (event: string) => void;
       focusMonitor: () => Promise<void>;
+      /** MCP server management */
+      mcpListServers: () => Promise<McpServerConfig[]>;
+      mcpAddServer: (config: McpServerConfig) => Promise<McpServerConfig>;
+      mcpUpdateServer: (config: McpServerConfig) => Promise<McpServerConfig>;
+      mcpRemoveServer: (serverName: string) => Promise<void>;
+      mcpRestartServer: (serverName: string) => Promise<void>;
+      mcpTestConnection: (config: McpServerConfig) => Promise<{ success: boolean; toolCount: number; error?: string }>;
+      mcpGetConnectionStates: () => Promise<McpConnectionState[]>;
     };
   }
 }
@@ -230,6 +241,7 @@ export function App() {
   const [transcriptSearchTerm, setTranscriptSearchTerm] = useState('');
   const [isTranscriptHistoryExpanded, setIsTranscriptHistoryExpanded] = useState(false);
   const [isContextBreakdownOpen, setIsContextBreakdownOpen] = useState(false);
+  const [isMcpManagerOpen, setIsMcpManagerOpen] = useState(false);
   const [toolApprovalSidebarWidth, setToolApprovalSidebarWidth] = useState(TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH);
   const [isResizingToolApprovalSidebar, setIsResizingToolApprovalSidebar] = useState(false);
   const [activeAnswerTimer, setActiveAnswerTimer] = useState<{ entryId: string; startedAtMs: number } | null>(null);
@@ -471,7 +483,7 @@ export function App() {
       }
 
       if (action === 'open-mcp-manager') {
-        console.log('TODO: implement MCP Manager');
+        setIsMcpManagerOpen(true);
         return;
       }
       if (action === 'open-cron-scheduler') {
@@ -1732,6 +1744,13 @@ export function App() {
           setSelectedFileChange(null);
         },
       }) : null}
+      {isMcpManagerOpen ? (
+        <McpManager
+          onClose={() => {
+            setIsMcpManagerOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -551,7 +551,12 @@ export function createCliDependencies(
     // Initialize TurnIndexer for this session (persists across multiple runTask calls)
     let turnIndexer = turnIndexers.get(sessionId);
     if (!turnIndexer) {
-      turnIndexer = new TurnIndexer(sessionId);
+      // Load existing session's messages to let TurnIndexer compute starting turn number,
+      // avoiding turnId collision across CLI restarts.
+      const existingSession = sessionService.getSession(sessionId);
+      turnIndexer = new TurnIndexer(sessionId, {
+        existingMessages: existingSession?.messageHistory ?? [],
+      });
       turnIndexers.set(sessionId, turnIndexer);
     }
 

@@ -3,12 +3,18 @@ import type { DesktopMenuAction } from '../shared/ipc-contract';
 
 const MENU_ACTION_CHANNEL = 'desktop-menu-action';
 
-export function installDesktopApplicationMenu(mainWindow: BrowserWindow): void {
-  const template = buildDesktopMenuTemplate(mainWindow);
+export function installDesktopApplicationMenu(
+  mainWindow: BrowserWindow,
+  onOpenMcp?: () => void,
+): void {
+  const template = buildDesktopMenuTemplate(mainWindow, onOpenMcp);
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function buildDesktopMenuTemplate(mainWindow: BrowserWindow): MenuItemConstructorOptions[] {
+function buildDesktopMenuTemplate(
+  mainWindow: BrowserWindow,
+  onOpenMcp?: () => void,
+): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = [];
 
   if (process.platform === 'darwin') {
@@ -79,7 +85,12 @@ function buildDesktopMenuTemplate(mainWindow: BrowserWindow): MenuItemConstructo
         { type: 'separator' },
         {
           label: 'MCP Manager',
-          enabled: false,
+          enabled: true,
+          click: () => {
+            if (onOpenMcp) {
+              onOpenMcp();
+            }
+          },
         },
         {
           label: 'Cron Scheduler',

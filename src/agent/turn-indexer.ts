@@ -11,6 +11,8 @@
  * - isFirstStepInTurn 在回合开始时为 true，第一步消费后由外部重置。
  */
 
+import type { SessionMessage } from '../shared/schema';
+
 // ---- 公共接口 ----
 
 /**
@@ -48,6 +50,13 @@ export interface TurnManager {
 export interface TurnIndexerOptions {
   /** 起始回合号，默认为 1 */
   startingTurnNumber?: number;
+
+  /**
+   * 会话中已有的消息列表。
+   * 提供后将自动从这些消息中计算起始 turn number，
+   * 并覆盖手动设置的 startingTurnNumber。
+   */
+  existingMessages?: SessionMessage[];
 }
 
 // ---- 默认值 ----
@@ -84,8 +93,12 @@ export class TurnIndexer implements TurnManager {
       throw new Error('TurnIndexer: sessionId must be a non-empty string');
     }
 
+    /** 从 existingMessages 计算起始 turn number */
+    const lastTurnNumber = computeMaxTurnNumber(options?.existingMessages);
     const startingTurnNumber =
-      options?.startingTurnNumber ?? DEFAULT_STARTING_TURN_NUMBER;
+      lastTurnNumber !== null
+        ? lastTurnNumber + 1
+        : (options?.startingTurnNumber ?? DEFAULT_STARTING_TURN_NUMBER);
 
     if (
       !Number.isInteger(startingTurnNumber) ||
@@ -128,4 +141,24 @@ export class TurnIndexer implements TurnManager {
   markStepConsumed(): void {
     this._isFirstStepInTurn = false;
   }
+}
+
+/**
+ * 从已有消息队列中计算最大 turn number。
+ * 如果消息为空或未提供，返回 null。
+ */
+function computeMaxTurnNumber(messages?: SessionMessage[]): number | null {
+  if (!messages || messages.length === 0) return null;
+  let max = 0;
+  for (const msg of messages) {
+    if (msg.turnId) {
+      // turnId format: "<sessionId>-turn-<number>"
+      const turnMatch = msg.turnId.match(/-turn-(\d+)$/);
+      if (turnMatch) {
+        const num = parseInt(turnMatch[1], 10);
+        if (num > max) max = num;
+      }
+    }
+  }
+  return max > 0 ? max : null;
 }

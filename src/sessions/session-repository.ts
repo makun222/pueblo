@@ -356,6 +356,21 @@ function deserializeMessageHistory(sessionId: string, serializedHistory: string,
     }
 
     if (typeof entry !== 'string') {
+      // Attempt to handle v1 entries with timestamp instead of createdAt
+      const obj = entry as Record<string, unknown>;
+      if (obj && typeof obj.timestamp === 'string') {
+        console.warn(`[session-repository] mapping legacy 'timestamp' to 'createdAt' for entry ${obj.id ?? '(no id)'}`);
+        const mapped = sessionMessageSchema.safeParse({
+          ...obj,
+          createdAt: obj.timestamp,
+          timestamp: undefined,
+        });
+        if (mapped.success) {
+          return [mapped.data];
+        }
+      }
+      // Still invalid — skip this single entry and continue
+      console.warn(`[session-repository] skipping invalid message entry ${(entry as Record<string, unknown>).id ?? '(no id)'}`);
       return [];
     }
 

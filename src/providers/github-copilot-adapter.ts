@@ -565,37 +565,37 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
     case 'glob':
       return {
         toolCallId,
-        toolName,
+        toolName: 'glob' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'glob', parsedArguments),
       };
     case 'grep':
       return {
         toolCallId,
-        toolName,
+        toolName: 'grep' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'grep', parsedArguments),
       };
     case 'exec':
       return {
         toolCallId,
-        toolName,
+        toolName: 'exec' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'exec', parsedArguments),
       };
     case 'shell_exec':
       return {
         toolCallId,
-        toolName,
+        toolName: 'shell_exec' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'shell_exec', parsedArguments),
       };
     case 'read':
       return {
         toolCallId,
-        toolName,
+        toolName: 'read' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'read', parsedArguments),
       };
     case 'edit':
       return {
         toolCallId,
-        toolName,
+        toolName: 'edit' as const,
         args: parseProviderEditCompatibleToolArgsOrThrow('github-copilot', parsedArguments),
       };
     case 'write':
@@ -607,15 +607,17 @@ function parseGitHubCopilotToolCall(toolCall: GitHubCopilotToolCall): ProviderTo
     case 'undo_edit':
       return {
         toolCallId,
-        toolName,
+        toolName: 'undo_edit' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'undo_edit', parsedArguments),
       };
     case 'memo_recall':
       return {
         toolCallId,
-        toolName,
+        toolName: 'memo_recall' as const,
         args: parseProviderToolArgsOrThrow('github-copilot', 'memo_recall', parsedArguments),
       };
+    default:
+      throw new ProviderError(`Unsupported tool name: ${toolName}`);
   }
 }
 

@@ -3,21 +3,37 @@ import { createOutputBlock } from '../../shared/result';
 import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 import { setupIpcHandlers } from './ipc';
 import { AppWindow } from './app-window';
+import { createMcpManagerWindow } from './mcp-manager-window';
 import type { LoopConfig } from '../../agent/loop-runner.js';
 import { DesktopLoopJobManager } from './loop-job-manager';
+import { McpClientManager } from '../../mcp/mcp-client';
+import { loadConfig, saveConfig } from '../../mcp/mcp-config';
+import { registerMcpIpcHandlers } from '../../mcp/mcp-ipc';
 
 let appWindow: AppWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
+let mcpManagerWindow: BrowserWindow | null = null;
 let disposeDesktopRuntime: (() => void) | null = null;
 
-function createMainWindow(): void {
+async function createMainWindow(): Promise<void> {
   disposeDesktopRuntime?.();
   disposeDesktopRuntime = null;
-  appWindow = new AppWindow();
+  const onOpenMcp = (): void => {
+    if (mcpManagerWindow && !mcpManagerWindow.isDestroyed()) {
+      if (mcpManagerWindow.isMinimized()) mcpManagerWindow.restore();
+      mcpManagerWindow.focus();
+    } else {
+      mcpManagerWindow = createMcpManagerWindow();
+    }
+  };
+
+  appWindow = new AppWindow(onOpenMcp);
   mainWindow = appWindow.browserWindow;
   appWindow.onClosed(() => {
     disposeDesktopRuntime?.();
     disposeDesktopRuntime = null;
+    mcpManagerWindow?.close();
+    mcpManagerWindow = null;
     mainWindow = null;
   });
 
@@ -26,6 +42,34 @@ function createMainWindow(): void {
     // Phase 3.1: runRound will be wired to the actual LLM round execution
     const loopJobManager = new DesktopLoopJobManager();
     const monitorWindow = appWindow!.getOrCreateMonitor();
+
+    // Load MCP server configuration
+    const mcpConfig = await loadConfig();
+    const mcpServers = mcpConfig.servers ?? [];
+
+    // Initialize the MCP Client Manager singleton (starts configured servers)
+    const mcpClient = new McpClientManager();
+    if (mcpServers.length > 0) {
+      void mcpClient.restartServers(mcpServers).catch((err: any) => {
+        console.error('[MCP] Failed to start MCP servers:', err);
+      });
+    }
+
+    // Register MCP IPC handlers for server management
+    registerMcpIpcHandlers(
+      mainWindow,
+      mcpClient,
+      () => mcpServers,
+      async (newServers) => {
+        // Persist to disk and reload servers
+        try {
+          await saveConfig({ servers: newServers });
+          await mcpClient.restartServers(newServers);
+        } catch (err: any) {
+          console.error('[MCP] Failed to save/reload MCP servers:', err);
+        }
+      },
+    );
 
     disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager, appWindow);
 

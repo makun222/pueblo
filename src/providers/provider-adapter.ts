@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { ProviderError } from './provider-errors';
 
-export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write' | 'undo_edit' | 'memo_recall';
+export type ProviderToolName = 'grep' | 'glob' | 'exec' | 'shell_exec' | 'read' | 'edit' | 'write' | 'undo_edit' | 'memo_recall' | (string & {});
 export type ToolExecutionPolicy = 'free' | 'approval-required';
 
 interface ProviderJsonSchemaStringProperty {
@@ -601,6 +602,8 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
       return providerUndoEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'memo_recall':
       return providerMemoRecallToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
+    default:
+      throw new ProviderError(`Unsupported tool: ${String(toolName)}`);
   }
 }
 

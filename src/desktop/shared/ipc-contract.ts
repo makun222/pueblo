@@ -16,6 +16,8 @@ import type {
   Session,
   WorkflowInstance,
 } from '../../shared/schema';
+import type { McpConnectionState, McpServerConfig } from '../../mcp/mcp-types';
+export type { McpConnectionState, McpServerConfig };
 
 export interface DesktopSubmitResponse {
   readonly result: CommandResult<unknown>;
@@ -239,4 +241,38 @@ export interface DesktopBridge {
 
   /** Focus / open the Monitor window. */
   focusMonitor(): Promise<void>;
+
+  // ──────────────────────────────────────────────
+  // MCP (Model Context Protocol) server management
+  // ──────────────────────────────────────────────
+
+  /** List all configured MCP servers. */
+  mcpListServers(): Promise<McpServerConfig[]>;
+
+  /** Add a new MCP server. */
+  mcpAddServer(config: McpServerConfig): Promise<McpServerConfig>;
+
+  /** Remove an MCP server by name. */
+  mcpRemoveServer(serverName: string): Promise<void>;
+
+  /** Update an existing MCP server. */
+  mcpUpdateServer(config: McpServerConfig): Promise<McpServerConfig>;
+
+  /** Restart an MCP server by name. */
+  mcpRestartServer(serverName: string): Promise<void>;
+
+  /** Test connection to an MCP server. */
+  mcpTestConnection(config: McpServerConfig): Promise<{ success: boolean; toolCount: number; error?: string }>;
+
+  /** Get connection states for all MCP servers. */
+  mcpGetConnectionStates(): Promise<McpConnectionState[]>;
+
+  /** List credential keys (server names that have stored API keys). */
+  mcpListCredentials(): Promise<string[]>;
+
+  /** Save a credential value. */
+  mcpSaveCredential(key: string, value: string): Promise<void>;
+
+  /** Delete a credential by key. */
+  mcpDeleteCredential(key: string): Promise<void>;
 }

@@ -12,6 +12,7 @@ import type {
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session } from '../../shared/schema';
+import type { McpConnectionState, McpServerConfig } from '../../mcp/mcp-types';
 
 const MENU_ACTION_CHANNEL = 'desktop-menu-action';
 const TOOL_APPROVAL_CHANNEL = 'tool-approval-state';
@@ -66,4 +67,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOutput: (callback: (event: any, data: any) => void) => ipcRenderer.on('output', callback),
   removeAllListeners: (event: string) => ipcRenderer.removeAllListeners(event),
+
+  // ── MCP (Model Context Protocol) ─────────────
+  mcpListServers: (): Promise<McpServerConfig[]> =>
+    ipcRenderer.invoke('mcp:list-servers'),
+
+  mcpAddServer: (config: McpServerConfig): Promise<McpServerConfig> =>
+    ipcRenderer.invoke('mcp:add-server', config),
+
+  mcpRemoveServer: (serverName: string): Promise<void> =>
+    ipcRenderer.invoke('mcp:remove-server', serverName),
+
+  mcpUpdateServer: (config: McpServerConfig): Promise<McpServerConfig> =>
+    ipcRenderer.invoke('mcp:update-server', config),
+
+  mcpRestartServer: (serverName: string): Promise<void> =>
+    ipcRenderer.invoke('mcp:restart-server', serverName),
+
+  mcpTestConnection: (config: McpServerConfig): Promise<{ success: boolean; toolCount: number; error?: string }> =>
+    ipcRenderer.invoke('mcp:test-connection', config),
+
+  mcpGetConnectionStates: (): Promise<McpConnectionState[]> =>
+    ipcRenderer.invoke('mcp:get-connection-states'),
+
+  mcpListCredentials: (): Promise<string[]> =>
+    ipcRenderer.invoke('mcp:list-credentials'),
+
+  mcpSaveCredential: (key: string, value: string): Promise<void> =>
+    ipcRenderer.invoke('mcp:save-credential', key, value),
+
+  mcpDeleteCredential: (key: string): Promise<void> =>
+    ipcRenderer.invoke('mcp:delete-credential', key),
 });

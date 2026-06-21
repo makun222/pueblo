@@ -1076,6 +1076,17 @@ export class AgentTaskRunner {
           executionCwd: args.executionCwd,
           signal: args.signal,
         });
+
+      default:
+        // MCP tool calls (mcp__<server>__<tool>)
+        return this.toolService.execute({
+          taskId: args.taskId,
+          toolName: (args.result as any).toolName,
+          args: (args.result as any).args,
+          inputSummary: args.inputSummary,
+          executionCwd: args.executionCwd,
+          signal: args.signal,
+        });
     }
   }
 
@@ -1134,6 +1145,14 @@ export class AgentTaskRunner {
           toolCallId: result.toolCallId,
           toolName: result.toolName,
           args: result.args,
+        };
+
+      default:
+        // MCP tool calls (mcp__<server>__<tool>) — pass through as-is
+        return {
+          toolCallId: (result as any).toolCallId,
+          toolName: (result as any).toolName,
+          args: (result as any).args,
         };
     }
   }
@@ -1633,6 +1652,9 @@ function formatProgressToolCall(toolCall: ProviderToolCall): string {
       const keyword = 'keyword' in toolCall.args ? String(toolCall.args.keyword) : 'memo recall';
       return `${toolCall.toolName} ${truncateProgressMessage(keyword)}`;
     }
+    default:
+      // MCP tool calls (mcp__<server>__<tool>)
+      return `${(toolCall as any).toolName} ${truncateProgressMessage(JSON.stringify((toolCall as any).args))}`;
   }
 }
 

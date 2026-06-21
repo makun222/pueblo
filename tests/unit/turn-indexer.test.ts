@@ -55,6 +55,36 @@ describe('TurnIndexer', () => {
     });
   });
 
+  describe('existingMessages', () => {
+    it('should derive starting turn number from existing messages with turnId', () => {
+      const messages: SessionMessage[] = [
+        { id: 'm1', role: 'user', content: 'hi', createdAt: '2024-01-01T00:00:00Z', taskId: null, toolName: null, turnId: 'session-abc-turn-3' },
+        { id: 'm2', role: 'assistant', content: 'hello', createdAt: '2024-01-01T00:00:01Z', taskId: null, toolName: null, turnId: 'session-abc-turn-1' },
+      ];
+      const indexer = new TurnIndexer('session', { existingMessages: messages });
+      expect(indexer['_turnNumber']).toBe(4);
+    });
+
+    it('should fall back when existing messages have no turnId pattern', () => {
+      const messages: SessionMessage[] = [
+        { id: 'm1', role: 'user', content: 'hi', createdAt: '2024-01-01T00:00:00Z', taskId: null, toolName: null, turnId: 'no-turn-pattern' },
+        { id: 'm2', role: 'assistant', content: 'hello', createdAt: '2024-01-01T00:00:01Z', taskId: null, toolName: null, turnId: null },
+      ];
+      const indexer = new TurnIndexer('session', { existingMessages: messages, startingTurnNumber: 5 });
+      expect(indexer['_turnNumber']).toBe(5);
+    });
+
+    it('should fall back to default when existingMessages is empty array', () => {
+      const indexer = new TurnIndexer('session', { existingMessages: [] });
+      expect(indexer['_turnNumber']).toBe(1);
+    });
+
+    it('should fall back when existingMessages not provided', () => {
+      const indexer = new TurnIndexer('session', { startingTurnNumber: 10 });
+      expect(indexer['_turnNumber']).toBe(10);
+    });
+  });
+
   // ----------------------------------------------------------
   // currentTurnId 格式
   // ----------------------------------------------------------

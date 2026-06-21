@@ -9,5 +9,11 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'dist/desktop/renderer'),
     emptyOutDir: false,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'src/desktop/renderer/index.html'),
+        mcpManager: path.resolve(__dirname, 'src/desktop/renderer/mcp-manager.html'),
+      },
+    },
   },
 });

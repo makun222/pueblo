@@ -386,9 +386,22 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
           cwd: workspaceRoot,
         });
 
+        function extractOutputSummary(output: string | undefined): string {
+          if (!output) {
+            return '';
+          }
+          try {
+            const parsed = JSON.parse(output);
+            return parsed.outputSummary ?? '';
+          } catch {
+            // Fallback: return raw string if JSON parsing fails
+            return output;
+          }
+        }
+
         const runRound: RunRoundFn = async (config, prevResult, signal) => {
           const taskInput: RunAgentTaskInput = {
-            goal: prevResult ? `${prevResult.output}\n\n${config.goal}` : config.goal,
+            goal: prevResult ? `${extractOutputSummary(prevResult.output)}\n\n${config.goal}` : config.goal,
             sessionId: null,
             providerId: resolved.taskContext.providerId ?? 'deepseek',
             modelId: resolved.taskContext.selectedModelId ?? 'deepseek-v4-pro',
