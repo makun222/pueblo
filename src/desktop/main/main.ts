@@ -71,7 +71,7 @@ async function createMainWindow(): Promise<void> {
       },
     );
 
-    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager, appWindow);
+    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager, appWindow, mcpClient);
 
     ipcMain.removeHandler('loop:start');
     ipcMain.handle('loop:start', async (_event, params) => {

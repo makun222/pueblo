@@ -1,0 +1,351 @@
+/* ===== Overlay ===== */
+.mcp-manager-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ===== Dialog ===== */
+.mcp-manager-dialog {
+    background: #1e1e2e;
+    border: 1px solid #3b3b5c;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 720px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+    color: #cdd6f4;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+/* ===== Header & Close ===== */
+.mcp-manager-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #313244;
+}
+.mcp-manager-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #cdd6f4;
+}
+.mcp-manager-close {
+    background: none;
+    border: none;
+    color: #6c7086;
+    font-size: 1.3rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+.mcp-manager-close:hover {
+    color: #cdd6f4;
+    background: rgba(255,255,255,0.08);
+}
+
+/* ===== Body & Sections ===== */
+.mcp-manager-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.mcp-manager-section {
+    background: #181825;
+    border: 1px solid #313244;
+    border-radius: 8px;
+    padding: 14px;
+}
+.mcp-manager-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: #a6adc8;
+}
+
+/* ===== Section Add Button ===== */
+.mcp-manager-add-btn {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    background: #45475a;
+    color: #cdd6f4;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.mcp-manager-add-btn:hover { background: #585b70; }
+
+/* ===== Empty State ===== */
+.mcp-manager-empty {
+    padding: 20px;
+    text-align: center;
+    color: #6c7086;
+    font-size: 0.85rem;
+}
+
+/* ===== Server List (Card Layout) ===== */
+.mcp-manager-server-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.mcp-manager-server-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: #1e1e2e;
+    border: 1px solid #313244;
+    border-radius: 6px;
+    transition: border-color 0.15s;
+}
+.mcp-manager-server-item:hover {
+    border-color: #45475a;
+}
+
+/* Server Info (name + command) */
+.mcp-manager-server-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.mcp-manager-server-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #cdd6f4;
+}
+.mcp-manager-server-command {
+    font-size: 0.75rem;
+    color: #6c7086;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Server Status */
+.mcp-manager-server-status {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin: 0 12px;
+    white-space: nowrap;
+}
+.mcp-manager-server-status.connected {
+    background: rgba(166, 227, 161, 0.12);
+    color: #a6e3a1;
+}
+.mcp-manager-server-status.disconnected {
+    background: rgba(108, 112, 134, 0.12);
+    color: #6c7086;
+}
+
+/* Server Actions (Edit/Delete/Test buttons) */
+.mcp-manager-server-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+/* ===== Buttons (6 variants) ===== */
+.mcp-manager-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    white-space: nowrap;
+}
+.mcp-manager-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* Primary (add/save) */
+.mcp-manager-btn-save {
+    background: #89b4fa;
+    color: #1e1e2e;
+}
+.mcp-manager-btn-save:hover:not(:disabled) { background: #74c7ec; }
+
+/* Test connection */
+.mcp-manager-btn-test {
+    background: #45475a;
+    color: #cdd6f4;
+}
+.mcp-manager-btn-test:hover:not(:disabled) { background: #585b70; }
+.mcp-manager-btn-test:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Secondary button */
+.mcp-manager-btn-secondary {
+    background: #313244;
+    color: #cdd6f4;
+}
+.mcp-manager-btn-secondary:hover:not(:disabled) { background: #45475a; }
+
+/* Edit */
+.mcp-manager-btn-edit {
+    background: #45475a;
+    color: #cdd6f4;
+}
+.mcp-manager-btn-edit:hover:not(:disabled) { background: #585b70; }
+
+/* Delete */
+.mcp-manager-btn-delete {
+    background: rgba(243, 139, 168, 0.15);
+    color: #f38ba8;
+}
+.mcp-manager-btn-delete:hover:not(:disabled) { background: rgba(243, 139, 168, 0.25); }
+
+/* Cancel */
+.mcp-manager-btn-cancel {
+    background: #313244;
+    color: #a6adc8;
+}
+.mcp-manager-btn-cancel:hover:not(:disabled) { background: #45475a; }
+
+/* ===== Built-in Examples Section ===== */
+.mcp-manager-example-section {
+    background: #181825;
+    border: 1px dashed #45475a;
+    border-radius: 8px;
+    padding: 14px;
+}
+.mcp-manager-example-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    color: #a6adc8;
+    font-size: 0.85rem;
+}
+
+.mcp-manager-example-content {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Example server card (compact) */
+.mcp-manager-example-content .mcp-manager-server-item {
+    border-left: 3px solid #89b4fa;
+    padding: 8px 12px;
+}
+
+/* ===== Form Section ===== */
+.mcp-manager-form-section {
+    background: #181825;
+    border: 1px solid #313244;
+    border-radius: 8px;
+    padding: 14px;
+}
+
+/* ===== Form Fields ===== */
+.mcp-manager-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+}
+
+
+.mcp-manager-field input {
+    padding: 8px 10px;
+    background: #1e1e2e;
+    border: 1px solid #313244;
+    border-radius: 6px;
+    color: #cdd6f4;
+    font-size: 0.85rem;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.mcp-manager-field input:focus {
+    border-color: #89b4fa;
+}
+.mcp-manager-field input::placeholder {
+    color: #585b70;
+}
+.mcp-manager-input-error {
+    border-color: #f38ba8 !important;
+}
+
+/* Error & info messages */
+.mcp-manager-error-msg {
+    font-size: 0.72rem;
+    color: #f38ba8;
+    margin-top: -6px;
+    margin-bottom: 8px;
+}
+.mcp-manager-info-msg {
+    font-size: 0.75rem;
+    color: #6c7086;
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+
+/* ===== Test Result ===== */
+.mcp-manager-test-result {
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+.mcp-manager-test-result.success {
+    background: rgba(166, 227, 161, 0.1);
+    color: #a6e3a1;
+    border: 1px solid rgba(166, 227, 161, 0.2);
+}
+.mcp-manager-test-result.error {
+    background: rgba(243, 139, 168, 0.1);
+    color: #f38ba8;
+    border: 1px solid rgba(243, 139, 168, 0.2);
+}
+
+.mcp-manager-test-result.warning {
+    background: rgba(249, 226, 175, 0.1);
+    color: #f9e2af;
+    border: 1px solid rgba(249, 226, 175, 0.2);
+}
+
+/* ===== Form Actions ===== */
+.mcp-manager-form-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+/* ===== Scrollbar ===== */
+.mcp-manager-dialog::-webkit-scrollbar,
+.mcp-manager-server-list::-webkit-scrollbar {
+    width: 6px;
+}
+.mcp-manager-dialog::-webkit-scrollbar-track,
+.mcp-manager-server-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.mcp-manager-dialog::-webkit-scrollbar-thumb,
+.mcp-manager-server-list::-webkit-scrollbar-thumb {
+    background: #45475a;
+    border-radius: 3px;
+}

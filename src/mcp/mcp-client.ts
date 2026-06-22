@@ -70,34 +70,52 @@ export class McpClientManager {
 
     const state = McpConnection.createState(config);
     state.status = 'connecting';
-    const connection = new McpConnection();
 
-    try {
-      // Inject API key if configured
-      if (config.apiKeyName) {
-        const apiKey = await getApiKey(config.id);
-        if (apiKey) {
-          config.env = {
-            ...config.env,
-            [config.apiKeyName]: apiKey,
-          };
+    // Load API key once before retry loop
+    if (config.apiKeyName) {
+      const apiKey = await getApiKey(config.id);
+      if (apiKey) {
+        config.env = {
+          ...config.env,
+          [config.apiKeyName]: apiKey,
+        };
+      }
+    }
+
+    const maxRetries = 3;
+    const baseDelayMs = 1000; // 1s
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const connection = new McpConnection();
+      try {
+        await connection.connect(config);
+        // Discover tools
+        const tools = await connection.listTools();
+        state.tools = tools;
+        state.status = 'connected';
+        state.session = {};
+        state.lastDiscoveredAt = Date.now();
+
+        this.connections.set(config.id, { connection, state });
+        return state;
+      } catch (err) {
+        connection.dispose();
+        const errorMessage = err instanceof Error ? err.message : String(err);
+
+        if (attempt < maxRetries) {
+          const delay = baseDelayMs * Math.pow(2, attempt); // 1s, 2s, 4s
+          console.warn(
+            `[MCP] Connection to "${config.id}" failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${errorMessage}`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          state.status = 'error';
+          state.lastError = `Connection failed after ${maxRetries + 1} attempts: ${errorMessage}`;
+          console.error(
+            `[MCP] Connection to "${config.id}" failed after ${maxRetries + 1} attempts: ${errorMessage}`,
+          );
         }
       }
-
-      await connection.connect(config);
-
-      // Discover tools
-      const tools = await connection.listTools();
-      state.tools = tools;
-      state.status = 'connected';
-      state.session = {};
-      state.lastDiscoveredAt = Date.now();
-
-      this.connections.set(config.id, { connection, state });
-    } catch (err) {
-      state.status = 'error';
-      state.lastError = err instanceof Error ? err.message : String(err);
-      connection.dispose();
     }
 
     return state;
@@ -174,20 +192,36 @@ export class McpClientManager {
 
   /** Test a connection without persisting it */
   async testConnection(config: McpServerConfig): Promise<{ connected: boolean; toolsFound: number; error?: string }> {
-    const connection = new McpConnection();
-    try {
-      await connection.connect(config);
-      const tools = await connection.listTools();
-      connection.disconnect();
-      return { connected: true, toolsFound: tools.length };
-    } catch (err) {
-      connection.dispose();
-      return {
-        connected: false,
-        toolsFound: 0,
-        error: err instanceof Error ? err.message : String(err),
-      };
+    const maxRetries = 3;
+    const baseDelayMs = 1000; // 1s
+    let lastError: string | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const connection = new McpConnection();
+      try {
+        await connection.connect(config);
+        const tools = await connection.listTools();
+        connection.disconnect();
+        return { connected: true, toolsFound: tools.length };
+      } catch (err) {
+        connection.dispose();
+        lastError = err instanceof Error ? err.message : String(err);
+
+        if (attempt < maxRetries) {
+          const delay = baseDelayMs * Math.pow(2, attempt); // 1s, 2s, 4s
+          console.warn(
+            `[MCP] Test connection to "${config.id}" failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${lastError}`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
     }
+
+    return {
+      connected: false,
+      toolsFound: 0,
+      error: `Connection failed after ${maxRetries + 1} attempts: ${lastError}`,
+    };
   }
 
   /** Reinitialize (reload config and re-establish connections) */

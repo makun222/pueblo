@@ -26,6 +26,7 @@ export const McpManager: React.FC<McpManagerProps> = ({ onClose }) => {
   const [editingServer, setEditingServer] = useState<McpServerEntry | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [connectingIndex, setConnectingIndex] = useState<number | null>(null);
 
   // Form state for add/edit
   const [formName, setFormName] = useState('');
@@ -177,26 +178,30 @@ export const McpManager: React.FC<McpManagerProps> = ({ onClose }) => {
   );
 
   const handleTestConnection = useCallback(
-    async (serverId: string) => {
+    async (idx: number) => {
+      if (connectingIndex !== null) return;
+      const server = servers[idx];
+      if (!server) return;
+      setConnectingIndex(idx);
+      setTestResult(null);
       try {
-        const entry = servers.find(s => s.id === serverId);
-        if (!entry) {
-          setTestResult('Server not found.');
-          return;
-        }
-        const serverConfig: McpServerConfig = { ...entry, enabled: true };
+        const serverConfig: McpServerConfig = { ...server, enabled: true };
         const result = await window.electronAPI.mcpTestConnection(serverConfig);
-        setTestResult(result.success ? 'Connection successful.' : `Connection failed: ${result.error ?? 'Unknown error'}`);
+        const toolCount = result.toolCount ?? 0;
+        setTestResult(`✅ Connection successful — ${toolCount} tool(s) discovered`);
         setConnStatus((prev) => {
           const next = new Map(prev);
-          next.set(serverId, result.success);
+          next.set(server.id, result.success);
           return next;
         });
       } catch (err) {
-        setTestResult(`Connection error: ${err instanceof Error ? err.message : String(err)}`);
+        const message = err instanceof Error ? err.message : String(err);
+        setTestResult(`❌ Connection failed — ${message}`);
+      } finally {
+        setConnectingIndex(null);
       }
     },
-    [servers],
+    [servers, connectingIndex],
   );
 
   return (
@@ -215,6 +220,9 @@ export const McpManager: React.FC<McpManagerProps> = ({ onClose }) => {
               <button className="mcp-manager-add-btn" onClick={openAddForm}>
                 + Add Server
               </button>
+              <button className="mcp-manager-btn mcp-manager-btn-secondary" onClick={loadServers}>
+                ↻ Refresh
+              </button>
             </div>
 
             {servers.length === 0 && !isAdding && (
@@ -222,7 +230,7 @@ export const McpManager: React.FC<McpManagerProps> = ({ onClose }) => {
             )}
 
             <ul className="mcp-manager-server-list">
-              {servers.map((server) => (
+              {servers.map((server, idx) => (
                 <li key={server.id} className="mcp-manager-server-item">
                   <div className="mcp-manager-server-info">
                     <span className="mcp-manager-server-name">{server.name}</span>
@@ -234,8 +242,12 @@ export const McpManager: React.FC<McpManagerProps> = ({ onClose }) => {
                     </span>
                   </div>
                   <div className="mcp-manager-server-actions">
-                    <button className="mcp-manager-btn mcp-manager-btn-test" onClick={() => handleTestConnection(server.id)}>
-                      Test
+                    <button
+                      className="mcp-manager-btn mcp-manager-btn-test"
+                      onClick={() => handleTestConnection(idx)}
+                      disabled={connectingIndex === idx}
+                    >
+                      {connectingIndex === idx ? '⏳ Connecting...' : 'Test'}
                     </button>
                     <button className="mcp-manager-btn mcp-manager-btn-edit" onClick={() => openEditForm(server)}>
                       Edit
@@ -363,11 +375,16 @@ DEBUG=true`}</pre>
                 {validationErrors.env && <span className="mcp-manager-error-msg">{validationErrors.env}</span>}
               </label>
 
-              {testResult && (
-                <p className={`mcp-manager-test-result ${testResult.includes('successful') ? 'success' : 'error'}`}>
-                  {testResult}
-                </p>
-              )}
+              {testResult && (() => {
+                const isSuccess = testResult.includes('✅');
+                const isTimeout = testResult.includes('timed out');
+                const resultClass = isSuccess ? 'success' : isTimeout ? 'warning' : 'error';
+                return (
+                  <div className={`mcp-manager-test-result ${resultClass}`}>
+                    {testResult}
+                  </div>
+                );
+              })()}
 
               <div className="mcp-manager-form-actions">
                 <button className="mcp-manager-btn mcp-manager-btn-save" onClick={handleSave}>

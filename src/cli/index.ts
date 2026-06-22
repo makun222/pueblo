@@ -186,6 +186,7 @@ export interface CreateCliDependenciesOptions {
   readonly puebloWorkingDirectory?: string;
   readonly credentialStore?: CredentialStore;
   readonly pepeWorkerFactory?: PepeWorkerFactory;
+  readonly mcpClientManager?: import('../mcp/mcp-client').McpClientManager;
 }
 
 export interface InteractiveCliSessionOptions {
@@ -397,6 +398,7 @@ export function createCliDependencies(
     resolveEditReviewHandler: () => fileReviewHandler,
     editShadowRoot: () => path.resolve(currentWorkspace, '.pueblo', 'shadow-edits'),
     memoRecallTool,
+    mcpClientManager: options.mcpClientManager,
   });
   const workflowRepository = new WorkflowRepository({ connection: database.connection });
   const workflowRegistry = new WorkflowRegistry([

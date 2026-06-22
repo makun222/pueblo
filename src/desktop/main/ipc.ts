@@ -4,6 +4,7 @@ import { createRuntimeCoordinator, RuntimeMessage } from '../../app/runtime';
 import type { ToolApprovalDecision, ToolApprovalRequest, RunAgentTaskInput } from '../../agent/task-runner';
 import type { RunRoundFn } from '../../agent/loop-runner';
 import { createCliDependencies } from '../../cli/index';
+import type { McpClientManager } from '../../mcp/mcp-client';
 import { tokenizeCommandInput } from '../../commands/dispatcher';
 import { routeInput } from '../../commands/input-router';
 import { loadAppConfig } from '../../shared/config';
@@ -62,9 +63,9 @@ interface PendingFileReview {
   readonly reject: (error: Error) => void;
 }
 
-export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager, appWindow?: AppWindow): () => void {
+export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager, appWindow?: AppWindow, mcpClientManager?: McpClientManager): () => void {
   const config = loadAppConfig();
-  const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true });
+  const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true, mcpClientManager });
 
   // Wire callModel for pre-flight goal validation
   const callModel: CallModelFn = async (modelId: string, prompt: string) => {
