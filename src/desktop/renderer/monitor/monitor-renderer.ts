@@ -109,7 +109,7 @@ function renderJobCard(data: JobProgressData): void {
       const outputs = outputsByJob.get(data.jobId);
       if (outputs && outputs.length > 0) {
         outputEl.innerHTML = outputs
-          .map((o, i) => `<div class="round-output">Round ${i + 1}: ${escapeHtml(extractOutputSummary(o))}</div>`)
+          .map((o, i) => `<div class="round-output">Round ${i + 1}: ${escapeHtml(o)}</div>`)
           .join('');
         outputEl.style.display = 'block';
       } else {
@@ -123,19 +123,6 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
-}
-
-/** Extract the value of "outputSummary" from a JSON-like key-value string. */
-function extractOutputSummary(raw: string): string {
-  try {
-    const parsed = JSON.parse(`{${raw}}`);
-    const summary = parsed.outputSummary;
-    return typeof summary === 'string' ? summary : raw;
-  } catch {
-    // Fallback: try regex extraction
-    const match = raw.match(/"outputSummary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-    return match ? match[1] : raw;
-  }
 }
 
 // Register IPC listeners from main process
@@ -179,5 +166,34 @@ window.monitorAPI.onJobError((data: { jobId: string; error: string }) => {
     const progressEl = card.querySelector('.job-progress')! as HTMLElement;
     progressEl.textContent = data.error;
     disableCancelButton(data.jobId);
+  }
+});
+
+// Initialize: render cards for all active jobs when the monitor window opens
+window.addEventListener('DOMContentLoaded', async () => {
+  const jobs = (await window.monitorAPI.getActiveJobs()) as Array<{
+    jobId: string;
+    state: string;
+    round: number;
+    totalRounds: number;
+    error?: string;
+  }>;
+  if (!Array.isArray(jobs)) return;
+  for (const job of jobs) {
+    const status = ((): JobProgressData['status'] => {
+      switch (job.state) {
+        case 'running': return 'running';
+        case 'completed': return 'completed';
+        default: return 'error';
+      }
+    })();
+    renderJobCard({
+      jobId: job.jobId,
+      status,
+      round: job.round,
+      totalRounds: job.totalRounds,
+      message: job.state,
+      error: job.error || '',
+    });
   }
 });

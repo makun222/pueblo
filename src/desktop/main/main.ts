@@ -4,6 +4,7 @@ import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 import { setupIpcHandlers } from './ipc';
 import { AppWindow } from './app-window';
 import { createMcpManagerWindow } from './mcp-manager-window';
+import { openClockWindow } from './clock-window';
 import type { LoopConfig } from '../../agent/loop-runner.js';
 import { DesktopLoopJobManager } from './loop-job-manager';
 import { McpClientManager } from '../../mcp/mcp-client';
@@ -27,7 +28,11 @@ async function createMainWindow(): Promise<void> {
     }
   };
 
-  appWindow = new AppWindow(onOpenMcp);
+  const onOpenClock = (): void => {
+    openClockWindow();
+  };
+
+  appWindow = new AppWindow(onOpenMcp, onOpenClock);
   mainWindow = appWindow.browserWindow;
   appWindow.onClosed(() => {
     disposeDesktopRuntime?.();

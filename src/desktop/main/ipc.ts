@@ -8,7 +8,7 @@ import type { McpClientManager } from '../../mcp/mcp-client';
 import { tokenizeCommandInput } from '../../commands/dispatcher';
 import { routeInput } from '../../commands/input-router';
 import { loadAppConfig } from '../../shared/config';
-import { createOutputBlock, createPhasedResultBlocks, createResultBlocks } from '../../shared/result';
+import { createOutputBlock, createPhasedResultBlocks, createResultBlocks, extractTaskOutputSummaryText } from '../../shared/result';
 import { ipcInputEnvelopeSchema, type IpcInputEnvelope } from '../../shared/schema';
 import { createTaskCancellationError, isTaskCancellationError } from '../../shared/task-cancellation';
 import type { EditReviewRequest } from '../../tools/edit-tool';
@@ -387,22 +387,9 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
           cwd: workspaceRoot,
         });
 
-        function extractOutputSummary(output: string | undefined): string {
-          if (!output) {
-            return '';
-          }
-          try {
-            const parsed = JSON.parse(output);
-            return parsed.outputSummary ?? '';
-          } catch {
-            // Fallback: return raw string if JSON parsing fails
-            return output;
-          }
-        }
-
         const runRound: RunRoundFn = async (config, prevResult, signal) => {
           const taskInput: RunAgentTaskInput = {
-            goal: prevResult ? `${extractOutputSummary(prevResult.output)}\n\n${config.goal}` : config.goal,
+            goal: prevResult ? `${prevResult.output}\n\n${config.goal}` : config.goal,
             sessionId: null,
             providerId: resolved.taskContext.providerId ?? 'deepseek',
             modelId: resolved.taskContext.selectedModelId ?? 'deepseek-v4-pro',
@@ -413,7 +400,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
           };
           const taskRunner = cli.getTaskRunner();
           const task = await taskRunner.run(taskInput);
-          const output = task.outputSummary ?? '';
+          const output = extractTaskOutputSummaryText(task.outputSummary) ?? '';
           return { output, tokenUsage: 0 };
         };
         loopJobManager.setRunRound(runRound);

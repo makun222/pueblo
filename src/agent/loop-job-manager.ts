@@ -90,7 +90,7 @@ export class LoopJobManager {
    * thrown.  Otherwise a jobId is returned immediately and execution
    * proceeds in the background (potentially after queuing).
    */
-  start(config: LoopConfig, onProgress?: OnRoundProgress, _jobId?: string): { jobId: string } {
+  start(config: LoopConfig, onProgress?: OnRoundProgress, _jobId?: string, skipLaunch?: boolean): { jobId: string } {
     if (config.maxRounds < 1) {
       throw new Error('LoopJobManager.start: maxRounds must be >= 1');
     }
@@ -103,7 +103,7 @@ export class LoopJobManager {
 
     const record: JobRecord = {
       jobId,
-      state: 'running',
+      state: 'pending',
       round: 0,
       totalRounds: config.maxRounds,
       results: [],
@@ -117,15 +117,33 @@ export class LoopJobManager {
 
     this.jobs.set(jobId, record);
 
-    // Try to start immediately; queue if at capacity.
+    if (!skipLaunch) {
+      // Try to start immediately; queue if at capacity.
+      const activeCount = this.activeCount();
+      if (activeCount < this.maxConcurrent) {
+        this.launch(record);
+      } else {
+        this.queue.push(jobId);
+      }
+    }
+
+    return { jobId };
+  }
+
+  /**
+   * Launch a previously-created job that was deferred via skipLaunch.
+   */
+  launchJob(jobId: string): void {
+    const record = this.jobs.get(jobId);
+    if (!record) {
+      throw new Error(`Job ${jobId} not found`);
+    }
     const activeCount = this.activeCount();
     if (activeCount < this.maxConcurrent) {
       this.launch(record);
     } else {
       this.queue.push(jobId);
     }
-
-    return { jobId };
   }
 
   /**
@@ -225,6 +243,7 @@ export class LoopJobManager {
       }
     };
 
+    record.state = 'running';
     record.runPromise = this.loopRunner
       .run(record.config, this.runRound, record.jobId, onProgress, record.pauseController)
       .then((result) => {

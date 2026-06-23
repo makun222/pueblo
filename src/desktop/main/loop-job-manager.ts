@@ -143,15 +143,20 @@ export class DesktopLoopJobManager {
 		_jobId?: string,
 		modelId?: string,
 	): Promise<{ jobId: string }> {
-		// Pre-flight goal validation (only when callModel is wired)
+		// Create the job immediately so the UI sees progress right away,
+		// but defer launch until validation completes.
+		const { jobId } = this.agentManager.start(config, onProgress, _jobId, true);
+
 		if (this._callModel && modelId) {
 			const { valid, reason } = await this.validateGoal(config.goal, modelId);
 			if (!valid) {
+				this.agentManager.cancel(jobId);
 				throw new Error(`Goal validation failed: ${reason}`);
 			}
 		}
 
-		return this.agentManager.start(config, onProgress, _jobId);
+		this.agentManager.launchJob(jobId);
+		return { jobId };
 	}
 
 	/** Cancel a running or pending loop job. */

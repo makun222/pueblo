@@ -6,14 +6,16 @@ const MENU_ACTION_CHANNEL = 'desktop-menu-action';
 export function installDesktopApplicationMenu(
   mainWindow: BrowserWindow,
   onOpenMcp?: () => void,
+  onOpenClock?: () => void,
 ): void {
-  const template = buildDesktopMenuTemplate(mainWindow, onOpenMcp);
+  const template = buildDesktopMenuTemplate(mainWindow, onOpenMcp, onOpenClock);
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function buildDesktopMenuTemplate(
   mainWindow: BrowserWindow,
   onOpenMcp?: () => void,
+  onOpenClock?: () => void,
 ): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = [];
 
@@ -89,6 +91,15 @@ function buildDesktopMenuTemplate(
           click: () => {
             if (onOpenMcp) {
               onOpenMcp();
+            }
+          },
+        },
+        {
+          label: 'DeskClock',
+          accelerator: 'CmdOrCtrl+Shift+K',
+          click: () => {
+            if (onOpenClock) {
+              onOpenClock();
             }
           },
         },

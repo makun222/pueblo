@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "npm run build:main && npm run build:renderer",
-    "build:main": "tsc -p tsconfig.json && xcopy /Y /I src\\desktop\\renderer\\monitor\\monitor-window.html dist\\src\\desktop\\renderer\\monitor\\monitor-window.html",
+    "build:main": "tsc -p tsconfig.json && xcopy /Y /I src\\desktop\\renderer\\monitor\\monitor-window.html dist\\src\\desktop\\renderer\\monitor\\monitor-window.html && xcopy /Y /I src\\desktop\\renderer\\clock\\clock.html dist\\src\\desktop\\renderer\\clock\\clock.html",
     "build:renderer": "vite build --config vite.desktop.config.ts",
     "dev": "node dist/cli/index.js",
     "dev:renderer": "vite --config vite.desktop.config.ts",
