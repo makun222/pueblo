@@ -6,7 +6,7 @@ export default defineConfig({
       {
         test: {
           name: 'node',
-          include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+          include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/agent/camel/__tests__/**/*.test.ts'],
           exclude: ['tests/desktop/**/*.test.ts', 'tests/desktop/**/*.test.tsx', 'tests/unit/**/*.test.tsx'],
           environment: 'node',
           coverage: {

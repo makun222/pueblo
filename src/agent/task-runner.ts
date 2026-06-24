@@ -18,6 +18,10 @@ import { ProviderRegistry } from '../providers/provider-registry';
 import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
 import { ToolService } from '../tools/tool-service';
+import {
+  ExecuteTurnInput as CamelExecuteTurnInput,
+  ExecuteTurnOutput as CamelExecuteTurnOutput,
+} from './camel/camel-types';
 import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
 import fs from 'node:fs';
@@ -268,6 +272,90 @@ export class AgentTaskRunner {
       );
       throw error;
     }
+  }
+
+  public async executeTurn(input: CamelExecuteTurnInput): Promise<CamelExecuteTurnOutput> {
+    const { context, providerId, modelId, signal } = input;
+
+    // Build ProviderMessage[] from context.history (string[]) + contextSummary['goal']
+    const goal =
+      (context.contextSummary?.['goal'] as string | undefined) ??
+      'Continue the conversation.';
+    const messages: ProviderMessage[] = [
+      { role: 'system', content: goal },
+      ...context.history.map((msg): ProviderMessage => ({
+        role: 'user',
+        content: msg,
+      })),
+    ];
+
+    const adapter = this.providerRegistry.getAdapter(providerId);
+    const availableTools: ProviderToolDefinition[] =
+      this.toolService?.describeTools?.() ?? [];
+    const executionCwd = this.toolService?.getDefaultExecutionCwd?.();
+
+    // Step 1: Initial run
+    let result = await adapter.runStep({
+      modelId,
+      messages,
+      availableTools,
+      signal,
+    });
+
+    // Handle tool-calls with 'allow-once' strategy
+    if (result.type === 'tool-call' || result.type === 'tool-calls') {
+      const toolCalls: ProviderToolCall[] =
+        result.type === 'tool-calls'
+          ? [...result.toolCalls]
+          : [this.toProviderToolCall(result)];
+
+      // Execute all tool calls once (allow-once: allow all, no further tool calls)
+      const toolResults: ProviderMessage[] = [];
+      for (const tc of toolCalls) {
+        const { output } = await this.executeToolCall(
+          /* taskId */ '',
+          tc,
+          executionCwd,
+          signal,
+          'allow-once',
+        );
+        toolResults.push({
+          role: 'tool',
+          content: serializeToolResultForModel(output),
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+        });
+      }
+
+      // Feed tool results back for final response
+      const updatedMessages: ProviderMessage[] = [
+        ...messages,
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls,
+        },
+        ...toolResults,
+      ];
+
+      result = await adapter.runStep({
+        modelId,
+        messages: updatedMessages,
+        availableTools,
+        signal,
+      });
+    }
+
+    const suggestion =
+      result.type === 'final' ? (result.outputSummary ?? '') : '';
+
+    return {
+      suggestion,
+      context: {
+        ...context,
+        history: [...context.history, suggestion],
+      },
+    };
   }
 
   private buildInputSummary(input: RunAgentTaskInput): string {
