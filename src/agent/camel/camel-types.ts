@@ -2,6 +2,8 @@
 // camel-types.ts — CamelAgent 核心类型定义
 // ============================================================================
 
+import type { ProviderMessage } from '../../providers/provider-adapter.js';
+
 /** Agent 生命周期状态 */
 export type CamelStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -30,10 +32,29 @@ export interface CamelAgentInput {
   callbacks?: CamelCallback[];
 }
 
+/** 单轮对话的完整记录（消息级上下文，用于滑动窗口） */
+export interface CamelTurnRecord {
+    /** 轮次序号（从 1 开始） */
+    /** Turn 序号，由 CamelContext.recordTurn() 自动分配 */
+  turnNumber?: number;
+    /** 本轮完整 messages（system / user / assistant / tool results） */
+    readonly messages: ProviderMessage[];
+    /** 本轮 LLM 最终输出的摘要文本 */
+    readonly suggestion: string;
+}
+
 /** 回合间上下文 */
+export interface CamelContextInput {
+  sessionId: string;
+  goal: string;
+  budget?: number;
+}
+
 export interface CamelTurnContext {
-  /** 历史记录快照 */
-  history: string[];
+  /** 最近 N 轮的完整记录（滑动窗口，由 CamelContextManager 维护） */
+  turns: CamelTurnRecord[];
+  /** 超出滑动窗口的旧轮日志（追加文本） */
+  taskLog: string;
   /** 上下文摘要 */
   contextSummary: Record<string, unknown>;
   /** 上一轮建议 */
@@ -73,6 +94,8 @@ export interface ExecuteTurnInput {
 export interface ExecuteTurnOutput {
   suggestion: string;
   context: CamelTurnContext;
+  /** 本轮完整对话记录（消息级，供滑动窗口消费） */
+  turn: { messages: ProviderMessage[]; suggestion: string };
 }
 
 /** executeTurn 函数签名（由 Stream B 的 task-runner 实现） */

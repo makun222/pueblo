@@ -19,7 +19,7 @@ function mockExecuteTurn(
   let index = 0;
   return vi.fn(async (_input: ExecuteTurnInput): Promise<ExecuteTurnOutput> => {
     const suggestion = index < suggestions.length ? suggestions[index++] : '';
-    return { suggestion, context: _input.context };
+    return { suggestion, context: _input.context, turn: { messages: [], suggestion } };
   });
 }
 

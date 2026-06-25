@@ -1,82 +1,70 @@
-// ============================================================================
-// camel-context.ts — CamelAgent 回合间上下文管理
-// ============================================================================
-
-import type { CamelTurnContext } from './camel-types';
-
-/** 内部历史记录条目 */
-interface HistoryEntry {
-  turn: number;
-  suggestion: string;
-  summary: Record<string, unknown>;
-}
+﻿import type { CamelContextInput, CamelTurnContext, CamelTurnRecord } from './camel-types';
 
 /**
- * CamelContext — 回合间上下文管理
+ * Maintains the Camel turn context with a 3-turn sliding window.
  *
- * 职责：
- * - 维护回合历史（HistoryEntry 数组）
- * - 构建上下文摘要（供下一轮 prompt 使用）
- * - 跟踪工作预算（fixed 模式下递减）
- * - 提供 get() 方法生成不可变的 CamelTurnContext 快照
+ * - Recent turns are kept in `turns` (max 3).
+ * - Old turns are evicted to `taskLog`.
+ * - Each `CamelTurnRecord` contains `messages` (full ProviderMessage[] for that turn)
+ *   and `suggestion` (the final text summary).
  */
 export class CamelContext {
-  private history: HistoryEntry[] = [];
-  private turnCount = 0;
-  private workBudget: number;
+  private sessionId: string;
+  private goal: string;
+  private budget: number;
+  private consumed: number;
+  private turns: CamelTurnRecord[] = [];
+  private taskLog: string = '';
 
-  constructor(budgetLimit: number) {
-    this.workBudget = budgetLimit;
+  constructor(input: CamelContextInput) {
+    this.sessionId = input.sessionId;
+    this.goal = input.goal;
+    this.budget = input.budget ?? 50;
+    this.consumed = 0;
   }
 
-  /** 获取当前上下文快照 */
+  /** Return the current context for the next turn. */
   get(): CamelTurnContext {
     return {
-      history: this.history.map(
-        h => `[turn ${h.turn}] ${h.suggestion}`,
-      ),
-      contextSummary: this.buildSummary(),
+      turns: this.turns.slice(),
+      taskLog: this.taskLog,
+      contextSummary: { goal: this.goal },
       lastSuggestion:
-        this.history.length > 0
-          ? this.history[this.history.length - 1].suggestion
+        this.turns.length > 0
+          ? this.turns[this.turns.length - 1].suggestion
           : null,
-      turnCount: this.turnCount,
-      workBudget: this.workBudget,
+      turnCount: this.turns.length,
+      workBudget: this.getRemainingBudget(),
     };
   }
 
-  /** 记录一轮建议 */
-  recordTurn(suggestion: string): void {
-    this.turnCount++;
-    this.workBudget = Math.max(0, this.workBudget - 1);
-    this.history.push({
-      turn: this.turnCount,
-      suggestion,
-      summary: {},
-    });
+  /** Record a completed turn. Implements 3-turn sliding window. */
+  recordTurn(turn: CamelTurnRecord): void {
+    // Evict oldest turn to taskLog if we have 3 turns already
+    if (this.turns.length >= 3) {
+      const evicted = this.turns[0];
+      this.taskLog +=
+        `\n--- Turn ---\n` +
+        `${evicted.suggestion}\n`;
+      this.turns = this.turns.slice(1);
+    }
+
+    this.turns.push(turn);
   }
 
-  /** 消耗指定步数的预算 */
-  consumeBudget(amount: number): void {
-    this.workBudget = Math.max(0, this.workBudget - amount);
+  /** Consume one budget step. Returns true if budget remains. */
+  consumeBudget(): boolean {
+    this.consumed += 1;
+    return this.consumed < this.budget;
   }
 
-  /** 获取剩余预算 */
+  /** Get remaining budget steps. */
   getRemainingBudget(): number {
-    return this.workBudget;
+    return Math.max(0, this.budget - this.consumed);
   }
 
-  /** 已执行的回合数（即已消耗的预算步数） */
+  /** Get consumed step count. */
   getConsumedSteps(): number {
-    return this.history.length;
-  }
-
-  /** 构建上下文摘要 */
-  private buildSummary(): Record<string, unknown> {
-    return {
-      totalTurns: this.turnCount,
-      consumedSteps: this.history.length,
-      remainingBudget: this.workBudget,
-    };
+    return this.consumed;
   }
 }

@@ -277,16 +277,13 @@ export class AgentTaskRunner {
   public async executeTurn(input: CamelExecuteTurnInput): Promise<CamelExecuteTurnOutput> {
     const { context, providerId, modelId, signal } = input;
 
-    // Build ProviderMessage[] from context.history (string[]) + contextSummary['goal']
+    // Build ProviderMessage[] from context.turns (CamelTurnRecord[]) + contextSummary['goal']
     const goal =
       (context.contextSummary?.['goal'] as string | undefined) ??
       'Continue the conversation.';
-    const messages: ProviderMessage[] = [
+    let turnMessages: ProviderMessage[] = [
       { role: 'system', content: goal },
-      ...context.history.map((msg): ProviderMessage => ({
-        role: 'user',
-        content: msg,
-      })),
+      ...context.turns.flatMap(t => t.messages),
     ];
 
     const adapter = this.providerRegistry.getAdapter(providerId);
@@ -297,7 +294,7 @@ export class AgentTaskRunner {
     // Step 1: Initial run
     let result = await adapter.runStep({
       modelId,
-      messages,
+      messages: turnMessages,
       availableTools,
       signal,
     });
@@ -329,7 +326,7 @@ export class AgentTaskRunner {
 
       // Feed tool results back for final response
       const updatedMessages: ProviderMessage[] = [
-        ...messages,
+        ...turnMessages,
         {
           role: 'assistant',
           content: '',
@@ -344,6 +341,8 @@ export class AgentTaskRunner {
         availableTools,
         signal,
       });
+
+      turnMessages = updatedMessages;
     }
 
     const suggestion =
@@ -353,8 +352,9 @@ export class AgentTaskRunner {
       suggestion,
       context: {
         ...context,
-        history: [...context.history, suggestion],
+        turns: [...context.turns, { messages: turnMessages, suggestion }],
       },
+      turn: { messages: turnMessages, suggestion },
     };
   }
 

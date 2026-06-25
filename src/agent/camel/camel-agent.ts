@@ -7,6 +7,7 @@ import type {
   CamelBudgetStrategy,
   CamelAgentInput,
   CamelTurnContext,
+  CamelTurnRecord,
   CamelCallback,
   CamelReport,
   ExecuteTurnInput,
@@ -19,6 +20,7 @@ import { CamelContext } from './camel-context';
 interface TurnResult {
   suggestion: string;
   context: CamelTurnContext;
+  turn: CamelTurnRecord;
 }
 
 /**
@@ -67,7 +69,11 @@ export class CamelAgent {
     this.signal = input.signal;
     this.callbacks = input.callbacks ?? [];
     this.executeTurnFn = executeTurn;
-    this.contextManager = new CamelContext(this.budgetLimit);
+    this.contextManager = new CamelContext({
+      sessionId: this.sessionId,
+      goal: this.goal,
+      budget: this.budgetLimit,
+    });
   }
 
   /** 获取当前状态 */
@@ -109,7 +115,7 @@ export class CamelAgent {
         const turnResult = await this.runTurn(context);
 
         // 记录回合结果
-        this.contextManager.recordTurn(turnResult.suggestion);
+        this.contextManager.recordTurn(turnResult.turn);
         this.totalSteps++;
 
         this.emitTurnComplete(turnNumber);
@@ -193,6 +199,7 @@ export class CamelAgent {
     return {
       suggestion: output.suggestion,
       context: output.context,
+      turn: output.turn,
     };
   }
 
