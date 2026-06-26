@@ -36,6 +36,13 @@ function makeInput(
   };
 }
 
+/** 暴露 protected hasBudget() 用于测试 */
+class TestableCamelAgent extends CamelAgent {
+  public hasBudget(): boolean {
+    return super['hasBudget']();
+  }
+}
+
 // ============================================================================
 // 测试用例
 // ============================================================================
@@ -175,5 +182,104 @@ describe('CamelAgent', () => {
       'complete',
       'status:completed',
     ]);
+  });
+
+  // ========================================================================
+  // 扩展测试 P3 #7: retry 耗尽 — 连续 3 次失败后 error 冒泡
+  // ========================================================================
+  it('should exhaust retries when executeTurn fails 3 times (non-AbortError)', async () => {
+    let callCount = 0;
+
+    const executeTurn = vi.fn(async (_context: any) => {
+      callCount++;
+      throw new Error(`Turn error attempt ${callCount}`);
+    });
+
+    const agent = new CamelAgent(makeInput(), executeTurn);
+    const result = await agent.start();
+
+    // runTurn 内部最多重试 3 次
+    expect(executeTurn).toHaveBeenCalledTimes(3);
+    expect(result.status).toBe('failed');
+    expect(result.error).toBeDefined();
+    expect(result.error!.message).toContain('attempt 3');
+  });
+
+  // ========================================================================
+  // 扩展测试 P3 #8: unlimited 预算策略 — hasBudget() 始终为 true
+  // ========================================================================
+  it('should keep hasBudget() true for unlimited strategy regardless of steps', () => {
+    const agent = new TestableCamelAgent(
+      makeInput({ budgetStrategy: 'unlimited', maxSteps: 2 }),
+      vi.fn(),
+    );
+
+    expect(agent.hasBudget()).toBe(true);
+
+    // 即使在多步之后 hasBudget 也不为 false
+    // (注：start() 循环有硬上限 totalSteps < maxSteps 作为额外保护)
+    for (let i = 0; i < 10; i++) {
+      (agent as any).totalSteps = i;
+      expect(agent.hasBudget()).toBe(true);
+    }
+  });
+
+  // ========================================================================
+  // 扩展测试 P3 #9: adaptive 预算策略 — 当前走 default 分支，等同 unlimited
+  // ========================================================================
+  it('should keep hasBudget() true for adaptive strategy (default fallthrough)', () => {
+    const agent = new TestableCamelAgent(
+      makeInput({ budgetStrategy: 'adaptive', maxSteps: 2 }),
+      vi.fn(),
+    );
+
+    // adaptive 未显式实现，走 default，hasBudget 始终为 true
+    expect(agent.hasBudget()).toBe(true);
+
+    for (let i = 0; i < 5; i++) {
+      (agent as any).totalSteps = i;
+      expect(agent.hasBudget()).toBe(true);
+    }
+  });
+
+  // ========================================================================
+  // 扩展测试 P3 #10: 回调异常 — 回调抛出异常不影响主流程
+  // ========================================================================
+  it('should tolerate callback exceptions without affecting main flow', async () => {
+    const events: string[] = [];
+
+    const throwingCallback: CamelCallback = {
+      onTurnStart: (_turn: number) => {
+        events.push('onTurnStart-called');
+        throw new Error('onTurnStart crash');
+      },
+      onTurnComplete: (_turn: number, _context: any) => {
+        events.push('onTurnComplete-called');
+      },
+      onComplete: (_report: any) => {
+        events.push('onComplete-called');
+        throw new Error('onComplete crash');
+      },
+      onError: (_error: Error) => {
+        events.push('onError-called');
+        throw new Error('onError crash');
+      },
+    };
+
+    const executeTurn = vi.fn().mockResolvedValueOnce({ suggestion: '' });
+
+    const agent = new CamelAgent(
+      makeInput({ callbacks: [throwingCallback], maxSteps: 1 }),
+      executeTurn,
+    );
+
+    const result = await agent.start();
+
+    // 主流程不受回调异常影响
+    expect(result.status).toBe('completed');
+    expect(executeTurn).toHaveBeenCalledTimes(1);
+    expect(events).toContain('onTurnStart-called');
+    expect(events).toContain('onTurnComplete-called');
+    expect(events).toContain('onComplete-called');
   });
 });

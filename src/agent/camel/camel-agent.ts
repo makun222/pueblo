@@ -57,6 +57,7 @@ export class CamelAgent {
   private result: string | null = null;
   private error: Error | null = null;
   private totalSteps = 0;
+  private _abortController: AbortController | null = null;
 
   constructor(input: CamelAgentInput, executeTurn: ExecuteTurnFn) {
     this.goal = input.goal;
@@ -86,13 +87,21 @@ export class CamelAgent {
     this.transitionTo('running');
 
     try {
-      while (this.status === 'running') {
-        // 错误路径 3: 外部取消信号
-        if (this.signal?.aborted) {
-          this.transitionTo('cancelled');
-          break;
+      // 创建内部 AbortController，合并外部 signal
+      this._abortController = new AbortController();
+      if (this.signal) {
+        if (this.signal.aborted) {
+          this._abortController.abort();
+        } else {
+          this.signal.addEventListener(
+            'abort',
+            () => this._abortController?.abort(),
+            { once: true },
+          );
         }
+      }
 
+      while (this.status === 'running' && !this._abortController.signal.aborted) {
         // 错误路径 5: maxSteps 达到上限
         if (this.totalSteps >= this.maxSteps) {
           this.result = this.goal;
@@ -116,6 +125,7 @@ export class CamelAgent {
 
         // 记录回合结果
         this.contextManager.recordTurn(turnResult.turn);
+        this.contextManager.consumeBudget();
         this.totalSteps++;
 
         this.emitTurnComplete(turnNumber);
@@ -128,8 +138,18 @@ export class CamelAgent {
         }
       }
     } catch (err) {
-      this.error = err instanceof Error ? err : new Error(String(err));
-      this.transitionTo('failed');
+      // AbortError → 用户取消, 非失败
+      if (err instanceof Error && err.name === 'AbortError') {
+        this.transitionTo('cancelled');
+      } else {
+        this.error = err instanceof Error ? err : new Error(String(err));
+        this.transitionTo('failed');
+      }
+    }
+
+    // 循环正常退出但可能是因取消信号
+    if (this.status === 'running' && this._abortController?.signal.aborted) {
+      this.transitionTo('cancelled');
     }
 
     return this.buildReport();
@@ -138,7 +158,7 @@ export class CamelAgent {
   /** 取消执行 */
   cancel(): void {
     if (this.status === 'running') {
-      this.transitionTo('cancelled');
+      this._abortController?.abort();
     }
   }
 
@@ -186,21 +206,50 @@ export class CamelAgent {
   }
 
   /** 执行单回合（可被子类覆写用于测试） */
-  protected async runTurn(context: CamelTurnContext): Promise<TurnResult> {
+  public async runTurn(context: CamelTurnContext): Promise<TurnResult> {
     // 将 goal 注入 contextSummary，供 executeTurn 构建 system prompt
     context.contextSummary['goal'] = this.goal;
-    const input: ExecuteTurnInput = {
-      context,
-      providerId: this.providerId,
-      modelId: this.modelId,
-      signal: this.signal,
-    };
-    const output: ExecuteTurnOutput = await this.executeTurnFn(input);
-    return {
-      suggestion: output.suggestion,
-      context: output.context,
-      turn: output.turn,
-    };
+
+    // 合并内部 AbortController 与外部 signal
+    const signal = this._abortController?.signal ?? this.signal;
+
+    const maxAttempts = 3; // 初次 + 最多 2 次重试
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const input: ExecuteTurnInput = {
+          context,
+          providerId: this.providerId,
+          modelId: this.modelId,
+          signal,
+        };
+        const output: ExecuteTurnOutput = await this.executeTurnFn(input);
+        return {
+          suggestion: output.suggestion,
+          context: output.context,
+          turn: output.turn,
+        };
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+
+        // AbortError 不重试 — 用户取消
+        if (lastError.name === 'AbortError') {
+          throw lastError;
+        }
+
+        // 最后一次尝试仍失败
+        if (attempt >= maxAttempts) {
+          throw lastError;
+        }
+
+        // 指数退避等待
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+
+    // 不应到达此处
+    throw lastError ?? new Error('Unexpected retry loop exit');
   }
 
   /** 判断建议是否表示完成 */
@@ -214,7 +263,7 @@ export class CamelAgent {
       status: this.status,
       result: this.result,
       totalSteps: this.totalSteps,
-      totalTurns: this.contextManager.getConsumedSteps(),
+      totalTurns: this.totalSteps,
     };
   }
 
