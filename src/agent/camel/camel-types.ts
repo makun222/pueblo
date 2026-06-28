@@ -30,6 +30,19 @@ export interface CamelAgentInput {
   signal?: AbortSignal;
   /** 生命周期回调 */
   callbacks?: CamelCallback[];
+
+  // ─── 提示词构建增强字段 ───
+
+  /** 角色行为指令列表（来自 agent 模板，如 "code-master"） */
+  roleDirectives?: string[];
+  /** 目标仓库根目录路径 */
+  targetDirectory?: string;
+  /** Pueblo 框架根路径 */
+  puebloPath?: string;
+  /** Skill 工作空间路径 */
+  skillPath?: string;
+  /** 调用者传入的附加 prompt 列表 */
+  additionalPrompts?: string[];
 }
 
 /** 单轮对话的完整记录（消息级上下文，用于滑动窗口） */
@@ -48,6 +61,11 @@ export interface CamelContextInput {
   sessionId: string;
   goal: string;
   budget?: number;
+  roleDirectives?: string[];
+  targetDirectory?: string;
+  puebloPath?: string;
+  skillPath?: string;
+  additionalPrompts?: string[];
 }
 
 export interface CamelTurnContext {
@@ -78,6 +96,7 @@ export interface CamelCallback {
 export interface CamelReport {
   status: CamelStatus;
   result: string | null;
+  error?: Error;
   totalSteps: number;
   totalTurns: number;
 }

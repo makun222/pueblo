@@ -162,7 +162,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     readonly blocks: ReturnType<typeof createResultBlocks>;
     readonly runtimeStatus: DesktopRuntimeStatus;
   }> => {
-    const _execT0 = perfStart('ipc.executeInput');
+    //const _execT0 = perfStart('ipc.executeInput');
     const result = await routeInput({ input: envelope, runtime, signal });
     const { primaryBlock, supplementalBlocks } = createPhasedResultBlocks(result);
     const blocks = primaryBlock ? [primaryBlock, ...supplementalBlocks] : supplementalBlocks;
@@ -180,7 +180,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     }
 
     const runtimeStatus = await resolveRuntimeStatus(cli);
-    perfEnd('ipc.executeInput', _execT0);
+    //perfEnd('ipc.executeInput', _execT0);
     return {
       result,
       blocks: primaryBlock ? [primaryBlock] : [],
@@ -501,9 +501,9 @@ function removeDesktopIpcHandlers(): void {
 async function resolveRuntimeStatus(
   cli: ReturnType<typeof createCliDependencies>,
 ): Promise<DesktopRuntimeStatus> {
-  const t0 = perfStart('resolveRuntimeStatus');
+  //const t0 = perfStart('resolveRuntimeStatus');
   const runtimeStatus = await cli.getRuntimeStatus();
-  perfEnd('resolveRuntimeStatus', t0);
+  //perfEnd('resolveRuntimeStatus', t0);
   return {
     ...runtimeStatus,
     desktopProcessId: process.pid,

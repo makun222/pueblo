@@ -74,6 +74,11 @@ export class CamelAgent {
       sessionId: this.sessionId,
       goal: this.goal,
       budget: this.budgetLimit,
+      roleDirectives: input.roleDirectives,
+      targetDirectory: input.targetDirectory,
+      puebloPath: input.puebloPath,
+      skillPath: input.skillPath,
+      additionalPrompts: input.additionalPrompts,
     });
   }
 
@@ -192,12 +197,12 @@ export class CamelAgent {
   }
 
   /** 预算检查 */
-  private hasBudget(): boolean {
+  protected hasBudget(): boolean {
     switch (this.budgetStrategy) {
       case 'fixed':
         return this.contextManager.getRemainingBudget() > 0;
       case 'adaptive':
-        return this.totalSteps < this.maxSteps;
+        return true;
       case 'unlimited':
         return true;
       default:
@@ -262,6 +267,7 @@ export class CamelAgent {
     return {
       status: this.status,
       result: this.result,
+      error: this.error ?? undefined,
       totalSteps: this.totalSteps,
       totalTurns: this.totalSteps,
     };
@@ -290,7 +296,13 @@ export class CamelAgent {
   }
 
   private emitTurnComplete(turn: number): void {
-    const context = this.contextManager.get();
+    let context: ReturnType<CamelContext['get']> | undefined;
+    try {
+      context = this.contextManager.get();
+    } catch {
+      // contextManager.get() 异常时跳过回调通知
+      return;
+    }
     for (const cb of this.callbacks) {
       try {
         cb.onTurnComplete?.(turn, context);

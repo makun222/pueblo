@@ -8,9 +8,11 @@ import type {
   CamelAgentInput,
   CamelCallback,
   CamelStatus,
+  CamelTurnContext,
   ExecuteTurnInput,
   ExecuteTurnOutput,
 } from '../camel-types';
+import { buildCamelSystemMessages } from '../camel-prompt-builder';
 
 /** 创建一个可预测的 mock executeTurn 函数 */
 function mockExecuteTurn(
@@ -281,5 +283,108 @@ describe('CamelAgent', () => {
     expect(events).toContain('onTurnStart-called');
     expect(events).toContain('onTurnComplete-called');
     expect(events).toContain('onComplete-called');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper: create a mock CamelTurnContext for buildCamelSystemMessages tests
+// ---------------------------------------------------------------------------
+function createMockContext(overrides: Record<string, unknown> = {}): CamelTurnContext {
+  const data: Record<string, unknown> = { ...overrides };
+  return {
+    contextSummary: data,
+    get: (key: string) => data[key],
+    turns: [],
+    taskLog: '',
+    lastSuggestion: null,
+    turnCount: 0,
+    workBudget: 50,
+  } as CamelTurnContext;
+}
+
+// ---------------------------------------------------------------------------
+// buildCamelSystemMessages tests
+// ---------------------------------------------------------------------------
+describe('buildCamelSystemMessages', () => {
+  it('should return system message with goal only', () => {
+    const context = createMockContext({ goal: 'test-goal' });
+    const messages = buildCamelSystemMessages(context);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain('##目标');
+    expect(messages[0].content).toContain('test-goal');
+  });
+
+  it('should include role directives section', () => {
+    const context = createMockContext({
+      goal: 'test-goal',
+      roleDirectives: ['Directive 1', 'Directive 2'],
+    });
+    const messages = buildCamelSystemMessages(context);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toContain('##角色指令');
+    expect(messages[0].content).toContain('Directive 1');
+    expect(messages[0].content).toContain('Directive 2');
+    expect(messages[0].content).toContain('##目标');
+  });
+
+  it('should include path constraints section', () => {
+    const context = createMockContext({
+      goal: 'test-goal',
+      targetDirectory: '/project/src',
+      puebloPath: '/project/pueblo',
+      skillPath: '/project/skills',
+    });
+    const messages = buildCamelSystemMessages(context);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toContain('##路径约束');
+    expect(messages[0].content).toContain('- 目标仓库: /project/src');
+    expect(messages[0].content).toContain('- Pueblo框架: /project/pueblo');
+    expect(messages[0].content).toContain('- Skill工作空间: /project/skills');
+  });
+
+  it('should include additional prompts section', () => {
+    const context = createMockContext({
+      goal: 'test-goal',
+      additionalPrompts: ['Prompt A', 'Prompt B'],
+    });
+    const messages = buildCamelSystemMessages(context);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toContain('##附加提示');
+    expect(messages[0].content).toContain('1. Prompt A');
+    expect(messages[0].content).toContain('2. Prompt B');
+  });
+
+  it('should combine all sections when all fields provided', () => {
+    const context = createMockContext({
+      goal: 'main-goal',
+      roleDirectives: ['Be concise'],
+      targetDirectory: '/repo',
+      additionalPrompts: ['Extra hint'],
+    });
+    const messages = buildCamelSystemMessages(context);
+
+    expect(messages).toHaveLength(1);
+    const content = messages[0].content;
+    expect(content).toContain('##角色指令');
+    expect(content).toContain('##路径约束');
+    expect(content).toContain('##附加提示');
+    expect(content).toContain('##目标');
+    expect(content).toContain('Be concise');
+    expect(content).toContain('/repo');
+    expect(content).toContain('Extra hint');
+    expect(content).toContain('main-goal');
+  });
+
+  it('should return fallback message when no goal specified', () => {
+    const context = createMockContext({});
+    const messages = buildCamelSystemMessages(context);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('No goal specified.');
   });
 });

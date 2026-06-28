@@ -15,12 +15,22 @@ export class CamelContext {
   private consumed: number;
   private turns: CamelTurnRecord[] = [];
   private taskLog: string = '';
+  private roleDirectives?: string[];
+  private targetDirectory?: string;
+  private puebloPath?: string;
+  private skillPath?: string;
+  private additionalPrompts?: string[];
 
   constructor(input: CamelContextInput) {
     this.sessionId = input.sessionId;
     this.goal = input.goal;
     this.budget = input.budget ?? 50;
     this.consumed = 0;
+    this.roleDirectives = input.roleDirectives;
+    this.targetDirectory = input.targetDirectory;
+    this.puebloPath = input.puebloPath;
+    this.skillPath = input.skillPath;
+    this.additionalPrompts = input.additionalPrompts;
   }
 
   /** Return the current context for the next turn. */
@@ -28,10 +38,17 @@ export class CamelContext {
     return {
       turns: this.turns.slice(),
       taskLog: this.taskLog,
-      contextSummary: { goal: this.goal },
+      contextSummary: {
+        goal: this.goal,
+        roleDirectives: this.roleDirectives,
+        targetDirectory: this.targetDirectory,
+        puebloPath: this.puebloPath,
+        skillPath: this.skillPath,
+        additionalPrompts: this.additionalPrompts,
+      },
       lastSuggestion:
         this.turns.length > 0
-          ? this.turns[this.turns.length - 1].suggestion
+          ? (this.turns[this.turns.length - 1]?.suggestion ?? '')
           : null,
       turnCount: this.turns.length,
       workBudget: this.getRemainingBudget(),

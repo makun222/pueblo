@@ -1,0 +1,25 @@
+version: "1.0"
+name: "SamplePipeline"
+phases:
+  - id: "phase-a"
+    name: "Phase A — Data Collection"
+    goal: "Collect and prepare input data from the repository."
+    skills:
+      - "context-discipline"
+    dependsOn: []
+
+  - id: "phase-b"
+    name: "Phase B — Analysis"
+    goal: "Analyze collected data and produce insights."
+    skills:
+      - "context-discipline"
+    artifactTemplates:
+      - "analysis-report"
+    dependsOn:
+      - "phase-a"
+
+  - id: "phase-c"
+    name: "Phase C — Reporting"
+    goal: "Generate final report from analysis results."
+    dependsOn:
+      - "phase-a"

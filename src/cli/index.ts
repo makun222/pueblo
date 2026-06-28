@@ -88,6 +88,7 @@ import {
   summarizeModelMessageTrace,
   successResult,
 } from '../shared/result';
+import { generatePipeline } from '../amber/index.js';
 import { MemoryRepository } from '../memory/memory-repository';
 import { MemoryService } from '../memory/memory-service';
 import { PromptRepository } from '../prompts/prompt-repository';
@@ -1335,6 +1336,30 @@ export function createCliDependencies(
 
     return setWorkspaceRoot(settingArgs.join(' ').trim() || process.cwd());
   });
+
+  dispatcher.register('/amber', async (args) => {
+    const [subcommand, ...rest] = args;
+    if (subcommand !== 'init') {
+      return failureResult('INVALID_SUBCOMMAND',
+        `Unknown amber subcommand: ${subcommand ?? '(none)'}`,
+        ['Usage: /amber init <requirement description>']);
+    }
+    const requirement = rest.join(' ').trim();
+    if (!requirement) {
+      return failureResult('MISSING_ARGUMENT',
+        'Requirement description is required',
+        ['Usage: /amber init <requirement description>']);
+    }
+    try {
+      const result = await generatePipeline({ requirement });
+      return successResult('Pipeline generated',
+        `Pipeline generated successfully at ${result.pipelinePath}. Analysis: ${result.analysisPath}, Requirement: ${result.requirementPath}`);
+    } catch (err) {
+      return failureResult('AMBER_INIT_FAILED',
+        `Amber init failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
   const providerConfigCommand = createProviderConfigCommand({
     getCurrentConfig: () => currentConfig,
     setCurrentConfig: refreshRuntimeConfig,

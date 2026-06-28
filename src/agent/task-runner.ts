@@ -1,5 +1,6 @@
 import { AgentTaskRepository } from './task-repository';
 import type { AgentTask } from '../shared/schema';
+import { buildCamelSystemMessages } from './camel/camel-prompt-builder';
 import { buildLegacyProviderMessages, buildProviderMessages } from './task-message-builder';
 import {
   getToolExecutionPolicy,
@@ -277,12 +278,10 @@ export class AgentTaskRunner {
   public async executeTurn(input: CamelExecuteTurnInput): Promise<CamelExecuteTurnOutput> {
     const { context, providerId, modelId, signal } = input;
 
-    // Build ProviderMessage[] from context.turns (CamelTurnRecord[]) + contextSummary['goal']
-    const goal =
-      (context.contextSummary?.['goal'] as string | undefined) ??
-      'Continue the conversation.';
+    // Build system messages using the camel prompt builder for rich prompts
+    const systemMessages = buildCamelSystemMessages(context);
     let turnMessages: ProviderMessage[] = [
-      { role: 'system', content: goal },
+      ...systemMessages,
       ...context.turns.flatMap(t => t.messages),
     ];
 

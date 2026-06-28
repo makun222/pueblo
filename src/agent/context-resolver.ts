@@ -180,7 +180,7 @@ export class ContextResolver {
   }
 
   async resolve(input: ResolveContextInput = {}): Promise<ResolvedContext> {
-    const _resolveT0 = perfStart('  contextResolver.resolve.inner');
+   // const _resolveT0 = perfStart('  contextResolver.resolve.inner');
     const session = this.resolveSession(input.activeSessionId);
     const profiles = this.dependencies.providerRegistry.listProfiles();
     const selection = resolveProviderModelSelection({
@@ -301,7 +301,7 @@ export class ContextResolver {
         .map((memory) => memory.id),
     );
     // Use selectForContext for unified dedup + sort of non-legacy result items
-    const _selectT0 = perfStart('    selectForContext');
+   // const _selectT0 = perfStart('    selectForContext');
     const contextSelection = await this.dependencies.memoryService.selectForContext({
       candidates: nonLegacyResultItemMemories,
       totalBudget: Number.MAX_SAFE_INTEGER, // Skip truncation — handled by applyBudgetAwareResultTruncation below
@@ -316,7 +316,7 @@ export class ContextResolver {
     const filteredNonOvershadowed = filteredResultItemsWithoutLegacySteps.filter(
       (item) => !overshadowedResultMemoryIds.has(item.memoryId) && selectedContextMemoryIds.has(item.memoryId),
     );
-    perfEnd('    selectForContext', _selectT0);
+    // perfEnd('    selectForContext', _selectT0);
     const prioritizedResultItems = filteredNonOvershadowed.sort(
       (a, b) => (contextMemoryRank.get(a.memoryId) ?? Infinity) - (contextMemoryRank.get(b.memoryId) ?? Infinity),
     );

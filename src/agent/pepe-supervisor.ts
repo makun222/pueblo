@@ -125,7 +125,7 @@ export class PepeSupervisor {
   }
 
   async flushSession(sessionId: string | null | undefined): Promise<void> {
-    const _perfId = perfStart(`[pepe-supervisor] flushSession sessionId=${sessionId}`);
+    //const _perfId = perfStart(`[pepe-supervisor] flushSession sessionId=${sessionId}`);
     try {
       if (!this.dependencies.config.enabled || !sessionId) {
         return;
@@ -156,7 +156,7 @@ export class PepeSupervisor {
         this.pendingFlushes.delete(sessionId);
       }
     } finally {
-      perfEnd(`[pepe-supervisor] flushSession sessionId=${sessionId}`, _perfId);
+      //perfEnd(`[pepe-supervisor] flushSession sessionId=${sessionId}`, _perfId);
     }
   }
 
@@ -165,7 +165,7 @@ export class PepeSupervisor {
       return;
     }
 
-    const _perfId = perfStart(`[pepe-supervisor] flushSessionInternal`);
+    //const _perfId = perfStart(`[pepe-supervisor] flushSessionInternal`);
     try {
       const monitor = this.monitors.get(sessionId);
       const session = this.dependencies.sessionService.getSession(sessionId);
@@ -179,14 +179,14 @@ export class PepeSupervisor {
       }
 
       let memories = this.dependencies.memoryService.listSessionMemories(sessionId);
-      const _pswId = perfStart(`[pepe-supervisor] processSnapshotInWorker sessionId=${sessionId}`);
+    //  const _pswId = perfStart(`[pepe-supervisor] processSnapshotInWorker sessionId=${sessionId}`);
       const workerResult = await this.processSnapshotInWorker({
         sessionId,
         selectedMemoryIds: session.selectedMemoryIds,
         pendingInput: monitor.lastInput ?? undefined,
         memories,
       });
-      perfEnd(`[pepe-supervisor] processSnapshotInWorker sessionId=${sessionId}`, _pswId);
+      //perfEnd(`[pepe-supervisor] processSnapshotInWorker sessionId=${sessionId}`, _pswId);
       const appliedSummaries = this.applyWorkerSummaries(sessionId, memories, workerResult);
       memories = appliedSummaries.memories;
 
@@ -207,14 +207,14 @@ export class PepeSupervisor {
         pendingUserInput: monitor.lastInput ?? undefined,
       });
 
-      const _flushId = perfStart(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`);
+      //const _flushId = perfStart(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`);
       this.memoryMirror.flush({
         agentInstanceId: agentInstance.id,
         sessionId,
         memories,
         resultSet: resolvedResult.resultSet,
       });
-      perfEnd(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`, _flushId);
+      //perfEnd(`[pepe-supervisor] memoryMirror.flush sessionId=${sessionId}`, _flushId);
 
       monitor.lastSummaryAt = workerResult?.lastSummaryAt ?? new Date().toISOString();
       monitor.lastSummaryMemoryId = appliedSummaries.sessionSummaryMemory?.id
@@ -223,7 +223,7 @@ export class PepeSupervisor {
         ?? resolvedResult.resultItems.at(0)?.memoryId
         ?? null;
     } finally {
-      perfEnd(`[pepe-supervisor] flushSessionInternal sessionId=${sessionId}`, _perfId);
+      //perfEnd(`[pepe-supervisor] flushSessionInternal sessionId=${sessionId}`, _perfId);
     }
   }
 
