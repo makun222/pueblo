@@ -99,11 +99,14 @@ export function buildAmberRunContext(options: AmberRunOptions) {
     const { puebloPath, cliArgs } = options;
 
     const repoPath = path.resolve(puebloPath, cliArgs.repoPath);
-    const skillPath = path.join(puebloPath, cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE);
+    const skillPath = path.join(puebloPath, '.pueblo', 'agents', 'templates', cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE);
 
     // 解析 agent 模板
     const agentTemplateDir = path.join(
         puebloPath,
+        '.pueblo',
+        'agents',
+        'templates',
         cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
     );
     const agentMdPath = path.join(agentTemplateDir, 'agent.md');
@@ -121,6 +124,9 @@ export function buildAmberRunContext(options: AmberRunOptions) {
     // 发现 Artifact 模板
     const artifactTemplateDir = path.join(
         puebloPath,
+        '.pueblo',
+        'agents',
+        'templates',
         cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
     );
     const artifactTemplates = discoverArtifactTemplates(artifactTemplateDir);
@@ -231,6 +237,11 @@ export async function amberInit(rawArgs: string[]): Promise<void> {
     console.log(`✓ Pipeline generated: ${result.pipelinePath}`);
 
     if (args.run) {
+        // 先运行 meta-pipeline（AI 分析 + 生成真正的 pipeline.yaml）
+        console.log('\nRunning meta-pipeline to generate pipeline.yaml...\n');
+        await amberRun(['run', '--pipeline', result.metaPipelinePath]);
+
+        // 再运行生成的 pipeline.yaml
         console.log('\nRunning generated pipeline...\n');
         await amberRun(['run', '--pipeline', result.pipelinePath]);
     }
@@ -293,6 +304,16 @@ export async function amberRun(rawArgs: string[]): Promise<Record<string, PhaseR
         }
 
         console.log(`[amber:phase] '${phase.id}' completed in ${report.totalSteps} steps.`);
+
+        // 5. 写入文件输出
+        if (phase.output?.type === 'file' && phase.output.path) {
+            const outputPath = phase.output.path.startsWith('.')
+                ? path.resolve(runContext.repoPath, phase.output.path)
+                : path.resolve(process.cwd(), phase.output.path);
+            fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+            fs.writeFileSync(outputPath, report.result ?? '', 'utf-8');
+            console.log(`[amber:phase] Output written to ${outputPath}`);
+        }
     }
 
     console.log('[amber:info] All phases completed successfully.');

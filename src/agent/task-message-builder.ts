@@ -243,6 +243,19 @@ function buildPuebloSystemMessage(taskContext: TaskContext): string | null {
     );
   }
 
+  // Next-step instructions: guide LLM to output structured action suggestions
+  sections.push(
+    'Next-step action hints:',
+    '- When you complete a task, your task-result JSON output must include a "next_step_actions" array.',
+    '- Each element is a JSON object with fields: "id" (string), "label" (string, ≤30 chars), "prompt" (string), and optional "description" (string).',
+    '- "id": a unique identifier for this action suggestion (e.g., "action-1", "action-2").',
+    '- "label": a short button label describing the suggested next step.',
+    '- "prompt": the full, specific user input to send when the button is clicked. Must include concrete file paths, function names, or line numbers.',
+    '- "description": (optional) longer explanation shown as tooltip or detail text.',
+    '- Example: "next_step_actions": [{"id":"action-1","label":"Fix /amber init handler","prompt":"src/cli/index.ts the /amber init handler also needs to call amberRun two-step execution after generatePipeline()","description":"Add amberRun call to init handler"}]',
+    '- Output at most 4 next-step action suggestions. If no follow-up is needed, output an empty array or omit the field.',
+  );
+
   if (taskContext.puebloProfile.summaryPolicy.lineageHint) {
     sections.push(`Summary lineage hint:\n- ${taskContext.puebloProfile.summaryPolicy.lineageHint}`);
   }

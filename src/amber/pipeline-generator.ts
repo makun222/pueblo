@@ -19,8 +19,10 @@ export interface GeneratePipelineOptions {
 
 /** generatePipeline() 的返回值 */
 export interface GeneratePipelineResult {
-    /** 生成的 pipeline.yaml 路径 */
+    /** 生成的 pipeline.yaml 路径（meta-pipeline 运行后产物，当前尚不存在） */
     pipelinePath: string;
+    /** meta-pipeline.yaml 路径（立即存在，需先执行它以生成 pipeline.yaml） */
+    metaPipelinePath: string;
     /** analysis.json 路径（若 meta-pipeline 生成） */
     analysisPath?: string;
     /** 需求文件路径（用于调试/审计） */
@@ -91,13 +93,30 @@ export async function generatePipeline(
     const metaPipelinePath = path.join(outputDir, 'meta-pipeline.yaml');
     fs.writeFileSync(metaPipelinePath, toYaml(pipelineDef), 'utf-8');
 
-    // 确定产物路径
+    // 生成骨架 pipeline.yaml —— meta-pipeline 成功时会覆盖它，失败时作为兜底
     const pipelinePath = path.join(outputDir, 'pipeline.yaml');
+    const skeletonPipelineDef: PipelineDefinition = {
+        name: 'Skeleton Pipeline',
+        version: '1.0',
+        phases: [
+            {
+                id: 'default',
+                name: 'Default Pipeline',
+                goal: 'Execute the default pipeline generated from the requirement',
+                skills: [],
+                artifactTemplates: [],
+                dependsOn: [],
+            },
+        ],
+    };
+    fs.writeFileSync(pipelinePath, toYaml(skeletonPipelineDef), 'utf-8');
+
     const analysisPath = path.join(outputDir, 'analysis.json');
 
     // run 标志由调用方（CLI）处理，此处仅做记录
     return {
         pipelinePath,
+        metaPipelinePath,
         analysisPath: fs.existsSync(analysisPath) ? analysisPath : undefined,
         requirementPath,
     };

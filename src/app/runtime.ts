@@ -3,7 +3,7 @@ import type { CommandResult } from '../shared/result';
 import type { IpcInputEnvelope, RendererOutputBlock } from '../shared/schema';
 
 export interface RuntimeMessage {
-  readonly block: RendererOutputBlock;
+   block: RendererOutputBlock;
 }
 
 export interface RuntimeCoordinatorDependencies {

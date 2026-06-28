@@ -85,10 +85,11 @@ import {
   formatCommandResult,
   formatError,
   type ParsedTaskOutputSummary,
+  type ActionSuggestion,
   summarizeModelMessageTrace,
   successResult,
 } from '../shared/result';
-import { generatePipeline } from '../amber/index.js';
+import { generatePipeline, amberRun } from '../amber/index.js';
 import { MemoryRepository } from '../memory/memory-repository';
 import { MemoryService } from '../memory/memory-service';
 import { PromptRepository } from '../prompts/prompt-repository';
@@ -605,8 +606,12 @@ export function createCliDependencies(
         signal: submitAbortSignal,
       });
 
-      const _postId = perfStart(`[cli:runTask] post-processing sessionId=${sessionId}`);
+      //const _postId = perfStart(`[cli:runTask] post-processing sessionId=${sessionId}`);
       const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
+      const nextStepActions: ActionSuggestion[] | undefined = outputPayload?.next_step_actions?.map(
+        a => ({ label: a.label, prompt: a.prompt, description: a.description }),
+      );
+      console.log('DEBUG next_step_actions:', JSON.stringify(nextStepActions, null, 2));
       const messageTraceTotals = summarizeModelMessageTrace(outputPayload?.modelMessageTrace);
       lastModelMessageCount = messageTraceTotals.messageCount;
       lastModelMessageCharCount = messageTraceTotals.messageCharCount;
@@ -637,17 +642,17 @@ export function createCliDependencies(
         memoryService,
         sessionService,
       });
-      const _flushId = perfStart(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`);
+      //const _flushId = perfStart(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`);
       pepeSupervisor.flushSession(sessionId).catch(err => {
           perfLog(`flushSession-error-${sessionId}`, 0, (err as Error).message);
       });
-      perfEnd(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`, _flushId);
-      perfEnd(`[cli:runTask] post-processing sessionId=${sessionId}`, _postId);
+      //perfEnd(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`, _flushId);
+      //perfEnd(`[cli:runTask] post-processing sessionId=${sessionId}`, _postId);
 
       return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
         ...task,
         workflow: workflowProgress,
-      } : task);
+      } : task, nextStepActions);
     } catch (error) {
       if (isTaskCancellationError(error)) {
         throw error;
@@ -1284,6 +1289,7 @@ export function createCliDependencies(
     sessionService,
     getCurrentSessionId: () => selectionState.sessionId,
   }));
+  /*
   dispatcher.register('/workflow', createWorkflowStartCommand({
     startWorkflow,
     defaultWorkflowType: PUEBLO_PLAN_WORKFLOW_TYPE,
@@ -1292,6 +1298,7 @@ export function createCliDependencies(
   dispatcher.register('/workflow-continue', (args) => continueActiveWorkflow(args.join(' ').trim() || null, 'Manual workflow continuation'));
   dispatcher.register('/workflow-cancel', (args) => cancelActiveWorkflow(args.join(' ').trim() || null));
   dispatcher.register('/workflow-clear-stale', (args) => clearStaleWorkflowMemories(args.join(' ').trim() || null));
+  */
   dispatcher.register('/loop', createLoopCommand({
     taskRunner,
     contextResolver,
@@ -1352,8 +1359,16 @@ export function createCliDependencies(
     }
     try {
       const result = await generatePipeline({ requirement });
-      return successResult('Pipeline generated',
-        `Pipeline generated successfully at ${result.pipelinePath}. Analysis: ${result.analysisPath}, Requirement: ${result.requirementPath}`);
+      const repoPath = process.cwd();
+
+      // Step 1: Run meta-pipeline to generate the actual pipeline via AI analysis
+      await amberRun(['--pipeline', result.metaPipelinePath, '--repo-path', repoPath]);
+
+      // Step 2: Run the generated pipeline
+      await amberRun(['--pipeline', result.pipelinePath, '--repo-path', repoPath]);
+
+      return successResult('Pipeline generated and executed',
+        `Pipeline generated and executed successfully at ${result.pipelinePath}. Meta: ${result.metaPipelinePath}`);
     } catch (err) {
       return failureResult('AMBER_INIT_FAILED',
         `Amber init failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1423,8 +1438,8 @@ export function createCliDependencies(
       return inputAbortSignalContext.run(signal, () => inputRouter.route(envelope));
     },
     async getRuntimeStatus() {
-      const t0 = perfStart('cli.getRuntimeStatus');
-      const resolveT0 = perfStart('  contextResolver.resolve');
+      //const t0 = perfStart('cli.getRuntimeStatus');
+     // const resolveT0 = perfStart('  contextResolver.resolve');
       const runtimeStatus = (await contextResolver.resolve({
         activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
         explicitProviderId: selectionState.providerId,
@@ -1433,7 +1448,7 @@ export function createCliDependencies(
         cwd: currentWorkspace,
         workspace: currentWorkspace,
       })).runtimeStatus;
-      perfEnd('  contextResolver.resolve', resolveT0);
+      //perfEnd('  contextResolver.resolve', resolveT0);
       const currentSession = selectionState.sessionId
         ? sessionService.getSession(selectionState.sessionId)
         : sessionService.getCurrentSession();
@@ -1443,7 +1458,7 @@ export function createCliDependencies(
       const activeWorkflow = currentSession?.id
         ? workflowService.getActiveWorkflowForSession(currentSession.id)
         : null;
-      perfEnd('cli.getRuntimeStatus', t0);
+      //perfEnd('cli.getRuntimeStatus', t0);
 
       return {
         ...runtimeStatus,

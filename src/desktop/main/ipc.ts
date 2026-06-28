@@ -164,8 +164,9 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
   }> => {
     //const _execT0 = perfStart('ipc.executeInput');
     const result = await routeInput({ input: envelope, runtime, signal });
-    const { primaryBlock, supplementalBlocks } = createPhasedResultBlocks(result);
-    const blocks = primaryBlock ? [primaryBlock, ...supplementalBlocks] : supplementalBlocks;
+    const blocks = createResultBlocks(result);
+    const primaryBlock = blocks[0];
+    const supplementalBlocks = blocks.slice(1);
 
     if (primaryBlock) {
       runtime.publish({ block: primaryBlock });
@@ -183,7 +184,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     //perfEnd('ipc.executeInput', _execT0);
     return {
       result,
-      blocks: primaryBlock ? [primaryBlock] : [],
+      blocks,
       runtimeStatus,
     };
   };

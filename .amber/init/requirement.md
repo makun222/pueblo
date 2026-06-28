@@ -1,0 +1,1 @@
+实现pueblo的新功能blueNote。1.blueNote是一个类notebook应用，简洁的界面设计，记录用户随手记录的内容（title、content、catagory、create-time...），支持save、list、edit等基础操作。2.定期异步调用大模型，分析用户输入，进行细化、完善、扩展等。3.交互设计可仿照clock-window方式，以拖动式半透明子窗体呈现记录界面；对于用户查看某条详细信息的场景，可弹出新窗体展示详细内容。

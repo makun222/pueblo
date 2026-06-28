@@ -120,7 +120,14 @@ function parsePhases(rawPhases: unknown): Phase[] {
             ? (raw['dependsOn'] as string[])
             : [];
 
-        return { id, name, goal, skills, artifactTemplates, dependsOn };
+        const rawOutput = raw['output'] as Record<string, unknown> | undefined;
+        const output = rawOutput &&
+            typeof rawOutput.type === 'string' &&
+            typeof rawOutput.path === 'string'
+            ? { type: rawOutput.type as 'file' | 'variable', path: rawOutput.path }
+            : undefined;
+
+        return { id, name, goal, skills, artifactTemplates, dependsOn, ...(output ? { output } : {}) };
     });
 }
 

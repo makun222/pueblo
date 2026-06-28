@@ -640,6 +640,13 @@ export const spreadsheetAttachmentAssetSchema = z.object({
   content: spreadsheetAttachmentContentSchema,
 });
 
+export const rendererActionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).max(30),
+  prompt: z.string().min(1),
+  description: z.string().optional(),
+});
+
 export const rendererOutputBlockSchema = z.object({
   id: z.string().min(1),
   type: rendererOutputBlockTypeSchema,
@@ -649,6 +656,7 @@ export const rendererOutputBlockSchema = z.object({
   messageTrace: z.array(rendererMessageTraceStepSchema).default([]),
   fileChanges: z.array(rendererFileChangeSchema).default([]),
   execCommand: rendererExecCommandSchema.optional(),
+  actions: z.array(rendererActionSchema).optional(),
   sourceRefs: z.array(z.string()).default([]),
   createdAt: z.string().datetime(),
 });
@@ -736,6 +744,7 @@ export type RendererMessageTraceStep = z.infer<typeof rendererMessageTraceStepSc
 export type RendererFileChangeType = z.infer<typeof rendererFileChangeTypeSchema>;
 export type RendererFileChange = z.infer<typeof rendererFileChangeSchema>;
 export type RendererExecCommand = z.infer<typeof rendererExecCommandSchema>;
+export type RendererAction = z.infer<typeof rendererActionSchema>;
 export type AttachmentKind = z.infer<typeof attachmentKindSchema>;
 export type AttachmentSource = z.infer<typeof attachmentSourceSchema>;
 export type AttachmentAsset = z.infer<typeof attachmentAssetSchema>;

@@ -1,0 +1,34 @@
+version: "1.0.0"
+name: amber-init-meta
+phases:
+  - id: analyze
+    name: "analyze"
+    goal: "你是 Amber Pipeline Designer。分析以下需求并输出 JSON：
+
+{
+  "taskType": "code-generation|refactoring|testing",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "...",
+      "goal": "...",
+      "skills": ["..."]
+    }
+  ]
+}"
+  - id: generate
+    name: "generate"
+    goal: "你是 Amber Pipeline Generator。根据 analysis.json 生成 pipeline.yaml：
+
+```yaml
+version: "1.0"
+name: <pipeline-name>
+phases:
+  - id: <id>
+    name: <name>
+    goal: <goal>
+    skills:
+      - <skill>
+```"
+    dependsOn:
+      - analyze

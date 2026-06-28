@@ -90,6 +90,7 @@ export function toPipelineDefinition(
             skills: [],
             dependsOn: deps,
             artifactTemplates: [],
+            ...(phase.output ? { output: phase.output } : {}),
         });
     }
     return {

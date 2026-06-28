@@ -1,4 +1,4 @@
-import type { RendererFileChange, RendererOutputBlock } from './schema';
+import type { RendererAction, RendererFileChange, RendererOutputBlock } from './schema';
 import type { ProviderRequestMetrics, ProviderUsage } from '../providers/provider-adapter';
 
 export interface ResultMessage {
@@ -76,6 +76,19 @@ interface WorkflowBlockData {
   } | null;
 }
 
+/**
+ * A structured "next step" action suggestion from the LLM.
+ * The LLM outputs these in its response; the renderer turns them into clickable buttons.
+ */
+export interface ActionSuggestion {
+  /** Button label — concise verb-phrase, ≤30 characters. */
+  readonly label: string;
+  /** Full prompt text sent as user input when the button is clicked. */
+  readonly prompt: string;
+  /** Optional hover tooltip explaining why this action is needed. */
+  readonly description?: string;
+}
+
 export interface OutputBlockInput {
   readonly type: 'command-result' | 'task-result' | 'tool-result' | 'error' | 'system' | 'loop-launch';
   readonly title: string;
@@ -85,6 +98,7 @@ export interface OutputBlockInput {
   readonly fileChanges?: RendererFileChange[];
   readonly execCommand?: ExecCommandBlockData;
   readonly sourceRefs?: string[];
+    readonly actions?: RendererAction[];
 }
 
 export interface CommandResult<TData = unknown> {
@@ -93,6 +107,7 @@ export interface CommandResult<TData = unknown> {
   readonly message: string;
   readonly data?: TData;
   readonly suggestions: string[];
+  readonly actions?: ActionSuggestion[];
 }
 
 // ── Loop progress types (方案 B: background job + monitor window) ──
@@ -174,13 +189,14 @@ export interface OutputPublisher {
   setInputLocked?(locked: boolean): void;
 }
 
-export function successResult<TData>(code: string, message: string, data?: TData): CommandResult<TData> {
+export function successResult<TData>(code: string, message: string, data?: TData, actions?: ActionSuggestion[]): CommandResult<TData> {
   return {
     ok: true,
     code,
     message,
     data,
     suggestions: [],
+    ...(actions ? { actions } : {}),
   };
 }
 
@@ -207,16 +223,23 @@ export interface ParsedTaskOutputSummary {
     readonly executionCwd?: string | null;
   }>;
   readonly fileChanges?: RendererFileChange[];
+  readonly next_step_actions?: Array<{
+    readonly id: string;
+    readonly label: string;
+    readonly prompt: string;
+    readonly description?: string;
+  }>;
 }
 
 export type TaskStepTraceEntry = NonNullable<ParsedTaskOutputSummary['stepTrace']>[number];
 
-export function failureResult(code: string, message: string, suggestions: string[] = []): CommandResult {
+export function failureResult(code: string, message: string, suggestions: string[] = [], actions?: ActionSuggestion[]): CommandResult {
   return {
     ok: false,
     code,
     message,
     suggestions,
+    ...(actions ? { actions } : {}),
   };
 }
 
@@ -303,6 +326,7 @@ export function createOutputBlock(input: OutputBlockInput) {
     fileChanges: input.fileChanges ?? [],
     execCommand: input.execCommand,
     sourceRefs: input.sourceRefs ?? [],
+    actions: input.actions ?? [],
     createdAt: now,
   };
 }
@@ -412,12 +436,34 @@ export function summarizeTaskTurnTrace(
 
 export function createResultBlocks(result: CommandResult<unknown>) {
   const phasedBlocks = createPhasedResultBlocks(result);
+
+  const actions: RendererAction[] | undefined = result.actions?.length
+    ? result.actions.map((a, i) => ({
+        id: `action-${i}`,
+        label: a.label,
+        prompt: a.prompt,
+        description: a.description,
+      }))
+    : undefined;
+
+  if (actions && actions.length > 0 && phasedBlocks.primaryBlock) {
+    phasedBlocks.primaryBlock = { ...phasedBlocks.primaryBlock, actions };
+  } else if (result.suggestions && result.suggestions.length > 0 && phasedBlocks.primaryBlock) {
+    const suggestionActions: RendererAction[] = result.suggestions.map((s, i) => ({
+      id: `suggestion-${i}`,
+      label: s,
+      prompt: s,
+      description: '',
+    }));
+    phasedBlocks.primaryBlock = { ...phasedBlocks.primaryBlock, actions: suggestionActions };
+  }
+
   return phasedBlocks.primaryBlock ? [phasedBlocks.primaryBlock, ...phasedBlocks.supplementalBlocks] : phasedBlocks.supplementalBlocks;
 }
 
 export function createPhasedResultBlocks(result: CommandResult<unknown>): {
-  readonly primaryBlock: ReturnType<typeof createOutputBlock> | null;
-  readonly supplementalBlocks: ReturnType<typeof createOutputBlock>[];
+  primaryBlock: ReturnType<typeof createOutputBlock> | null;
+  supplementalBlocks: ReturnType<typeof createOutputBlock>[];
 } {
   const payload = result.data !== undefined ? extractTaskResultPayload(result.data) : null;
   const supplementalBlocks = [] as ReturnType<typeof createOutputBlock>[];
@@ -588,17 +634,6 @@ export function createPhasedResultBlocks(result: CommandResult<unknown>): {
         }
       }
     }
-  }
-
-  if (result.suggestions.length > 0) {
-    supplementalBlocks.push(
-      createOutputBlock({
-        type: 'system',
-        title: `${result.code}-suggestions`,
-        content: result.suggestions.join('\n'),
-        messageTrace: consumeMessageTrace(),
-      }),
-    );
   }
 
   return {

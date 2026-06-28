@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererExecCommand, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
+import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererAction, RendererExecCommand, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopFileReviewRequest,
   DesktopMenuAction,
@@ -64,6 +64,7 @@ interface AssistantTranscriptEntry {
   readonly completedAtMs?: number | null;
   readonly messageTrace: RendererMessageTraceStep[];
   readonly fileChanges: RendererFileChange[];
+  readonly actions?: readonly RendererAction[];
   readonly status: 'pending' | 'streaming' | 'complete' | 'cancelled';
   readonly blockType: 'task-result' | 'command-result' | 'error' | 'assistant';
 }
@@ -695,11 +696,13 @@ export function App() {
           return entry;
         }
 
+        console.log('DEBUG streamFrame block.actions:', JSON.stringify(block.actions));
         return {
           ...entry,
           content: nextContent,
           messageTrace: block.messageTrace,
           fileChanges: block.fileChanges,
+          actions: block.actions,
           status: nextCursor >= block.content.length ? 'complete' : 'streaming',
           completedAtMs: nextCursor >= block.content.length ? Date.now() : null,
           blockType: answerBlockType,
@@ -730,6 +733,7 @@ export function App() {
           content: block.content,
           messageTrace: block.messageTrace,
           fileChanges: block.fileChanges,
+          actions: block.actions,
           status: 'complete',
           completedAtMs: Date.now(),
           blockType: answerBlockType,
@@ -783,7 +787,7 @@ export function App() {
         sessionId: runtimeStatusRef.current.activeSessionId,
         attachments: options.attachments ?? [],
       }));
-
+      console.log('DEBUG blocks[0].actions:', JSON.stringify(response.blocks?.[0]?.actions, null, 2));
       if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
@@ -875,6 +879,11 @@ export function App() {
 
     setInput('');
     await executeInput(submittedInput, { recordUserEntry: true, attachments: pendingAttachments });
+  };
+
+  const handleActionClick = (prompt: string) => {
+    setInput(prompt);
+    // Don't auto-submit — user reviews before sending
   };
 
   const handleStartAgentSession = async (profileId: string) => {
@@ -1387,11 +1396,13 @@ export function App() {
                       isOpen: isTranscriptHistoryExpanded,
                       onToggle: setIsTranscriptHistoryExpanded,
                       onOpenFileChange: setSelectedFileChange,
+                      onActionClick: handleActionClick,
                       answerTimerNowMs,
                     }) : null}
                     {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, {
                       onOpenFileChange: setSelectedFileChange,
                       answerTimerNowMs,
+                      onActionClick: handleActionClick,
                     }))}
                   </>
                 )}
@@ -2000,6 +2011,7 @@ function renderCollapsedTranscriptHistory(args: {
   isOpen: boolean;
   onToggle: (isOpen: boolean) => void;
   onOpenFileChange: (fileChange: RendererFileChange) => void;
+  onActionClick: (prompt: string) => void;
   answerTimerNowMs: number;
 }) {
   const firstGroup = args.groups[0];
@@ -2025,6 +2037,7 @@ function renderCollapsedTranscriptHistory(args: {
           {args.groups.map((group) => renderTranscriptGroup(group, {
             onOpenFileChange: args.onOpenFileChange,
             answerTimerNowMs: args.answerTimerNowMs,
+            onActionClick: args.onActionClick,
           }))}
         </div>
       ) : null}
@@ -2037,6 +2050,7 @@ function renderTranscriptGroup(
   actions: {
     readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
     readonly answerTimerNowMs: number;
+    readonly onActionClick: (prompt: string) => void;
   },
 ) {
   return (
@@ -2908,6 +2922,7 @@ function renderTranscriptEntry(
   actions: {
     readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
     readonly answerTimerNowMs: number;
+    readonly onActionClick: (prompt: string) => void;
   },
 ) {
   if ('role' in entry) {
@@ -2924,6 +2939,21 @@ function renderTranscriptEntry(
           </div>
           {renderAnswerContent(entry.content, handoff)}
           {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
+          {entry.actions && entry.actions.length > 0 && (
+            <div className="action-buttons-bar">
+              {entry.actions.map((action) => (
+                <button
+                  key={action.id}
+                  className="action-button"
+                  type="button"
+                  title={action.description || action.label}
+                  onClick={() => actions.onActionClick(action.prompt)}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
           {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: entry.blockType === 'task-result' })}
         </article>
       );

@@ -107,6 +107,15 @@ export interface Phase {
     artifactTemplates: string[];
     /** 前置 Phase ID 列表 */
     dependsOn: string[];
+    /** 输出配置：file 写入文件系统，variable 为变量输出 */
+    output?: {
+        /** Type of the phase output */
+        type?: 'file' | 'variable';
+        /** Path to store the output file */
+        path?: string;
+        /** Name for variable-type outputs */
+        name?: string;
+    };
     /** Phase 级别模型覆盖：provider 覆盖模板/管线默认值 */
     model?: { provider?: string; name?: string };
     /** Phase 级别模板覆盖：指定其他 agent.md 文件路径（相对于 amberDir） */
