@@ -12,6 +12,7 @@ import { discoverSkills, discoverArtifactTemplates } from './template-resolver.j
 import type { ExecuteTurnFn } from '../agent/camel/camel-types.js';
 import { generatePipeline } from './pipeline-generator.js';
 import * as fs from 'node:fs';
+import { amberLog } from '../utils/perf-logger.js';
 
 const defaultExecuteTurn: ExecuteTurnFn = async () => {
     throw new Error('executeTurn not configured — no LLM provider wired');
@@ -99,14 +100,11 @@ export function buildAmberRunContext(options: AmberRunOptions) {
     const { puebloPath, cliArgs } = options;
 
     const repoPath = path.resolve(puebloPath, cliArgs.repoPath);
-    const skillPath = path.join(puebloPath, '.pueblo', 'agents', 'templates', cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE);
+    const skillPath = path.join(puebloPath, cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE);
 
     // 解析 agent 模板
     const agentTemplateDir = path.join(
         puebloPath,
-        '.pueblo',
-        'agents',
-        'templates',
         cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
     );
     const agentMdPath = path.join(agentTemplateDir, 'agent.md');
@@ -124,9 +122,6 @@ export function buildAmberRunContext(options: AmberRunOptions) {
     // 发现 Artifact 模板
     const artifactTemplateDir = path.join(
         puebloPath,
-        '.pueblo',
-        'agents',
-        'templates',
         cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
     );
     const artifactTemplates = discoverArtifactTemplates(artifactTemplateDir);
@@ -237,11 +232,6 @@ export async function amberInit(rawArgs: string[]): Promise<void> {
     console.log(`✓ Pipeline generated: ${result.pipelinePath}`);
 
     if (args.run) {
-        // 先运行 meta-pipeline（AI 分析 + 生成真正的 pipeline.yaml）
-        console.log('\nRunning meta-pipeline to generate pipeline.yaml...\n');
-        await amberRun(['run', '--pipeline', result.metaPipelinePath]);
-
-        // 再运行生成的 pipeline.yaml
         console.log('\nRunning generated pipeline...\n');
         await amberRun(['run', '--pipeline', result.pipelinePath]);
     }
@@ -258,6 +248,9 @@ export async function amberRun(rawArgs: string[]): Promise<Record<string, PhaseR
         throw new Error('Missing required argument: --repo-path');
     }
 
+    const runLog = (msg: string) => { console.log(msg); amberLog('info', msg); };
+    const runLogErr = (msg: string) => { console.log(msg); amberLog('error', msg); };
+
     const puebloPath = process.cwd();
     const amberContext = buildAmberRunContext({ puebloPath, cliArgs });
 
@@ -265,20 +258,20 @@ export async function amberRun(rawArgs: string[]): Promise<Record<string, PhaseR
     const { schedulePhases } = await import('./pipeline.js');
     const orderedPhases = schedulePhases(amberContext.pipeline.phases);
 
-    console.log(`[amber] Pipeline "${amberContext.pipeline.name}" loaded`);
-    console.log(
+    runLog(`[amber] Pipeline "${amberContext.pipeline.name}" loaded`);
+    runLog(
         `[amber] Phases (order): ${orderedPhases.map((p) => p.id).join(' → ')}`,
     );
-    console.log(`[amber] Agent template: ${amberContext.runContext.agentTemplate}`);
-    console.log(`[amber] Repo path: ${amberContext.runContext.repoPath}`);
-    console.log(`[amber] Skills loaded: ${amberContext.skills.size}`);
-    console.log(`[amber] Artifact templates loaded: ${amberContext.artifactTemplates.size}`);
+    runLog(`[amber] Agent template: ${amberContext.runContext.agentTemplate}`);
+    runLog(`[amber] Repo path: ${amberContext.runContext.repoPath}`);
+    runLog(`[amber] Skills loaded: ${amberContext.skills.size}`);
+    runLog(`[amber] Artifact templates loaded: ${amberContext.artifactTemplates.size}`);
 
     const results: Record<string, PhaseResult> = {};
     const { runContext } = amberContext;
 
     for (const phase of orderedPhases) {
-        console.log(`[amber:phase] Starting '${phase.id}' ...`);
+        runLog(`[amber:phase] Starting '${phase.id}' ...`);
 
         // 1. 组装阶段 Agent 输入（含上游产物路径、模型覆盖）
         const agentInput = amberContext.assembleAgentInput(phase.id);
@@ -299,23 +292,13 @@ export async function amberRun(rawArgs: string[]): Promise<Record<string, PhaseR
         runContext.completedPhases.set(phase.id, results[phase.id]);
 
         if (report.status !== 'completed') {
-            console.log(`[amber:error] Phase '${phase.id}' failed: ${report.error?.message}`);
+            runLogErr(`[amber:error] Phase '${phase.id}' failed: ${report.error?.message}`);
             return results;
         }
 
-        console.log(`[amber:phase] '${phase.id}' completed in ${report.totalSteps} steps.`);
-
-        // 5. 写入文件输出
-        if (phase.output?.type === 'file' && phase.output.path) {
-            const outputPath = phase.output.path.startsWith('.')
-                ? path.resolve(runContext.repoPath, phase.output.path)
-                : path.resolve(process.cwd(), phase.output.path);
-            fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-            fs.writeFileSync(outputPath, report.result ?? '', 'utf-8');
-            console.log(`[amber:phase] Output written to ${outputPath}`);
-        }
+        runLog(`[amber:phase] '${phase.id}' completed in ${report.totalSteps} steps.`);
     }
 
-    console.log('[amber:info] All phases completed successfully.');
+    runLog('[amber:info] All phases completed successfully.');
     return results;
 }
