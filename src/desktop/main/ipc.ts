@@ -26,7 +26,7 @@ import type {
   DesktopToolApprovalResponse,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
-import { perfEnd, perfStart } from '../../utils/perf-logger';
+import { perfEnd, perfLog, perfStart } from '../../utils/perf-logger';
 import type { DesktopLoopJobManager, CallModelFn } from './loop-job-manager.js';
 import { AppWindow } from './app-window.js';
 import type { LoopConfig } from '../../agent/loop-runner.js';
@@ -355,6 +355,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
       const talkCommandResult = await talkService?.handleTalkCommand(envelope.inputText.trim());
       if (talkCommandResult) {
         const blocks = createResultBlocks(talkCommandResult);
+        perfLog('DEBUG-ipc-createResultBlocks', 0,
+          JSON.stringify({
+            resultActions: talkCommandResult.actions,
+            blocksCount: blocks.length,
+            blockActions: blocks.map(b => ({ id: b.id, actionsCount: b.actions?.length ?? 0, actions: b.actions })),
+          }));
         for (const block of blocks) {
           runtime.publish({ block });
         }

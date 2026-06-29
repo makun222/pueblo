@@ -608,10 +608,17 @@ export function createCliDependencies(
 
       //const _postId = perfStart(`[cli:runTask] post-processing sessionId=${sessionId}`);
       const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
+      perfLog('DEBUG-outputSummary-raw', 0,
+        JSON.stringify({ hasOutputSummary: !!task.outputSummary, rawType: typeof task.outputSummary }));
+      perfLog('DEBUG-outputSummary-content', 0,
+        task.outputSummary?.substring(0, 3000) ?? '(undefined)');
+      perfLog('DEBUG-outputPayload-parsed', 0,
+        JSON.stringify({ hasPayload: !!outputPayload, next_step_actions: outputPayload?.next_step_actions }));
       const nextStepActions: ActionSuggestion[] | undefined = outputPayload?.next_step_actions?.map(
         a => ({ label: a.label, prompt: a.prompt, description: a.description }),
       );
-      console.log('DEBUG next_step_actions:', JSON.stringify(nextStepActions, null, 2));
+      perfLog('DEBUG-nextStepActions-mapped', 0,
+        JSON.stringify({ count: nextStepActions?.length ?? 0, actions: nextStepActions }));
       const messageTraceTotals = summarizeModelMessageTrace(outputPayload?.modelMessageTrace);
       lastModelMessageCount = messageTraceTotals.messageCount;
       lastModelMessageCharCount = messageTraceTotals.messageCharCount;
@@ -649,6 +656,8 @@ export function createCliDependencies(
       //perfEnd(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`, _flushId);
       //perfEnd(`[cli:runTask] post-processing sessionId=${sessionId}`, _postId);
 
+      perfLog('DEBUG-before-successResult', 0,
+        JSON.stringify({ nextStepActions, hasActions: !!nextStepActions, length: nextStepActions?.length }));
       return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
         ...task,
         workflow: workflowProgress,

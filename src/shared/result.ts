@@ -250,6 +250,16 @@ export function formatCommandResult(result: CommandResult): string {
     lines.push(JSON.stringify(result.data, null, 2));
   }
 
+  if (result.actions && result.actions.length > 0) {
+    lines.push('Actions:');
+    for (const action of result.actions) {
+      lines.push(`  [${action.label}] ${action.prompt}`);
+      if (action.description) {
+        lines.push(`    ${action.description}`);
+      }
+    }
+  }
+
   if (result.suggestions.length > 0) {
     lines.push('Suggestions:');
     for (const suggestion of result.suggestions) {
@@ -655,12 +665,89 @@ function extractTaskResultPayload(data: unknown): TaskResultPayload | null {
   return parseTaskResultPayload(candidate.outputSummary);
 }
 
+/**
+ * Extract next_step_actions from markdown when JSON.parse of outputSummary fails.
+ * Handles LLM responses that embed structured data inside markdown fenced code blocks.
+ */
+function extractNextStepActionsFromMarkdown(
+  outputSummary: string,
+): Array<{ id: string; label: string; prompt: string; description?: string }> | undefined {
+  // Find all fenced code blocks
+  const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)```/g;
+  const codeBlocks: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(outputSummary)) !== null) {
+    codeBlocks.push(match[1].trim());
+  }
+
+  if (codeBlocks.length === 0) return undefined;
+
+  // Use the last code block
+  const lastBlock = codeBlocks[codeBlocks.length - 1];
+
+  // Priority 1: JSON.parse → look for next_step_actions array
+  try {
+    const parsed = JSON.parse(lastBlock);
+    if (Array.isArray(parsed?.next_step_actions)) {
+      return parsed.next_step_actions;
+    }
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Not valid JSON, continue to next strategy
+  }
+
+  // Priority 2: colon-separated "label: prompt" lines
+  const lines = lastBlock
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const colonLines = lines.filter((l) => l.includes(':'));
+  if (colonLines.length > 0) {
+    const actions = colonLines.map((line, index) => {
+      const colonIdx = line.indexOf(':');
+      const label = line.substring(0, colonIdx).trim();
+      const prompt = line.substring(colonIdx + 1).trim();
+      return {
+        id: `action-${index + 1}`,
+        label: label || prompt.substring(0, 30),
+        prompt: prompt || label,
+      };
+    });
+    if (actions.length > 0) return actions;
+  }
+
+  // Priority 3: fallback — use last ## / ### heading as label, code block as prompt
+  const headingRegex = /^#{2,3}\s+(.+)$/gm;
+  let lastHeading = '';
+  let hMatch: RegExpExecArray | null;
+  while ((hMatch = headingRegex.exec(outputSummary)) !== null) {
+    lastHeading = hMatch[1].trim();
+  }
+
+  if (lastHeading) {
+    return [
+      {
+        id: 'action-1',
+        label: lastHeading,
+        prompt: lastBlock,
+        description: lastHeading,
+      },
+    ];
+  }
+
+  return undefined;
+}
+
 function parseTaskResultPayload(outputSummary: string): ParsedTaskOutputSummary {
   try {
     return JSON.parse(outputSummary) as TaskResultPayload;
   } catch {
+    const next_step_actions = extractNextStepActionsFromMarkdown(outputSummary);
     return {
       outputSummary,
+      ...(next_step_actions && next_step_actions.length > 0 ? { next_step_actions } : {}),
     };
   }
 }

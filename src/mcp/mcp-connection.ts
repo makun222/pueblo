@@ -77,7 +77,7 @@ export class McpConnection {
         const child = spawn(config.command, config.args, {
           env,
           stdio: ['pipe', 'pipe', 'pipe'],
-          shell: false,
+          shell: process.platform === 'win32',
         });
 
         this.process = child;
