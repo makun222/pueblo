@@ -293,3 +293,29 @@ export function loadAppConfig(options: ConfigLoadOptions = {}): AppConfig {
     },
   };
 }
+
+/**
+ * Reads .pueblo/config.json (given an optional puebloPath, defaults to cwd)
+ * and returns the default provider/model identifier as { provider, name }.
+ * Falls back to { provider: 'openai', name: 'gpt-4o' } if config is missing or incomplete.
+ */
+export function getDefaultModelIdentifier(puebloPath?: string): { provider: string; name: string } {
+  const fallback = { provider: 'openai', name: 'gpt-4o' };
+  try {
+    const configDir = path.join(puebloPath || process.cwd(), '.pueblo');
+    const configPath = path.join(configDir, 'config.json');
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const config: {
+      defaultProviderId?: string;
+      providers?: Array<{ id: string; defaultModelId?: string }>;
+    } = JSON.parse(raw);
+    const providerId = config.defaultProviderId;
+    if (!providerId) return fallback;
+    const provider = config.providers?.find(p => p.id === providerId);
+    const modelId = provider?.defaultModelId;
+    if (!modelId) return fallback;
+    return { provider: providerId, name: modelId };
+  } catch {
+    return fallback;
+  }
+}

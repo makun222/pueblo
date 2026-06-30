@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ParsedMd } from '../amber-types.js';
+import { getDefaultModelIdentifier } from '../../shared/config.js';
 
 // ---------------------------------------------------------------------------
 // 解析 agent.md 内部结构
@@ -54,7 +55,7 @@ function extractModel(body: string): ParsedMd['model'] {
     if (match) {
         return { provider: match[1], name: match[2] };
     }
-    return { provider: 'openai', name: 'gpt-4o' };
+    return getDefaultModelIdentifier();
 }
 
 /**

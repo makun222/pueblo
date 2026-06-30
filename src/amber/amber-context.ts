@@ -17,6 +17,7 @@ import type {
 import { parseAgentMdFile } from './parsers/agent-template-parser.js';
 import { parsePipelineYamlFile } from './pipeline.js';
 import { discoverSkills, discoverArtifactTemplates } from './template-resolver.js';
+import { getDefaultModelIdentifier } from '../shared/config.js';
 
 // ---------------------------------------------------------------------------
 // RunContext 工厂
@@ -45,7 +46,7 @@ export function createRunContext(params: CreateRunContextParams): RunContext {
         skillPath: params.skillPath,
         agentTemplate: params.agentTemplate,
         additionalPrompts: params.additionalPrompts ?? [],
-        model: params.model ?? { provider: 'openai', name: 'gpt-4o' },
+        model: params.model ?? getDefaultModelIdentifier(params.puebloPath),
         completedPhases: new Map<string, PhaseResult>(),
     };
 }
