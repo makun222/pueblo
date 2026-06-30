@@ -100,13 +100,15 @@ export function buildAmberRunContext(options: AmberRunOptions) {
     const { puebloPath, cliArgs } = options;
 
     const repoPath = path.resolve(puebloPath, cliArgs.repoPath);
-    const skillPath = path.join(puebloPath, cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE);
-
     // 解析 agent 模板
     const agentTemplateDir = path.join(
         puebloPath,
+        '.pueblo',
+        'agents',
+        'templates',
         cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
     );
+    const skillPath = puebloPath;
     const agentMdPath = path.join(agentTemplateDir, 'agent.md');
     const parsedAgent = parseAgentMdFile(agentMdPath);
 
@@ -121,8 +123,9 @@ export function buildAmberRunContext(options: AmberRunOptions) {
 
     // 发现 Artifact 模板
     const artifactTemplateDir = path.join(
-        puebloPath,
-        cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
+        agentTemplateDir,
+        '.pipeline',
+        'artifacts',
     );
     const artifactTemplates = discoverArtifactTemplates(artifactTemplateDir);
 
@@ -205,7 +208,7 @@ function slugify(text: string): string {
         .slice(0, 64);
 }
 
-export async function amberInit(rawArgs: string[]): Promise<void> {
+export async function amberInit(rawArgs: string[], executeTurn?: ExecuteTurnFn): Promise<void> {
     const args = parseInitArgs(rawArgs);
 
     let requirement: string;
@@ -233,7 +236,7 @@ export async function amberInit(rawArgs: string[]): Promise<void> {
 
     if (args.run) {
         console.log('\nRunning generated pipeline...\n');
-        await amberRun(['run', '--pipeline', result.pipelinePath]);
+        await amberRun(['run', '--pipeline', result.pipelinePath], executeTurn);
     }
 }
 
@@ -241,7 +244,7 @@ export async function amberInit(rawArgs: string[]): Promise<void> {
 // amber run 子命令 — 执行现有 pipeline.yaml
 // ============================================================================
 
-export async function amberRun(rawArgs: string[]): Promise<Record<string, PhaseResult>> {
+export async function amberRun(rawArgs: string[], executeTurn?: ExecuteTurnFn): Promise<Record<string, PhaseResult>> {
     const cliArgs = parseCliArgs(rawArgs);
 
     if (!cliArgs.repoPath) {
@@ -277,7 +280,7 @@ export async function amberRun(rawArgs: string[]): Promise<Record<string, PhaseR
         const agentInput = amberContext.assembleAgentInput(phase.id);
 
         // 2. 创建 CamelAgent 并执行
-        const camel = new CamelAgent(agentInput, defaultExecuteTurn);
+        const camel = new CamelAgent(agentInput, executeTurn ?? defaultExecuteTurn);
         const report = await camel.start();
 
         // 3. 记录阶段结果

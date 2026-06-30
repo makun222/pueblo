@@ -23,6 +23,7 @@ import {
   ExecuteTurnInput as CamelExecuteTurnInput,
   ExecuteTurnOutput as CamelExecuteTurnOutput,
 } from './camel/camel-types';
+import { amberLog } from '../utils/perf-logger';
 import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
 import fs from 'node:fs';

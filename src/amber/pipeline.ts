@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { PipelineDefinition, Phase } from './amber-types.js';
+import { amberLog } from '../utils/perf-logger.js';
 
 // ---------------------------------------------------------------------------
 // pipeline.yaml 结构
@@ -49,6 +50,7 @@ function parseSimpleYaml(content: string): YamlNode {
     const root: YamlNode = {};
     const stack: YamlNode[] = [root];
     let currentListKey: string | null = null;
+    let listContainer: YamlNode | null = null;
 
     for (const rawLine of lines) {
         const line = rawLine.trimEnd();
@@ -61,10 +63,39 @@ function parseSimpleYaml(content: string): YamlNode {
 
         // 列表项
         const listMatch = trimmed.match(YAML_LIST_ITEM);
-        if (listMatch && currentListKey) {
-            const arr = stack[stack.length - 1][currentListKey] as string[];
-            if (Array.isArray(arr)) {
-                arr.push(listMatch[1].trim());
+        if (listMatch && currentListKey && listContainer) {
+            const listValue = listMatch[1].trim();
+
+            // 弹出前一个列表项的嵌套节点，回到列表容器
+            while (
+                stack.length > 0 &&
+                stack[stack.length - 1] !== listContainer
+            ) {
+                stack.pop();
+            }
+
+            // 确保列表容器上该 key 是数组（首次遇到时从 {} 转换为 []）
+            if (!Array.isArray(listContainer[currentListKey])) {
+                listContainer[currentListKey] = [];
+            }
+            const arr = listContainer[currentListKey] as unknown[];
+
+            // 检查是否为复杂列表项（嵌套 KV，如 "id: default"）
+            const nestedKv = listValue.match(
+                /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/,
+            );
+            if (nestedKv) {
+                const newObj: YamlNode = {};
+                newObj[nestedKv[1]] = nestedKv[2].replace(
+                    /^["']|["']$/g,
+                    '',
+                );
+                arr.push(newObj);
+                stack.push(newObj);
+            } else {
+                arr.push(
+                    listValue.replace(/^["']|["']$/g, ''),
+                );
             }
         } else {
             // 键值对
@@ -74,18 +105,19 @@ function parseSimpleYaml(content: string): YamlNode {
                 const value = kvMatch[2].trim();
 
                 if (value === '') {
-                    // 嵌套对象
+                    // 嵌套对象 / 列表父节点
                     const newNode: YamlNode = {};
                     stack[stack.length - 1][key] = newNode;
                     stack.push(newNode);
-                    currentListKey = null;
+                    currentListKey = key;
+                    listContainer = newNode;
                 } else if (value === '[]') {
                     stack[stack.length - 1][key] = [];
                     currentListKey = key;
                 } else {
                     // 标量值
                     stack[stack.length - 1][key] = value.replace(/^["']|["']$/g, '');
-                    currentListKey = null;
+                    // 不清除 currentListKey — 嵌套在列表中的 KV 行需要保持列表上下文
                 }
             }
         }
@@ -102,7 +134,24 @@ function parseSimpleYaml(content: string): YamlNode {
  * 将解析后的 YAML 节点转为 Phase 数组。
  */
 function parsePhases(rawPhases: unknown): Phase[] {
+    if (!rawPhases) {
+        return [];
+    }
+
     if (!Array.isArray(rawPhases)) {
+        // 向后兼容：旧版 YAML 解析器可能产出 plain object（多个 phase 被合并）
+        if (typeof rawPhases === 'object' && rawPhases !== null && !Array.isArray(rawPhases)) {
+            amberLog('warn', 'parsePhases 收到 object 而非 array（可能是 YAML 解析格式兼容问题）');
+            // 将单个 object 视为单个 phase
+            const obj = rawPhases as Record<string, unknown>;
+            const id = (obj['id'] as string) ?? 'phase-1';
+            const name = (obj['name'] as string) ?? id;
+            const goal = (obj['goal'] as string) ?? '';
+            const skills: string[] = Array.isArray(obj['skills']) ? (obj['skills'] as string[]) : [];
+            const artifactTemplates: string[] = Array.isArray(obj['artifactTemplates']) ? (obj['artifactTemplates'] as string[]) : [];
+            const dependsOn: string[] = Array.isArray(obj['dependsOn']) ? (obj['dependsOn'] as string[]) : [];
+            return [{ id, name, goal, skills, artifactTemplates, dependsOn }];
+        }
         return [];
     }
 
@@ -137,9 +186,11 @@ function parsePhases(rawPhases: unknown): Phase[] {
 export function parsePipelineYaml(content: string): PipelineDefinition {
     const parsed = parseSimpleYaml(content);
 
-    const version = (parsed['version'] as string) ?? '1.0';
-    const name = (parsed['name'] as string) ?? 'unnamed-pipeline';
-    const phases = parsePhases(parsed['phases']);
+    // YAML may include a 'pipeline:' wrapper key — unwrap if present
+    const root = (parsed['pipeline'] as Record<string, unknown>) ?? parsed;
+    const version = (root['version'] as string) ?? '1.0';
+    const name = (root['name'] as string) ?? 'unnamed-pipeline';
+    const phases = parsePhases(root['phases']);
 
     return { version, name, phases };
 }

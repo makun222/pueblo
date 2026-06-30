@@ -120,6 +120,10 @@ export interface Phase {
     model?: { provider?: string; name?: string };
     /** Phase 级别模板覆盖：指定其他 agent.md 文件路径（相对于 amberDir） */
     overrideTemplate?: string;
+    /** Budget strategy: 'fixed', 'adaptive', or 'unlimited' */
+    budgetStrategy?: 'fixed' | 'adaptive' | 'unlimited';
+    /** Budget limit (max LLM calls for 'fixed' strategy) */
+    budgetLimit?: number;
 }
 
 /** pipeline.yaml 定义 */

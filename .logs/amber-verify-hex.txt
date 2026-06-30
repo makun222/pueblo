@@ -1,0 +1,7 @@
+5b 32 30 32 36 2d 30 36  2d 32 34 54 31 30 3a 33
+30 3a 34 35 5d 5b 49 4e  46 4f 5d 20 5b 61 6d 62
+65 72 5d 20 ef bf bd ef  bf bd c9 ab ef bf bd ef
+bf bd c7 a9 70 69 70 65  6c 69 6e 65 ef bf bd ef
+bf bd ef bf bd d8 b3 c9  b9 ef bf bd 20 ef bf bd
+ef bf bd 20 ef bf bd ef  bf bd ef bf bd ef bf bd
+70 68 61 73 65 20 61 6e  61 6c 79 73 69 73 0a

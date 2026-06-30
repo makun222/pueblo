@@ -1406,10 +1406,10 @@ export function createCliDependencies(
       const repoPath = process.cwd();
 
       // Step 1: Run meta-pipeline to generate the actual pipeline via AI analysis
-      await amberRun(['--pipeline', result.metaPipelinePath, '--repo-path', repoPath]);
+      await amberRun(['--pipeline', result.metaPipelinePath, '--repo-path', repoPath], taskRunner.executeTurn.bind(taskRunner));
 
       // Step 2: Run the generated pipeline
-      await amberRun(['--pipeline', result.pipelinePath, '--repo-path', repoPath]);
+      await amberRun(['--pipeline', result.pipelinePath, '--repo-path', repoPath], taskRunner.executeTurn.bind(taskRunner));
 
       return successResult('Pipeline generated and executed',
         `Pipeline generated and executed successfully at ${result.pipelinePath}. Meta: ${result.metaPipelinePath}`);
