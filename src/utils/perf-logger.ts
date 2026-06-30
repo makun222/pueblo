@@ -1,7 +1,7 @@
 /**
  * Minimal performance logger for getRuntimeStatus bottleneck analysis.
  * Writes to .logs/perf-{date}.log in the workspace root.
- * Zero dependencies – uses synchronous fs writes to avoid delaying the process.
+ * Zero dependencies —uses synchronous fs writes to avoid delaying the process.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -52,4 +52,27 @@ export function perfStart(label: string): number {
 export function perfEnd(label: string, start: number, extra?: string): void {
   const elapsed = now() - start;
   perfLog(`END: ${label}`, elapsed, extra);
+}
+
+// ---------------------------------------------------------------------------
+// General-purpose Amber run logger -- writes to .logs/amber-{date}.log
+// ---------------------------------------------------------------------------
+
+function getAmberLogPath(): string {
+  const root = process.cwd();
+  const dir = path.join(root, PERF_LOG_DIR);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const date = new Date().toISOString().slice(0, 10);
+  return path.join(dir, 'amber-' + date + '.log');
+}
+
+export function amberLog(level: 'info' | 'warn' | 'error', message: string): void {
+  const line = '[' + ts() + '][' + level.toUpperCase() + '] ' + message + "\n";
+  try {
+    fs.appendFileSync(getAmberLogPath(), line, 'utf-8');
+  } catch {
+    // silently ignore write failures
+  }
 }
