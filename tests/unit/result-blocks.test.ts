@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createResultBlocks, successResult } from '../../src/shared/result';
+import { createResultBlocks, extractTaskOutputSummaryPayload, successResult } from '../../src/shared/result';
 
 describe('Result Block Rendering', () => {
   it('should render only outputSummary and metadata for successful task payloads', () => {
@@ -271,5 +271,54 @@ describe('Result Block Rendering', () => {
     expect(blocks[1]?.content).toContain('Workflow ID: workflow-2');
     expect(blocks[1]?.content).toContain('Route Reason: explicit');
     expect(blocks[1]?.content).toContain('Runtime Plan Path: D:/workspace/.plans/workflow-2/feature.plan.md');
+  });
+
+  it('normalizes next_step_actions by dropping invalid entries, deduping prompts, and enforcing a limit', () => {
+    const payload = extractTaskOutputSummaryPayload(JSON.stringify({
+      outputSummary: 'Apply the fix',
+      next_step_actions: [
+        { label: 'Fix parser', prompt: 'src/shared/result.ts tighten action parsing' },
+        { label: 'Fix parser again', prompt: 'src/shared/result.ts tighten action parsing' },
+        { label: '', prompt: 'missing label should drop' },
+        { label: 'Add CLI menu', prompt: 'src/cli/index.ts add numbered next-step actions' },
+        { label: 'Improve focus', prompt: 'src/desktop/renderer/App.tsx focus the input after action clicks' },
+        { label: 'Fifth action', prompt: 'this one should be trimmed by the max limit' },
+      ],
+    }));
+
+    expect(payload?.next_step_actions).toEqual([
+      { label: 'Fix parser', prompt: 'src/shared/result.ts tighten action parsing' },
+      { label: 'Add CLI menu', prompt: 'src/cli/index.ts add numbered next-step actions' },
+      { label: 'Improve focus', prompt: 'src/desktop/renderer/App.tsx focus the input after action clicks' },
+      { label: 'Fifth action', prompt: 'this one should be trimmed by the max limit' },
+    ]);
+  });
+
+  it('ignores JSON-like markdown fallback lines when extracting next_step_actions', () => {
+    const payload = extractTaskOutputSummaryPayload([
+      'Follow-up notes:',
+      '```json',
+      '{',
+      '  "label": "Fix parser",',
+      '  "prompt": "src/shared/result.ts tighten action parsing"',
+      '}',
+      '```',
+    ].join('\n'));
+
+    expect(payload?.next_step_actions).toBeUndefined();
+  });
+
+  it('does not turn plain suggestions into desktop action buttons', () => {
+    const result = {
+      ok: true,
+      code: 'HANDLED',
+      message: 'Handled command',
+      data: { outputSummary: JSON.stringify({ outputSummary: 'Handled command' }) },
+      suggestions: ['Try /help'],
+    } as const;
+
+    const blocks = createResultBlocks(result);
+
+    expect(blocks[0]?.actions).toEqual([]);
   });
 });

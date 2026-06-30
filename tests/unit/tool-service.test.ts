@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSqliteDatabase } from '../../src/persistence/sqlite';
 import { runMigrations } from '../../src/persistence/migrate';
 import { AgentTaskRepository } from '../../src/agent/task-repository';
@@ -136,5 +136,102 @@ describeIfNodeSqlite('tool service', () => {
     } finally {
       database.close();
     }
+  });
+});
+
+// ============================================================
+// Fix 1 + Dispatch: MCP 工具支持验证
+// ============================================================
+describe('ToolService with MCP tools', () => {
+  it('describeTools should include MCP tools when mcpClientManager is available', () => {
+    const mcpClientManager = {
+      getAllTools: () => [
+        {
+          serverId: 'filesystem',
+          qualifiedName: 'mcp__filesystem__list_directory',
+          definition: {
+            name: 'list_directory',
+            description: 'List directory contents',
+            inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
+          },
+        },
+      ],
+      executeTool: vi.fn(),
+    } as unknown as McpClientManager;
+
+    const repository = {
+      create() {
+        return { id: 'mcp-test' };
+      },
+      listByTask() {
+        return [];
+      },
+    } as unknown as ToolInvocationRepository;
+
+    const service = new ToolService({ repository, cwd: process.cwd(), mcpClientManager });
+    const tools = service.describeTools();
+
+    const mcpTool = tools.find((t) => t.name === 'mcp__filesystem__list_directory');
+    expect(mcpTool).toBeDefined();
+    expect(mcpTool!.description).toBe('List directory contents');
+  });
+
+  it('executeTool should dispatch MCP tool to mcpClientManager.executeTool', async () => {
+    const executeToolMock = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'file list' }] });
+    const mcpClientManager = {
+      getAllTools: () => [
+        {
+          serverId: 'filesystem',
+          qualifiedName: 'mcp__filesystem__list_directory',
+          definition: {
+            name: 'list_directory',
+            description: 'List directory contents',
+            inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
+          },
+        },
+      ],
+      executeTool: executeToolMock,
+    } as unknown as McpClientManager;
+
+    const repository = {
+      create() {
+        return { id: 'mcp-invocation-1' };
+      },
+      listByTask() {
+        return [];
+      },
+    } as unknown as ToolInvocationRepository;
+
+    const service = new ToolService({ repository, cwd: process.cwd(), mcpClientManager });
+    const result = await service.execute({
+      taskId: 'task-mcp',
+      toolName: 'mcp__filesystem__list_directory',
+      args: { path: '/' },
+    });
+
+    expect(executeToolMock).toHaveBeenCalledWith('mcp__filesystem__list_directory', { path: '/' });
+    expect(result.output.toolName).toBe('mcp__filesystem__list_directory');
+    expect(result.output.status).toBe('succeeded');
+  });
+
+  it('executeTool should return error for MCP tool when mcpClientManager is not available', async () => {
+    const repository = {
+      create() {
+        return { id: 'mcp-invocation-2' };
+      },
+      listByTask() {
+        return [];
+      },
+    } as unknown as ToolInvocationRepository;
+
+    const service = new ToolService({ repository, cwd: process.cwd() }); // no mcpClientManager
+    const result = await service.execute({
+      taskId: 'task-mcp-2',
+      toolName: 'mcp__filesystem__list_directory',
+      args: { path: '/' },
+    });
+
+    expect(result.output.status).toBe('failed');
+    expect(result.output.summary).toContain('MCP tool failed');
   });
 });

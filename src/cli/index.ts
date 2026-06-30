@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 
 import type { AppConfig } from '../shared/config';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -58,6 +58,7 @@ import {
 import { CommandDispatcher, createCommandSelectionState, registerCoreCommands } from '../commands/dispatcher';
 import { verifyPersistence } from '../persistence/health-check';
 import { createSqliteDatabase } from '../persistence/sqlite';
+import { mcpClientManager } from '../mcp/mcp-client';
 import { DeepSeekAdapter } from '../providers/deepseek-adapter';
 import { resolveDeepSeekApiKey, resolveDeepSeekAuth } from '../providers/deepseek-auth';
 import { createDeepSeekProfile } from '../providers/deepseek-profile';
@@ -123,6 +124,18 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
 const INTERACTIVE_PROMPT = 'pueblo> ';
 const INTERACTIVE_EXIT_COMMANDS = new Set(['/exit', '/quit']);
+const INTERACTIVE_NEXT_STEP_ACTION_PATTERN = /^\/(\d+)$/;
+const SHOULD_LOG_TASK_OUTPUT_DEBUG = process.env.PUEBLO_DEBUG_TASK_OUTPUT === '1';
+
+function parseInteractiveNextStepActionIndex(input: string): number | null {
+  const match = INTERACTIVE_NEXT_STEP_ACTION_PATTERN.exec(input);
+  if (!match) {
+    return null;
+  }
+
+  const selectedIndex = Number.parseInt(match[1], 10) - 1;
+  return Number.isNaN(selectedIndex) ? null : selectedIndex;
+}
 
 async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: string[]): Promise<void> {
   const program = new Command();
@@ -139,7 +152,7 @@ async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: stri
           return;
         }
 
-        const cli = createCliDependencies(resolvedConfig);
+        const cli = createCliDependencies(resolvedConfig, { mcpClientManager });
 
         try {
           await runInteractiveCliSession(cli);
@@ -150,7 +163,7 @@ async function startCliMode(config: ReturnType<typeof loadAppConfig>, argv: stri
         return;
       }
 
-      const { dispatcher, databaseClose } = createCliDependencies(resolvedConfig);
+      const { dispatcher, databaseClose } = createCliDependencies(resolvedConfig, { mcpClientManager });
 
       try {
         const result = await dispatcher.dispatch({ input: commandInput });
@@ -238,6 +251,7 @@ export async function runInteractiveCliSession(
 
   write('Enter /help for commands, type a slash command or plain-text task, or use /exit to quit.\n');
   cli.setToolApprovalHandler(async (request) => promptForToolApproval(request, lineReader.readLine, write));
+  let availableNextStepActions: ActionSuggestion[] = [];
 
   try {
     while (true) {
@@ -253,8 +267,23 @@ export async function runInteractiveCliSession(
         return;
       }
 
+      const selectedNextStepActionIndex = parseInteractiveNextStepActionIndex(trimmedInput);
+      if (selectedNextStepActionIndex !== null && availableNextStepActions.length > 0) {
+        const selectedNextStepAction = availableNextStepActions[selectedNextStepActionIndex];
+        if (!selectedNextStepAction) {
+          write(`No suggested next step matches ${trimmedInput}.\n`);
+          continue;
+        }
+
+        const result = await cli.submitInput(selectedNextStepAction.prompt);
+        availableNextStepActions = result.actions ?? [];
+        write(formatCommandResult(result, { interactiveActionSelection: true }));
+        continue;
+      }
+
       const result = await cli.submitInput(trimmedInput);
-      write(formatCommandResult(result));
+      availableNextStepActions = result.actions ?? [];
+      write(formatCommandResult(result, { interactiveActionSelection: true }));
     }
   } finally {
     cli.setToolApprovalHandler(null);
@@ -608,17 +637,21 @@ export function createCliDependencies(
 
       //const _postId = perfStart(`[cli:runTask] post-processing sessionId=${sessionId}`);
       const outputPayload = extractTaskOutputSummaryPayload(task.outputSummary);
-      perfLog('DEBUG-outputSummary-raw', 0,
-        JSON.stringify({ hasOutputSummary: !!task.outputSummary, rawType: typeof task.outputSummary }));
-      perfLog('DEBUG-outputSummary-content', 0,
-        task.outputSummary?.substring(0, 3000) ?? '(undefined)');
-      perfLog('DEBUG-outputPayload-parsed', 0,
-        JSON.stringify({ hasPayload: !!outputPayload, next_step_actions: outputPayload?.next_step_actions }));
-      const nextStepActions: ActionSuggestion[] | undefined = outputPayload?.next_step_actions?.map(
-        a => ({ label: a.label, prompt: a.prompt, description: a.description }),
-      );
-      perfLog('DEBUG-nextStepActions-mapped', 0,
-        JSON.stringify({ count: nextStepActions?.length ?? 0, actions: nextStepActions }));
+      if (SHOULD_LOG_TASK_OUTPUT_DEBUG) {
+        perfLog('DEBUG-outputSummary-raw', 0,
+          JSON.stringify({ hasOutputSummary: !!task.outputSummary, rawType: typeof task.outputSummary }));
+        perfLog('DEBUG-outputSummary-content', 0,
+          task.outputSummary?.substring(0, 3000) ?? '(undefined)');
+        perfLog('DEBUG-outputPayload-parsed', 0,
+          JSON.stringify({ hasPayload: !!outputPayload, next_step_actions: outputPayload?.next_step_actions }));
+      }
+      const nextStepActions: ActionSuggestion[] | undefined = outputPayload?.next_step_actions
+        ? [...outputPayload.next_step_actions]
+        : undefined;
+      if (SHOULD_LOG_TASK_OUTPUT_DEBUG) {
+        perfLog('DEBUG-nextStepActions-mapped', 0,
+          JSON.stringify({ count: nextStepActions?.length ?? 0, actions: nextStepActions }));
+      }
       const messageTraceTotals = summarizeModelMessageTrace(outputPayload?.modelMessageTrace);
       lastModelMessageCount = messageTraceTotals.messageCount;
       lastModelMessageCharCount = messageTraceTotals.messageCharCount;
@@ -656,8 +689,10 @@ export function createCliDependencies(
       //perfEnd(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`, _flushId);
       //perfEnd(`[cli:runTask] post-processing sessionId=${sessionId}`, _postId);
 
-      perfLog('DEBUG-before-successResult', 0,
-        JSON.stringify({ nextStepActions, hasActions: !!nextStepActions, length: nextStepActions?.length }));
+      if (SHOULD_LOG_TASK_OUTPUT_DEBUG) {
+        perfLog('DEBUG-before-successResult', 0,
+          JSON.stringify({ nextStepActions, hasActions: !!nextStepActions, length: nextStepActions?.length }));
+      }
       return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
         ...task,
         workflow: workflowProgress,

@@ -14,6 +14,12 @@ export interface SourceAttribution {
   readonly toolNames?: string[];
 }
 
+interface NextStepActionPayload {
+  readonly label: string;
+  readonly prompt: string;
+  readonly description?: string;
+}
+
 interface TaskModelMessageTraceEntry {
   readonly stepNumber: number;
   readonly messages: Array<{
@@ -48,6 +54,7 @@ interface TaskResultPayload {
     readonly executionCwd?: string | null;
   }>;
   readonly fileChanges?: RendererFileChange[];
+  readonly next_step_actions?: NextStepActionPayload[];
 }
 
 interface ExecCommandBlockData {
@@ -223,12 +230,7 @@ export interface ParsedTaskOutputSummary {
     readonly executionCwd?: string | null;
   }>;
   readonly fileChanges?: RendererFileChange[];
-  readonly next_step_actions?: Array<{
-    readonly id: string;
-    readonly label: string;
-    readonly prompt: string;
-    readonly description?: string;
-  }>;
+  readonly next_step_actions?: NextStepActionPayload[];
 }
 
 export type TaskStepTraceEntry = NonNullable<ParsedTaskOutputSummary['stepTrace']>[number];
@@ -243,7 +245,11 @@ export function failureResult(code: string, message: string, suggestions: string
   };
 }
 
-export function formatCommandResult(result: CommandResult): string {
+interface FormatCommandResultOptions {
+  readonly interactiveActionSelection?: boolean;
+}
+
+export function formatCommandResult(result: CommandResult, options: FormatCommandResultOptions = {}): string {
   const lines = [`[${result.code}] ${result.message}`];
 
   if (result.data !== undefined) {
@@ -252,11 +258,20 @@ export function formatCommandResult(result: CommandResult): string {
 
   if (result.actions && result.actions.length > 0) {
     lines.push('Actions:');
-    for (const action of result.actions) {
-      lines.push(`  [${action.label}] ${action.prompt}`);
+    for (const [index, action] of result.actions.entries()) {
+      if (options.interactiveActionSelection) {
+        lines.push(`  /${index + 1} ${action.label}`);
+        lines.push(`    ${action.prompt}`);
+      } else {
+        lines.push(`  [${action.label}] ${action.prompt}`);
+      }
       if (action.description) {
         lines.push(`    ${action.description}`);
       }
+    }
+
+    if (options.interactiveActionSelection) {
+      lines.push(`Type /1 through /${result.actions.length} to run a suggested next step.`);
     }
   }
 
@@ -458,14 +473,6 @@ export function createResultBlocks(result: CommandResult<unknown>) {
 
   if (actions && actions.length > 0 && phasedBlocks.primaryBlock) {
     phasedBlocks.primaryBlock = { ...phasedBlocks.primaryBlock, actions };
-  } else if (result.suggestions && result.suggestions.length > 0 && phasedBlocks.primaryBlock) {
-    const suggestionActions: RendererAction[] = result.suggestions.map((s, i) => ({
-      id: `suggestion-${i}`,
-      label: s,
-      prompt: s,
-      description: '',
-    }));
-    phasedBlocks.primaryBlock = { ...phasedBlocks.primaryBlock, actions: suggestionActions };
   }
 
   return phasedBlocks.primaryBlock ? [phasedBlocks.primaryBlock, ...phasedBlocks.supplementalBlocks] : phasedBlocks.supplementalBlocks;
@@ -652,7 +659,7 @@ export function createPhasedResultBlocks(result: CommandResult<unknown>): {
   };
 }
 
-function extractTaskResultPayload(data: unknown): TaskResultPayload | null {
+function extractTaskResultPayload(data: unknown): ParsedTaskOutputSummary | null {
   if (!data || typeof data !== 'object') {
     return null;
   }
@@ -665,14 +672,87 @@ function extractTaskResultPayload(data: unknown): TaskResultPayload | null {
   return parseTaskResultPayload(candidate.outputSummary);
 }
 
+const NEXT_STEP_ACTION_LIMIT = 4;
+const NEXT_STEP_ACTION_LABEL_MAX_LENGTH = 30;
+const NEXT_STEP_ACTION_PROMPT_MAX_LENGTH = 500;
+
+function normalizeNextStepAction(action: unknown): NextStepActionPayload | null {
+  if (!action || typeof action !== 'object') {
+    return null;
+  }
+
+  const candidate = action as Record<string, unknown>;
+  const label = typeof candidate.label === 'string' ? candidate.label.trim() : '';
+  const prompt = typeof candidate.prompt === 'string' ? candidate.prompt.trim() : '';
+  const description = typeof candidate.description === 'string' ? candidate.description.trim() : '';
+
+  if (!label || !prompt) {
+    return null;
+  }
+
+  return {
+    label,
+    prompt,
+    ...(description ? { description } : {}),
+  };
+}
+
+function normalizeNextStepActions(actions: unknown): NextStepActionPayload[] | undefined {
+  if (!Array.isArray(actions)) {
+    return undefined;
+  }
+
+  const normalized: NextStepActionPayload[] = [];
+  const seenPrompts = new Set<string>();
+
+  for (const action of actions) {
+    const candidate = normalizeNextStepAction(action);
+    if (!candidate || seenPrompts.has(candidate.prompt)) {
+      continue;
+    }
+
+    seenPrompts.add(candidate.prompt);
+    normalized.push(candidate);
+
+    if (normalized.length >= NEXT_STEP_ACTION_LIMIT) {
+      break;
+    }
+  }
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function parseMarkdownNextStepActionLine(line: string): NextStepActionPayload | null {
+  const colonIndex = line.indexOf(':');
+  if (colonIndex <= 0) {
+    return null;
+  }
+
+  const label = line.slice(0, colonIndex).replace(/^[-*]\s*/, '').trim();
+  const prompt = line.slice(colonIndex + 1).trim();
+
+  if (!label || !prompt) {
+    return null;
+  }
+
+  if (label.length > NEXT_STEP_ACTION_LABEL_MAX_LENGTH || prompt.length > NEXT_STEP_ACTION_PROMPT_MAX_LENGTH) {
+    return null;
+  }
+
+  if (/^["'{\[]/.test(line) || /["{}\[\]]/.test(label) || prompt.startsWith('"')) {
+    return null;
+  }
+
+  return { label, prompt };
+}
+
 /**
  * Extract next_step_actions from markdown when JSON.parse of outputSummary fails.
  * Handles LLM responses that embed structured data inside markdown fenced code blocks.
  */
 function extractNextStepActionsFromMarkdown(
   outputSummary: string,
-): Array<{ id: string; label: string; prompt: string; description?: string }> | undefined {
-  // Find all fenced code blocks
+): NextStepActionPayload[] | undefined {
   const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)```/g;
   const codeBlocks: string[] = [];
   let match: RegExpExecArray | null;
@@ -680,69 +760,46 @@ function extractNextStepActionsFromMarkdown(
     codeBlocks.push(match[1].trim());
   }
 
-  if (codeBlocks.length === 0) return undefined;
+  if (codeBlocks.length === 0) {
+    return undefined;
+  }
 
-  // Use the last code block
   const lastBlock = codeBlocks[codeBlocks.length - 1];
 
-  // Priority 1: JSON.parse → look for next_step_actions array
   try {
     const parsed = JSON.parse(lastBlock);
-    if (Array.isArray(parsed?.next_step_actions)) {
-      return parsed.next_step_actions;
+    const nestedActions = normalizeNextStepActions(parsed?.next_step_actions);
+    if (nestedActions) {
+      return nestedActions;
     }
-    if (Array.isArray(parsed)) {
-      return parsed;
+
+    const blockActions = normalizeNextStepActions(parsed);
+    if (blockActions) {
+      return blockActions;
     }
   } catch {
-    // Not valid JSON, continue to next strategy
+    // Not valid JSON, continue to the stricter markdown fallback.
   }
 
-  // Priority 2: colon-separated "label: prompt" lines
-  const lines = lastBlock
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  const colonLines = lines.filter((l) => l.includes(':'));
-  if (colonLines.length > 0) {
-    const actions = colonLines.map((line, index) => {
-      const colonIdx = line.indexOf(':');
-      const label = line.substring(0, colonIdx).trim();
-      const prompt = line.substring(colonIdx + 1).trim();
-      return {
-        id: `action-${index + 1}`,
-        label: label || prompt.substring(0, 30),
-        prompt: prompt || label,
-      };
-    });
-    if (actions.length > 0) return actions;
-  }
-
-  // Priority 3: fallback — use last ## / ### heading as label, code block as prompt
-  const headingRegex = /^#{2,3}\s+(.+)$/gm;
-  let lastHeading = '';
-  let hMatch: RegExpExecArray | null;
-  while ((hMatch = headingRegex.exec(outputSummary)) !== null) {
-    lastHeading = hMatch[1].trim();
-  }
-
-  if (lastHeading) {
-    return [
-      {
-        id: 'action-1',
-        label: lastHeading,
-        prompt: lastBlock,
-        description: lastHeading,
-      },
-    ];
-  }
-
-  return undefined;
+  return normalizeNextStepActions(
+    lastBlock
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => parseMarkdownNextStepActionLine(line))
+      .filter((action): action is NextStepActionPayload => action !== null),
+  );
 }
 
 function parseTaskResultPayload(outputSummary: string): ParsedTaskOutputSummary {
   try {
-    return JSON.parse(outputSummary) as TaskResultPayload;
+    const parsed = JSON.parse(outputSummary) as TaskResultPayload;
+    const { next_step_actions: rawNextStepActions, ...rest } = parsed;
+    const next_step_actions = normalizeNextStepActions(rawNextStepActions);
+    return {
+      ...rest,
+      ...(next_step_actions ? { next_step_actions } : {}),
+    };
   } catch {
     const next_step_actions = extractNextStepActionsFromMarkdown(outputSummary);
     return {

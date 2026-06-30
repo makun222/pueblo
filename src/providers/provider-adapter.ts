@@ -603,6 +603,9 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
     case 'memo_recall':
       return providerMemoRecallToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     default:
+      if (String(toolName).startsWith('mcp__')) {
+        return rawArgs as ProviderToolArgsByName<TToolName>;
+      }
       throw new ProviderError(`Unsupported tool: ${String(toolName)}`);
   }
 }
@@ -636,6 +639,10 @@ export function parseProviderEditCompatibleToolArgs(rawArgs: unknown): ProviderE
 
 export function normalizeProviderToolName(value: string | undefined): ProviderToolName | undefined {
   const normalizedValue = value?.trim().toLowerCase();
+  // MCP tools use naming convention: mcp__<serverName>__<toolName>
+  if (normalizedValue?.startsWith('mcp__')) {
+    return normalizedValue as ProviderToolName;
+  }
   switch (normalizedValue) {
     case 'glob':
     case 'grep':
@@ -665,6 +672,10 @@ export function getToolExecutionPolicy(toolName: string): ToolExecutionPolicy {
     case 'memo_recall':
       return 'free';
     default:
+      // MCP tools auto-approve since the MCP server's own security model governs execution.
+      if (toolName.startsWith('mcp__')) {
+        return 'free';
+      }
       // Unknown tools (e.g. provider-specific extensions) default to
       // requiring approval so they don't bypass the approval flow.
       return 'approval-required';

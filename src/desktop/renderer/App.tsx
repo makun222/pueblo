@@ -29,6 +29,7 @@ const MESSAGE_TRACE_INITIAL_STEP_LIMIT = 100;
 const MESSAGE_TRACE_STEP_PAGE_SIZE = 100;
 const MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT = 25;
 const MESSAGE_TRACE_MESSAGE_PAGE_SIZE = 25;
+const ACTION_HINT_DURATION_MS = 2400;
 const TOOL_APPROVAL_SIDEBAR_MIN_WIDTH = 280;
 const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
 const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
@@ -247,12 +248,15 @@ export function App() {
   const [isResizingToolApprovalSidebar, setIsResizingToolApprovalSidebar] = useState(false);
   const [activeAnswerTimer, setActiveAnswerTimer] = useState<{ entryId: string; startedAtMs: number } | null>(null);
   const [answerTimerNowMs, setAnswerTimerNowMs] = useState(() => Date.now());
+  const [actionInputHint, setActionInputHint] = useState<string | null>(null);
   const runtimeStatusRef = useRef(runtimeStatus);
   const selectedToolApprovalIdsRef = useRef<string[]>([]);
   const pendingAssistantEntryIdRef = useRef<string | null>(null);
   const pendingAssistantDraftRef = useRef('');
   const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRunIdRef = useRef(0);
+  const actionHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const outputPaneRef = useRef<HTMLElement | null>(null);
   const toolApprovalSidebarRef = useRef<HTMLElement | null>(null);
   const contextBreakdownRef = useRef<HTMLDivElement | null>(null);
@@ -381,6 +385,13 @@ export function App() {
     runtimeStatusRef.current = runtimeStatus;
   }, [runtimeStatus]);
 
+  useEffect(() => () => {
+    if (actionHintTimerRef.current) {
+      clearTimeout(actionHintTimerRef.current);
+      actionHintTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!activeAnswerTimer) {
       return;
@@ -402,6 +413,7 @@ export function App() {
     setIsTranscriptHistoryExpanded(false);
     setIsContextBreakdownOpen(false);
     setPendingAttachments([]);
+    setActionInputHint(null);
   }, [runtimeStatus.activeSessionId]);
 
   useEffect(() => {
@@ -696,7 +708,6 @@ export function App() {
           return entry;
         }
 
-        console.log('DEBUG streamFrame block.actions:', JSON.stringify(block.actions));
         return {
           ...entry,
           content: nextContent,
@@ -787,7 +798,6 @@ export function App() {
         sessionId: runtimeStatusRef.current.activeSessionId,
         attachments: options.attachments ?? [],
       }));
-      console.log('DEBUG blocks[0].actions:', JSON.stringify(response.blocks?.[0]?.actions, null, 2));
       if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
@@ -877,13 +887,32 @@ export function App() {
       return;
     }
 
+    setActionInputHint(null);
     setInput('');
     await executeInput(submittedInput, { recordUserEntry: true, attachments: pendingAttachments });
   };
 
   const handleActionClick = (prompt: string) => {
     setInput(prompt);
-    // Don't auto-submit — user reviews before sending
+    setActionInputHint('Suggested next step loaded. Press Enter to send.');
+    if (actionHintTimerRef.current) {
+      clearTimeout(actionHintTimerRef.current);
+    }
+    actionHintTimerRef.current = setTimeout(() => {
+      setActionInputHint(null);
+      actionHintTimerRef.current = null;
+    }, ACTION_HINT_DURATION_MS);
+
+    inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    inputRef.current?.focus({ preventScroll: true });
+    window.requestAnimationFrame(() => {
+      const field = inputRef.current;
+      if (!field) {
+        return;
+      }
+
+      field.setSelectionRange(prompt.length, prompt.length);
+    });
   };
 
   const handleStartAgentSession = async (profileId: string) => {
@@ -1397,12 +1426,14 @@ export function App() {
                       onToggle: setIsTranscriptHistoryExpanded,
                       onOpenFileChange: setSelectedFileChange,
                       onActionClick: handleActionClick,
+                      activeActionPrompt: input.trim(),
                       answerTimerNowMs,
                     }) : null}
                     {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, {
                       onOpenFileChange: setSelectedFileChange,
                       answerTimerNowMs,
                       onActionClick: handleActionClick,
+                      activeActionPrompt: input.trim(),
                     }))}
                   </>
                 )}
@@ -1694,10 +1725,15 @@ export function App() {
         ) : null}
         <button type="button" className="input-label input-label-upload" onClick={() => { void handleSelectInputFiles(); }}>pueblo&gt;</button>
         <input
+          ref={inputRef}
           id="pueblo-input"
           type="text"
+          className={actionInputHint ? 'input-pane-input input-pane-input-suggested' : 'input-pane-input'}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setActionInputHint(null);
+          }}
           placeholder={inputPlaceholder}
           disabled={needsAgentSelection || isSubmitting}
           autoFocus
@@ -1715,6 +1751,7 @@ export function App() {
         ) : (
           <button type="submit" disabled={needsAgentSelection}>Send</button>
         )}
+        {actionInputHint ? <div className="input-action-hint" aria-live="polite">{actionInputHint}</div> : null}
       </form>
       {talkState.incomingRequest ? renderTalkRequestModal({
         request: talkState.incomingRequest,
@@ -2012,6 +2049,7 @@ function renderCollapsedTranscriptHistory(args: {
   onToggle: (isOpen: boolean) => void;
   onOpenFileChange: (fileChange: RendererFileChange) => void;
   onActionClick: (prompt: string) => void;
+  activeActionPrompt: string;
   answerTimerNowMs: number;
 }) {
   const firstGroup = args.groups[0];
@@ -2038,6 +2076,7 @@ function renderCollapsedTranscriptHistory(args: {
             onOpenFileChange: args.onOpenFileChange,
             answerTimerNowMs: args.answerTimerNowMs,
             onActionClick: args.onActionClick,
+            activeActionPrompt: args.activeActionPrompt,
           }))}
         </div>
       ) : null}
@@ -2051,6 +2090,7 @@ function renderTranscriptGroup(
     readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
     readonly answerTimerNowMs: number;
     readonly onActionClick: (prompt: string) => void;
+    readonly activeActionPrompt: string;
   },
 ) {
   return (
@@ -2923,6 +2963,7 @@ function renderTranscriptEntry(
     readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
     readonly answerTimerNowMs: number;
     readonly onActionClick: (prompt: string) => void;
+    readonly activeActionPrompt: string;
   },
 ) {
   if ('role' in entry) {
@@ -2940,12 +2981,14 @@ function renderTranscriptEntry(
           {renderAnswerContent(entry.content, handoff)}
           {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
           {entry.actions && entry.actions.length > 0 && (
-            <div className="action-buttons-bar">
+            <div className="action-buttons-bar" role="group" aria-label="Suggested next steps">
               {entry.actions.map((action) => (
                 <button
                   key={action.id}
-                  className="action-button"
+                  className={actions.activeActionPrompt === action.prompt ? 'action-button action-button-selected' : 'action-button'}
                   type="button"
+                  aria-label={`Suggested next step: ${action.label}`}
+                  aria-pressed={actions.activeActionPrompt === action.prompt}
                   title={action.description || action.label}
                   onClick={() => actions.onActionClick(action.prompt)}
                 >

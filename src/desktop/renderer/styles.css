@@ -1205,6 +1205,17 @@ select {
   outline: none;
 }
 
+.input-pane-input-suggested {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(11, 114, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.input-action-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
 .session-panel-new,
 .provider-config-primary,
 .agent-card-button,
@@ -2768,7 +2779,16 @@ select {
   background: var(--surface-active, #cfc9e4);
 }
 
+.action-button-selected {
+  background: var(--surface-active, #cfc9e4);
+  border-color: var(--accent, #0a7cff);
+}
+
 .action-button::before {
   content: '\25B8';
   font-size: 0.7rem;
+}
+
+.action-button-selected::before {
+  content: '\2713';
 }

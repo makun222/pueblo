@@ -71,6 +71,8 @@ describe('interactive cli session', () => {
       setToolApprovalHandler() {},
       setToolApprovalBatchHandler() {},
       setFileReviewHandler() {},
+      getTaskRunner() { return {} as never; },
+      getContextResolver() { return {} as never; },
       databaseClose() {},
     };
 
@@ -88,6 +90,89 @@ describe('interactive cli session', () => {
     expect(writes.join('')).toContain('[HANDLED] Handled /ping');
     expect(writes.join('')).toContain('[HANDLED] Handled inspect workflow');
     expect(writes.join('')).toContain('Exiting Pueblo CLI.');
+  });
+
+  it('lets interactive users run numbered next-step actions with /1 shortcuts', async () => {
+    const writes: string[] = [];
+    const inputs = ['inspect workflow', '/1', '/exit'];
+    const handledInputs: string[] = [];
+    let index = 0;
+    const cli: CliDependencies = {
+      dispatcher: {} as never,
+      async submitInput(input: string | IpcInputEnvelope) {
+        const normalizedInput = typeof input === 'string' ? input : input.inputText;
+        handledInputs.push(normalizedInput);
+
+        if (normalizedInput === 'inspect workflow') {
+          return successResult('HANDLED', 'Handled inspect workflow', undefined, [
+            {
+              label: 'Fix parser',
+              prompt: 'src/shared/result.ts tighten action parsing',
+              description: 'Use the stricter next_step_actions fallback',
+            },
+          ]);
+        }
+
+        return successResult('HANDLED', `Handled ${normalizedInput}`);
+      },
+      async getRuntimeStatus() {
+        return {
+          providerId: null,
+          providerName: null,
+          agentProfileId: null,
+          agentProfileName: null,
+          agentInstanceId: null,
+          modelId: null,
+          modelName: null,
+          activeSessionId: null,
+          contextCount: {
+            estimatedTokens: 0,
+            contextWindowLimit: null,
+            utilizationRatio: null,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        };
+      },
+      listAgentProfiles() { return []; },
+      startAgentSession() { throw new Error('not implemented for interactive test'); },
+      listAgentSessions() { return []; },
+      getSession() { return null; },
+      listSessionMemories() { return []; },
+      selectSession() { throw new Error('not implemented for interactive test'); },
+      setProgressReporter() {},
+      setToolApprovalHandler() {},
+      setToolApprovalBatchHandler() {},
+      setFileReviewHandler() {},
+      getTaskRunner() { return {} as never; },
+      getContextResolver() { return {} as never; },
+      databaseClose() {},
+    };
+
+    await runInteractiveCliSession(cli, {
+      isInteractive: true,
+      readLine: async () => inputs[index++] ?? '/exit',
+      write: (text) => {
+        writes.push(text);
+      },
+    });
+
+    expect(handledInputs).toEqual(['inspect workflow', 'src/shared/result.ts tighten action parsing']);
+    expect(writes.join('')).toContain('/1 Fix parser');
+    expect(writes.join('')).toContain('Type /1 through /1 to run a suggested next step.');
+    expect(writes.join('')).toContain('[HANDLED] Handled src/shared/result.ts tighten action parsing');
   });
 
   it('renders approval previews with title and detail blocks', () => {
@@ -167,6 +252,8 @@ describe('interactive cli session', () => {
       },
       setToolApprovalBatchHandler() {},
       setFileReviewHandler() {},
+      getTaskRunner() { return {} as never; },
+      getContextResolver() { return {} as never; },
       databaseClose() {},
     };
 

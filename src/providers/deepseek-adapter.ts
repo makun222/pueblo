@@ -976,6 +976,13 @@ function parseDeepSeekToolCall(
         args: parseProviderToolArgsOrThrow('deepseek', 'memo_recall', parsedArguments),
       };
     default:
+      if (toolName.startsWith('mcp__')) {
+        return {
+          toolCallId,
+          toolName,
+          args: parsedArguments as Record<string, unknown>,
+        } as unknown as ProviderToolCall;
+      }
       throw new ProviderError(`Unsupported tool name: ${toolName}`);
   }
 }
