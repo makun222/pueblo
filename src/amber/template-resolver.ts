@@ -49,7 +49,7 @@ export function discoverSkills(skillDir: string): Map<string, ParsedSkill> {
 }
 
 /**
- * 在指定目录下发现所有 .artifact.md 模板并解析。
+ * 在指定目录下发现所有 *-template.md 模板并解析。
  */
 export function discoverArtifactTemplates(
     templateDir: string,
@@ -63,7 +63,7 @@ export function discoverArtifactTemplates(
     const entries = fs.readdirSync(templateDir, { withFileTypes: true });
     for (const entry of entries) {
         const fullPath = path.join(templateDir, entry.name);
-        if (entry.isFile() && entry.name.endsWith('.artifact.md')) {
+        if (entry.isFile() && entry.name.endsWith('-template.md')) {
             try {
                 const content = fs.readFileSync(fullPath, 'utf-8');
                 const parsed = parseArtifactTemplate(content, fullPath);

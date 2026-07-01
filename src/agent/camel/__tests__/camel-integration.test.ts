@@ -52,7 +52,7 @@ describe('CamelAgent integration with AgentTaskRunner.executeTurn', () => {
       registry,
       {} as any, // repository — unused by executeTurn
       undefined, // toolService — unused unless tool calls are made
-      {},        // options
+    //  { },        // options
     );
   });
 

@@ -162,6 +162,16 @@ function parsePhases(rawPhases: unknown): Phase[] {
         const skills: string[] = Array.isArray(raw['skills'])
             ? (raw['skills'] as string[])
             : [];
+
+        // Parse model field (format: "provider/name")
+        let model: { provider: string; name: string } | undefined;
+        if (typeof raw['model'] === 'string') {
+            const parts = (raw['model'] as string).split('/');
+            if (parts.length === 2) {
+                model = { provider: parts[0], name: parts[1] };
+            }
+        }
+
         const artifactTemplates: string[] = Array.isArray(raw['artifactTemplates'])
             ? (raw['artifactTemplates'] as string[])
             : [];
@@ -176,7 +186,7 @@ function parsePhases(rawPhases: unknown): Phase[] {
             ? { type: rawOutput.type as 'file' | 'variable', path: rawOutput.path }
             : undefined;
 
-        return { id, name, goal, skills, artifactTemplates, dependsOn, ...(output ? { output } : {}) };
+        return { id, name, goal, skills, model, artifactTemplates, dependsOn, ...(output ? { output } : {}) };
     });
 }
 

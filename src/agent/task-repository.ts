@@ -3,6 +3,7 @@ import { RepositoryBase, fromJson, toJson, type RepositoryContext } from '../per
 import { agentTaskSchema, type AgentTask } from '../shared/schema';
 
 export interface CreateAgentTaskInput {
+  readonly id?: string;
   readonly goal: string;
   readonly sessionId: string | null;
   readonly providerId: string;
@@ -35,7 +36,7 @@ export class AgentTaskRepository extends RepositoryBase {
   create(input: CreateAgentTaskInput): AgentTask {
     const now = new Date().toISOString();
     const task: AgentTask = agentTaskSchema.parse({
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       goal: input.goal,
       status: input.status,
       sessionId: input.sessionId,

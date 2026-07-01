@@ -25,15 +25,15 @@ describe('resolveArtifactTemplate', () => {
     const templates = buildTemplateMap(
         {
             content: '## Summary\n{{TASK_STREAM}}\n---\n## Details',
-            path: '/templates/task-stream.artifact.md',
+            path: '/templates/task-stream-template.md',
         },
         {
             content: '## Code\n{{CODE_DIFF}}\n---\n## Review',
-            path: '/templates/code-review.artifact.md',
+            path: '/templates/code-review-template.md',
         },
         {
             content: '## Report\n{{REPORT_DATA}}',
-            path: '/templates/analysis.artifact.md',
+            path: '/templates/analysis-template.md',
         },
     );
 

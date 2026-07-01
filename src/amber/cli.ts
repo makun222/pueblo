@@ -103,9 +103,8 @@ export function buildAmberRunContext(options: AmberRunOptions) {
     // 解析 agent 模板
     const agentTemplateDir = path.join(
         puebloPath,
-        '.pueblo',
-        'agents',
-        'templates',
+        '.amber',
+        'agent-template',
         cliArgs.agentTemplate ?? DEFAULT_AGENT_TEMPLATE,
     );
     const skillPath = puebloPath;
@@ -123,8 +122,8 @@ export function buildAmberRunContext(options: AmberRunOptions) {
 
     // 发现 Artifact 模板
     const artifactTemplateDir = path.join(
-        agentTemplateDir,
-        '.pipeline',
+        puebloPath,
+        '.amber',
         'artifacts',
     );
     const artifactTemplates = discoverArtifactTemplates(artifactTemplateDir);

@@ -447,7 +447,8 @@ export function createCliDependencies(
     exporter: workflowExporter,
   });
   const workflowRouter = new WorkflowRouter(currentConfig, workflowRegistry);
-  const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService, {
+  const sessionRepository = new SessionRepository({ connection: database.connection });
+  const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService, sessionRepository, {
     requestToolApproval: async (request) => toolApprovalHandler?.(request) ?? 'deny',
     requestToolApprovalBatch: async (requests) => {
       if (toolApprovalBatchHandler) {
@@ -475,7 +476,6 @@ export function createCliDependencies(
       });
     },
   });
-  const sessionRepository = new SessionRepository({ connection: database.connection });
   const sessionService = new SessionService(sessionRepository, memoryService);
   const turnIndexers = new Map<string, TurnIndexer>();
   const createPepeSupervisor = (resolvedConfig: AppConfig) => new PepeSupervisor({

@@ -16,6 +16,8 @@ import {
 } from '../providers/provider-adapter';
 import { ProviderError, ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../providers/provider-errors';
 import { ProviderRegistry } from '../providers/provider-registry';
+import { SessionRepository } from '../sessions/session-repository';
+import { randomUUID } from 'node:crypto';
 import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
 import { ToolService } from '../tools/tool-service';
@@ -145,6 +147,7 @@ export class AgentTaskRunner {
     private readonly providerRegistry: ProviderRegistry,
     private readonly repository: AgentTaskRepository,
     private readonly toolService?: ToolService,
+    private readonly sessionRepository?: SessionRepository,
     options: AgentTaskRunnerOptions = {},
   ) {
     this.maxSteps = resolveAgentTaskStepLimit(options.maxSteps);
@@ -279,6 +282,23 @@ export class AgentTaskRunner {
   public async executeTurn(input: CamelExecuteTurnInput): Promise<CamelExecuteTurnOutput> {
     const { context, providerId, modelId, signal } = input;
 
+    // Generate taskId and create a session named 'amber-<taskId>' for FK consistency
+    const taskId = randomUUID();
+    const session = this.sessionRepository
+      ? await this.sessionRepository.create(`amber-${taskId}`)
+      : null;
+
+    // Create agent_tasks record to satisfy tool_invocations FK constraint
+    const task = this.repository.create({
+      id: taskId,
+      goal: context.taskLog || 'Camel agent turn execution',
+      sessionId: session?.id ?? null,
+      providerId,
+      modelId,
+      inputContextSummary: JSON.stringify(context.contextSummary),
+      status: 'running',
+    });
+
     // Build system messages using the camel prompt builder for rich prompts
     const systemMessages = buildCamelSystemMessages(context);
     let turnMessages: ProviderMessage[] = [
@@ -310,7 +330,7 @@ export class AgentTaskRunner {
       const toolResults: ProviderMessage[] = [];
       for (const tc of toolCalls) {
         const { output } = await this.executeToolCall(
-          /* taskId */ '',
+          /* taskId */ task.id,
           tc,
           executionCwd,
           signal,

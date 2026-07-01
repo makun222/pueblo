@@ -300,18 +300,18 @@ export function loadAppConfig(options: ConfigLoadOptions = {}): AppConfig {
  * Falls back to { provider: 'openai', name: 'gpt-4o' } if config is missing or incomplete.
  */
 export function getDefaultModelIdentifier(puebloPath?: string): { provider: string; name: string } {
-  const fallback = { provider: 'openai', name: 'gpt-4o' };
+  const fallback = { provider: 'deepseek', name: 'deepseek-chat' };
   try {
     const configDir = path.join(puebloPath || process.cwd(), '.pueblo');
     const configPath = path.join(configDir, 'config.json');
     const raw = fs.readFileSync(configPath, 'utf-8');
     const config: {
       defaultProviderId?: string;
-      providers?: Array<{ id: string; defaultModelId?: string }>;
+      providers?: Array<{ providerId: string; defaultModelId?: string }>;
     } = JSON.parse(raw);
     const providerId = config.defaultProviderId;
     if (!providerId) return fallback;
-    const provider = config.providers?.find(p => p.id === providerId);
+    const provider = config.providers?.find(p => p.providerId === providerId);
     const modelId = provider?.defaultModelId;
     if (!modelId) return fallback;
     return { provider: providerId, name: modelId };

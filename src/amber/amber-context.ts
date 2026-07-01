@@ -17,7 +17,7 @@ import type {
 import { parseAgentMdFile } from './parsers/agent-template-parser.js';
 import { parsePipelineYamlFile } from './pipeline.js';
 import { discoverSkills, discoverArtifactTemplates } from './template-resolver.js';
-import { getDefaultModelIdentifier } from '../shared/config.js';
+import { getDefaultModelIdentifier, loadAppConfig } from '../shared/config.js';
 
 // ---------------------------------------------------------------------------
 // RunContext 工厂
@@ -226,8 +226,27 @@ export function buildPhaseAgentInput(
     }
 
     // Gap 4: phase.model 覆盖 providerId / modelId
-    const providerId = phase.model?.provider ?? parsedAgent.model.provider;
-    const modelId = phase.model?.name ?? parsedAgent.model.name;
+    let providerId = phase.model?.provider ?? parsedAgent.model.provider;
+    let modelId = phase.model?.name ?? parsedAgent.model.name;
+
+    // Validate providerId against registered providers in AppConfig.
+    // If the resolved providerId is not registered, fall back to defaults.
+    const appConfig = loadAppConfig({ cwd: runContext.puebloPath });
+    if (appConfig.providers && appConfig.providers.length > 0) {
+        const isProviderRegistered = appConfig.providers.some(p => p.providerId === providerId);
+        if (!isProviderRegistered) {
+            const defaultModel = getDefaultModelIdentifier(runContext.puebloPath);
+            const defaultProvider = defaultModel.provider;
+            if (appConfig.providers.some(p => p.providerId === defaultProvider)) {
+                providerId = defaultProvider;
+                modelId = defaultModel.name;
+            } else {
+                // Last resort: fall back to the first registered provider
+                providerId = appConfig.providers[0].providerId;
+                modelId = appConfig.providers[0].defaultModelId ?? modelId;
+            }
+        }
+    }
 
     // Gap 4: goal 覆盖 — phase.goal 优先，否则回退到模板 directives.goal
     const goal = phase.goal ?? directives.goal.join('\n');

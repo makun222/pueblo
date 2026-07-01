@@ -50,12 +50,24 @@ function parseDirectivesBlock(body: string): ParsedMd['directives'] {
     return directives;
 }
 
-function extractModel(body: string): ParsedMd['model'] {
+function findPuebloRoot(filePath: string): string | undefined {
+    let dir = path.dirname(path.resolve(filePath));
+    const root = path.parse(dir).root;
+    while (dir !== root) {
+        if (fs.existsSync(path.join(dir, '.pueblo', 'config.json'))) {
+            return dir;
+        }
+        dir = path.dirname(dir);
+    }
+    return undefined;
+}
+
+function extractModel(body: string, puebloPath?: string): ParsedMd['model'] {
     const match = body.match(MODEL_PATTERN);
     if (match) {
         return { provider: match[1], name: match[2] };
     }
-    return getDefaultModelIdentifier();
+    return getDefaultModelIdentifier(puebloPath);
 }
 
 /**
@@ -111,9 +123,9 @@ function buildSystemPrompt(directives: ParsedMd['directives']): string {
  * - 简明、技术性强、直接。
  * ```
  */
-export function parseAgentMd(content: string): ParsedMd {
+export function parseAgentMd(content: string, puebloPath?: string): ParsedMd {
     const directives = parseDirectivesBlock(content);
-    const model = extractModel(content);
+    const model = extractModel(content, puebloPath);
     const systemPrompt = buildSystemPrompt(directives);
 
     return { directives, systemPrompt, model };
@@ -127,5 +139,6 @@ export function parseAgentMdFile(filePath: string): ParsedMd {
         ? filePath
         : path.resolve(process.cwd(), filePath);
     const content = fs.readFileSync(absolutePath, 'utf-8');
-    return parseAgentMd(content);
+    const puebloRoot = findPuebloRoot(absolutePath);
+    return parseAgentMd(content, puebloRoot);
 }

@@ -12,11 +12,11 @@ import type { ParsedArtifactTemplate } from '../amber-types.js';
 
 /**
  * artifact 模板命名约定：
- * - 文件名格式：`<name>.artifact.md`，如 `task-stream-a.artifact.md`
+ * - 文件名格式：`<name>-template.md`，如 `task-stream-a-template.md`
  * - 模板由多个 Markdown 段落组成，段落边界为 `---` 分隔符
  * - 包含至少一个 `{{ANCHOR}}` 占位符作为替换锚点
  */
-const ARTIFACT_TEMPLATE_EXT = '.artifact.md';
+const ARTIFACT_TEMPLATE_EXT = '-template.md';
 const SECTION_SEPARATOR = /^---\s*$/m;
 const ANCHOR_PATTERN = /\{\{([A-Z_]+)\}\}/g;
 
@@ -42,7 +42,7 @@ function extractAnchor(content: string): string {
 
 /**
  * 从文件名提取模板名称。
- * e.g., "task-stream-a.artifact.md" → "task-stream-a"
+ * e.g., "task-stream-a-template.md" → "task-stream-a"
  */
 function extractTemplateName(filePath: string): string {
     const base = path.basename(filePath, ARTIFACT_TEMPLATE_EXT);
