@@ -15,6 +15,7 @@ import type {
   ExecuteTurnFn,
 } from './camel-types';
 import { CamelContext } from './camel-context';
+import { amberLog } from '../../utils/perf-logger.js';
 
 /** 回合执行结果（内部中间类型） */
 interface TurnResult {

@@ -76,7 +76,8 @@ export class AgentTemplateLoader {
 
 export function resolveAgentTemplatesDir(startDir: string): string {
   const workspaceRoot = findWorkspaceRoot(startDir) ?? path.resolve(startDir);
-  return path.join(workspaceRoot, '.amber', 'agent-template');
+  //return path.join(workspaceRoot, '.amber', 'agent-template');
+  return path.join(workspaceRoot, '.pueblo', 'agents', 'templates');
 }
 
 export function resolveSeedAgentProfilesDir(startDir: string): string {

@@ -235,7 +235,9 @@ export async function amberInit(rawArgs: string[], executeTurn?: ExecuteTurnFn):
 
     if (args.run) {
         console.log('\nRunning generated pipeline...\n');
-        await amberRun(['run', '--pipeline', result.pipelinePath], executeTurn);
+        // 运行 meta-pipeline（而不是骨架 pipeline.yaml），由 meta-pipeline 产出真正的 pipeline.yaml
+        amberLog('info',`amberInit.runMetaPipeline,metaPipelinePath:${ result.metaPipelinePath }, pipelinePath:${ result.pipelinePath }`);
+        await amberRun(['run', '--pipeline', result.metaPipelinePath], executeTurn);
     }
 }
 
@@ -279,8 +281,11 @@ export async function amberRun(rawArgs: string[], executeTurn?: ExecuteTurnFn): 
         const agentInput = amberContext.assembleAgentInput(phase.id);
 
         // 2. 创建 CamelAgent 并执行
+        amberLog('info',`amberRun.camelCreate,phaseId:${ phase.id }, goal:${ phase.goal }, sessionId:${ agentInput.sessionId }`);
         const camel = new CamelAgent(agentInput, executeTurn ?? defaultExecuteTurn);
         const report = await camel.start();
+        amberLog('info',`amberRun.camelReport,phaseId:${ phase.id }, status:${ report.status }, totalSteps:${ report.totalSteps }, resultLength:${ report.result?.length ?? 0 }, resultPreview:${ (report.result ?? '').substring(0, 200) }, error:${ report.error?.message }`);
+     
 
         // 3. 记录阶段结果
         results[phase.id] = {
