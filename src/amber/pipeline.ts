@@ -45,12 +45,20 @@ interface YamlNode {
     [key: string]: unknown;
 }
 
+interface ListContext {
+    key: string;
+    container: YamlNode;
+    indent: number;
+}
+
 function parseSimpleYaml(content: string): YamlNode {
     const lines = content.split(/\r?\n/);
     const root: YamlNode = {};
     const stack: YamlNode[] = [root];
-    let currentListKey: string | null = null;
-    let listContainer: YamlNode | null = null;
+    /** 每个 stack 节点对应的缩进级别（用于退出嵌套上下文） */
+    const stackIndents: number[] = [0];
+    /** 列表上下文栈，支持嵌套列表的自动恢复 */
+    const listCtxStack: ListContext[] = [];
 
     for (const rawLine of lines) {
         const line = rawLine.trimEnd();
@@ -61,24 +69,58 @@ function parseSimpleYaml(content: string): YamlNode {
         const indent = rawLine.length - rawLine.trimStart().length;
         const trimmed = line.trim();
 
-        // 列表项
+        // 基于缩进回退 stack：缩进小于栈顶节点缩进 → 退出嵌套上下文
+        while (stack.length > 1 && indent < stackIndents[stack.length - 1]) {
+            stack.pop();
+            stackIndents.pop();
+        }
+
+        // 同步清理列表上下文栈：缩进已回退，丢弃更深层的列表上下文
+        while (listCtxStack.length > 0 && indent < listCtxStack[listCtxStack.length - 1].indent) {
+            listCtxStack.pop();
+        }
+
+        // 列表项检测
         const listMatch = trimmed.match(YAML_LIST_ITEM);
-        if (listMatch && currentListKey && listContainer) {
+
+        // 当前行是 KV（非列表项），但仍在某个列表上下文中
+        // 若缩进 ≤ 当前列表上下文缩进 → 说明已离开该列表范围
+        if (
+            !listMatch &&
+            listCtxStack.length > 0 &&
+            indent <= listCtxStack[listCtxStack.length - 1].indent
+        ) {
+            // 弹出所有缩进 >= 当前缩进的列表上下文，并同步弹出栈上的嵌套节点
+            while (listCtxStack.length > 0 && listCtxStack[listCtxStack.length - 1].indent >= indent) {
+                const poppedCtx = listCtxStack.pop()!;
+                // 若栈顶就是该列表上下文的容器节点，弹出它
+                if (stack.length > 0 && stack[stack.length - 1] === poppedCtx.container) {
+                    stack.pop();
+                    stackIndents.pop();
+                }
+            }
+        }
+
+        // 活跃的列表上下文
+        const currentListCtx = listCtxStack.length > 0 ? listCtxStack[listCtxStack.length - 1] : null;
+
+        if (listMatch && currentListCtx) {
             const listValue = listMatch[1].trim();
 
             // 弹出前一个列表项的嵌套节点，回到列表容器
             while (
                 stack.length > 0 &&
-                stack[stack.length - 1] !== listContainer
+                stack[stack.length - 1] !== currentListCtx.container
             ) {
                 stack.pop();
+                stackIndents.pop();
             }
 
             // 确保列表容器上该 key 是数组（首次遇到时从 {} 转换为 []）
-            if (!Array.isArray(listContainer[currentListKey])) {
-                listContainer[currentListKey] = [];
+            if (!Array.isArray(currentListCtx.container[currentListCtx.key])) {
+                currentListCtx.container[currentListCtx.key] = [];
             }
-            const arr = listContainer[currentListKey] as unknown[];
+            const arr = currentListCtx.container[currentListCtx.key] as unknown[];
 
             // 检查是否为复杂列表项（嵌套 KV，如 "id: default"）
             const nestedKv = listValue.match(
@@ -92,6 +134,7 @@ function parseSimpleYaml(content: string): YamlNode {
                 );
                 arr.push(newObj);
                 stack.push(newObj);
+                stackIndents.push(indent);
             } else {
                 arr.push(
                     listValue.replace(/^["']|["']$/g, ''),
@@ -109,15 +152,19 @@ function parseSimpleYaml(content: string): YamlNode {
                     const newNode: YamlNode = {};
                     stack[stack.length - 1][key] = newNode;
                     stack.push(newNode);
-                    currentListKey = key;
-                    listContainer = newNode;
+                    stackIndents.push(indent);
+                    listCtxStack.push({ key, container: newNode, indent });
                 } else if (value === '[]') {
                     stack[stack.length - 1][key] = [];
-                    currentListKey = key;
+                    listCtxStack.push({
+                        key,
+                        container: stack[stack.length - 1],
+                        indent,
+                    });
                 } else {
                     // 标量值
                     stack[stack.length - 1][key] = value.replace(/^["']|["']$/g, '');
-                    // 不清除 currentListKey — 嵌套在列表中的 KV 行需要保持列表上下文
+                    // 不清除列表上下文 — 嵌套在列表中的 KV 行需要保持列表上下文
                 }
             }
         }
@@ -138,6 +185,32 @@ function parsePhases(rawPhases: unknown): Phase[] {
         return [];
     }
 
+    /**
+     * 解包 YAML 解析器产生的冗余嵌套结构。
+     * 简单 YAML 解析器对空值 key 后跟列表项会产生 { key: { key: [...] } } 而非 { key: [...] }。
+     */
+    function unwrapNested(raw: unknown, key: string): unknown[] | null {
+        if (Array.isArray(raw)) return raw as unknown[];
+        if (typeof raw === 'object' && raw !== null) {
+            const obj = raw as Record<string, unknown>;
+            if (Array.isArray(obj[key])) return obj[key] as unknown[];
+        }
+        return null;
+    }
+
+    // 解包受影响的字段 skill/artifactTemplates/dependsOn
+    function unwrapStrings(raw: unknown, key: string): string[] {
+        const arr = unwrapNested(raw, key);
+        if (!arr) return [];
+        return arr.map(s => (typeof s === 'string' ? s : String(s)));
+    }
+
+    // 先对 rawPhases 自身解包: { phases: [...] } → [...]
+    const phasesArr = unwrapNested(rawPhases, 'phases');
+    if (phasesArr) {
+        rawPhases = phasesArr;
+    }
+
     if (!Array.isArray(rawPhases)) {
         // 向后兼容：旧版 YAML 解析器可能产出 plain object（多个 phase 被合并）
         if (typeof rawPhases === 'object' && rawPhases !== null && !Array.isArray(rawPhases)) {
@@ -147,9 +220,9 @@ function parsePhases(rawPhases: unknown): Phase[] {
             const id = (obj['id'] as string) ?? 'phase-1';
             const name = (obj['name'] as string) ?? id;
             const goal = (obj['goal'] as string) ?? '';
-            const skills: string[] = Array.isArray(obj['skills']) ? (obj['skills'] as string[]) : [];
-            const artifactTemplates: string[] = Array.isArray(obj['artifactTemplates']) ? (obj['artifactTemplates'] as string[]) : [];
-            const dependsOn: string[] = Array.isArray(obj['dependsOn']) ? (obj['dependsOn'] as string[]) : [];
+            const skills = unwrapStrings(obj['skills'], 'skills');
+            const artifactTemplates = unwrapStrings(obj['artifactTemplates'], 'artifactTemplates');
+            const dependsOn = unwrapStrings(obj['dependsOn'], 'dependsOn');
             return [{ id, name, goal, skills, artifactTemplates, dependsOn }];
         }
         return [];
@@ -159,9 +232,7 @@ function parsePhases(rawPhases: unknown): Phase[] {
         const id = (raw['id'] as string) ?? `phase-${index + 1}`;
         const name = (raw['name'] as string) ?? id;
         const goal = (raw['goal'] as string) ?? '';
-        const skills: string[] = Array.isArray(raw['skills'])
-            ? (raw['skills'] as string[])
-            : [];
+        const skills = unwrapStrings(raw['skills'], 'skills');
 
         // Parse model field (format: "provider/name")
         let model: { provider: string; name: string } | undefined;
@@ -172,12 +243,8 @@ function parsePhases(rawPhases: unknown): Phase[] {
             }
         }
 
-        const artifactTemplates: string[] = Array.isArray(raw['artifactTemplates'])
-            ? (raw['artifactTemplates'] as string[])
-            : [];
-        const dependsOn: string[] = Array.isArray(raw['dependsOn'])
-            ? (raw['dependsOn'] as string[])
-            : [];
+        const artifactTemplates = unwrapStrings(raw['artifactTemplates'], 'artifactTemplates');
+        const dependsOn = unwrapStrings(raw['dependsOn'], 'dependsOn');
 
         const rawOutput = raw['output'] as Record<string, unknown> | undefined;
         const output = rawOutput &&
@@ -304,8 +371,9 @@ export function collectUpstreamArtifacts(
             const depArtifacts = phaseArtifacts.get(depId);
             if (depArtifacts) {
                 for (const a of depArtifacts) {
-                    if (!artifacts.includes(a)) {
-                        artifacts.push(a);
+                    const prefixed = `@${depId}/${a}`;
+                    if (!artifacts.includes(prefixed)) {
+                        artifacts.push(prefixed);
                     }
                 }
             }

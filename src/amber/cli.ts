@@ -281,7 +281,9 @@ export async function amberRun(rawArgs: string[], executeTurn?: ExecuteTurnFn): 
         const agentInput = amberContext.assembleAgentInput(phase.id);
 
         // 2. 创建 CamelAgent 并执行
-        amberLog('info',`amberRun.camelCreate,phaseId:${ phase.id }, goal:${ phase.goal }, sessionId:${ agentInput.sessionId }`);
+        amberLog('info',`amberRun.camelCreate,phaseId:${ phase.id }, goal:${ phase.goal }, sessionId:${ agentInput.sessionId }
+            ,agentInput:${ agentInput.sessionId }`
+        );
         const camel = new CamelAgent(agentInput, executeTurn ?? defaultExecuteTurn);
         const report = await camel.start();
         amberLog('info',`amberRun.camelReport,phaseId:${ phase.id }, status:${ report.status }, totalSteps:${ report.totalSteps }, resultLength:${ report.result?.length ?? 0 }, resultPreview:${ (report.result ?? '').substring(0, 200) }, error:${ report.error?.message }`);

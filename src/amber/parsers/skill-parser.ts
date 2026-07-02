@@ -16,11 +16,30 @@ import type { ParsedSkill } from '../amber-types.js';
  */
 function extractSkillName(content: string): string {
     const firstLine = content.split(/\r?\n/)[0]?.trim() ?? '';
-    const match = firstLine.match(/^#\s+(.+?)(?:\s*[—–-]\s*.+)?$/);
-    if (match) {
-        return match[1].trim();
-    }
+
+    // em-dash / en-dash 作为分隔符（如 "# skill — 描述"）
+    let match = firstLine.match(/^#\s+(.+?)(?:\s*[—–]\s*.+)?$/);
+    if (match) return match[1].trim();
+
+    // 空格-空格 作为显式分隔符（避免匹配名称中的连字符，如 "context-discipline"）
+    match = firstLine.match(/^#\s+(.+?)(?:\s+-\s+.+)?$/);
+    if (match) return match[1].trim();
+
+    // 无分隔符，整行即为名称
+    match = firstLine.match(/^#\s+(.+)$/);
+    if (match) return match[1].trim();
+
     return 'UnnamedSkill';
+}
+
+/**
+ * 提取技能提示正文（prompt）。
+ * 去除 YAML front matter 和首行标题后的全部内容。
+ */
+function extractSkillPrompt(content: string): string {
+    const frontStripped = content.replace(/^---[\s\S]*?---\s*/g, '');
+    const afterTitle = frontStripped.replace(/^#\s+.+\n+/, '');
+    return afterTitle.trim();
 }
 
 /**
@@ -62,18 +81,19 @@ function extractSkillSummary(content: string): string {
 /**
  * 解析 SKILL.md 内容，返回 ParsedSkill。
  */
-export function parseSkillMd(content: string, skillPath: string): ParsedSkill {
+export function parseSkillMd(content: string, skillPath: string): ParsedSkill & { prompt: string } {
     const name = extractSkillName(content);
     const description = extractSkillDescription(content);
     const summary = extractSkillSummary(content);
+    const prompt = extractSkillPrompt(content);
 
-    return { name, path: skillPath, description, summary };
+    return { name, path: skillPath, description, summary, prompt };
 }
 
 /**
  * 从文件路径读取并解析 SKILL.md。
  */
-export function parseSkillMdFile(filePath: string): ParsedSkill {
+export function parseSkillMdFile(filePath: string): ParsedSkill & { prompt: string } {
     const absolutePath = path.isAbsolute(filePath)
         ? filePath
         : path.resolve(process.cwd(), filePath);

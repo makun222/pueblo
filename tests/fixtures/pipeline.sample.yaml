@@ -2,7 +2,7 @@ version: "1.0"
 name: "SamplePipeline"
 phases:
   - id: "phase-a"
-    name: "Phase A — Data Collection"
+    name: "Data—Collection"
     goal: "Collect and prepare input data from the repository."
     skills:
       - "context-discipline"

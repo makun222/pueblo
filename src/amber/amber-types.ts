@@ -107,6 +107,8 @@ export interface Phase {
     artifactTemplates: string[];
     /** 前置 Phase ID 列表 */
     dependsOn: string[];
+    /** 输入文件列表（用于向 agent 注入物料文件内容） */
+    input?: { files?: string[] };
     /** 输出配置：file 写入文件系统，variable 为变量输出 */
     output?: {
         /** Type of the phase output */

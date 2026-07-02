@@ -2,6 +2,7 @@
 // amber-context.ts — RunContext / AmberContext 定义与 CamelAgentInput 组装
 // ============================================================================
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { CamelAgentInput } from '../agent/camel/camel-types.js';
 import type {
@@ -199,7 +200,7 @@ export function buildPhaseAgentInput(
             ctx.agentTemplate,
             ctx.pipeline,
             ctx.skills,
-            phaseDir,
+            phase.id,
             ctx.artifactTemplates,
         );
     }
@@ -257,10 +258,28 @@ export function buildPhaseAgentInput(
     // 构建 roleDirectives：基础指令 + 注入段
     const roleDirectives: string[] = [
         ...directives.role,
+        `## Phase\n${phase.name}`,
         ...directives.goal,
         ...directives.constraint,
         ...directives.style,
     ];
+
+    // Gap 0: 注入 phase.input?.files 物料内容
+    if (phase.input?.files) {
+        roleDirectives.push('##InputFiles');
+        for (const filePath of phase.input.files) {
+            const resolvedPath = path.isAbsolute(filePath)
+                ? filePath
+                : path.resolve(runContext.puebloPath, filePath);
+            try {
+                const fileContent = fs.readFileSync(resolvedPath, 'utf-8');
+                roleDirectives.push(`###${filePath}`);
+                roleDirectives.push(fileContent);
+            } catch {
+                roleDirectives.push(`###${filePath}(could not read)`);
+            }
+        }
+    }
 
     // Gap 1: Skill 摘要移入 roleDirectives 的 ## Skills 段
     if (resolvedSkills.length > 0) {
@@ -273,7 +292,8 @@ export function buildPhaseAgentInput(
     // Gap 3: Artifact 模板锚点注入 roleDirectives 的 ## Artifact Templates 段
     if (artifactTemplates.size > 0) {
         roleDirectives.push('## Artifact Templates');
-        for (const [, template] of artifactTemplates) {
+        for (const [templateName, template] of artifactTemplates) {
+            roleDirectives.push(`- ${templateName}`);
             for (const section of template.sections) {
                 roleDirectives.push(
                     section.replace(/\{\{ANCHOR\}\}/g, `{{${template.anchor}}}`),

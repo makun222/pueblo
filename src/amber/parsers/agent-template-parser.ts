@@ -12,7 +12,7 @@ import { getDefaultModelIdentifier } from '../../shared/config.js';
 // ---------------------------------------------------------------------------
 
 /** agent.md 各指令段的解析器 */
-const DIRECTIVE_SECTION_REGEX = /^##\s+(\w+)\s+Directives\s*$/im;
+const DIRECTIVE_SECTION_REGEX = /^##\s+(\w+)(?:\s+Directives)?\s*$/im;
 const DIRECTIVE_ITEM_REGEX = /^[-*]\s+(.+)$/;
 const MODEL_PATTERN = /model\s*[:=]\s*([a-zA-Z0-9_-]+)\/([a-zA-Z0-9._-]+)/i;
 
@@ -28,7 +28,7 @@ function parseDirectivesBlock(body: string): ParsedMd['directives'] {
     let currentSection: keyof ParsedMd['directives'] | null = null;
 
     for (const line of lines) {
-        const sectionMatch = line.match(/^##\s+(\w+)\s+Directives\s*$/i);
+        const sectionMatch = line.match(/^##\s+(\w+)(?:\s+Directives)?\s*$/i);
         if (sectionMatch) {
             const sectionName = sectionMatch[1].toLowerCase() as keyof ParsedMd['directives'];
             if (sectionName in directives) {
@@ -40,9 +40,13 @@ function parseDirectivesBlock(body: string): ParsedMd['directives'] {
         }
 
         if (currentSection) {
-            const itemMatch = line.match(DIRECTIVE_ITEM_REGEX);
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const itemMatch = trimmed.match(DIRECTIVE_ITEM_REGEX);
             if (itemMatch) {
                 directives[currentSection].push(itemMatch[1].trim());
+            } else {
+                directives[currentSection].push(trimmed);
             }
         }
     }

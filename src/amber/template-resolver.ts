@@ -31,7 +31,7 @@ export function discoverSkills(skillDir: string): Map<string, ParsedSkill> {
                 try {
                     const content = fs.readFileSync(skillMdPath, 'utf-8');
                     const parsed = parseSkillMd(content, skillMdPath);
-                    skills.set(parsed.path, parsed);
+                    skills.set(parsed.name, parsed);
                 } catch {
                     // 跳过无法解析的 skill
                 }
