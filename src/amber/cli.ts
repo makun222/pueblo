@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { CamelAgent } from '../agent/camel/camel-agent.js';
 import type { AmberRunArgs, PhaseResult } from './amber-types.js';
 import { createRunContext, createAmberContext } from './amber-context.js';
@@ -11,7 +12,6 @@ import { parseAgentMdFile } from './parsers/agent-template-parser.js';
 import { discoverSkills, discoverArtifactTemplates } from './template-resolver.js';
 import type { ExecuteTurnFn } from '../agent/camel/camel-types.js';
 import { generatePipeline } from './pipeline-generator.js';
-import * as fs from 'node:fs';
 import { amberLog } from '../utils/perf-logger.js';
 
 const defaultExecuteTurn: ExecuteTurnFn = async () => {
@@ -241,6 +241,20 @@ export async function amberInit(rawArgs: string[], executeTurn?: ExecuteTurnFn):
     }
 }
 
+// ─────────────────────── artifact 写入 ───────────────────────
+
+/**
+ * 将 phase 产出的 markdown 内容写入 artifacts/<phaseId>.md，返回绝对路径。
+ * 若 artifacts/ 目录不存在则自动创建。
+ */
+export function writePhaseArtifact(repoPath: string, phaseId: string, result: string): string {
+    const artifactsDir = path.join(repoPath, 'artifacts');
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    const artifactFile = path.join(artifactsDir, `${phaseId}.md`);
+    fs.writeFileSync(artifactFile, result, 'utf-8');
+    return artifactFile;
+}
+
 // ============================================================================
 // amber run 子命令 — 执行现有 pipeline.yaml
 // ============================================================================
@@ -289,11 +303,15 @@ export async function amberRun(rawArgs: string[], executeTurn?: ExecuteTurnFn): 
         amberLog('info',`amberRun.camelReport,phaseId:${ phase.id }, status:${ report.status }, totalSteps:${ report.totalSteps }, resultLength:${ report.result?.length ?? 0 }, resultPreview:${ (report.result ?? '').substring(0, 200) }, error:${ report.error?.message }`);
      
 
-        // 3. 记录阶段结果
+        // 3. 将产物写入磁盘，记录文件路径
+        let artifactFiles: string[] = [];
+        if (report.result) {
+            artifactFiles = [writePhaseArtifact(runContext.repoPath, phase.id, report.result)];
+        }
         results[phase.id] = {
             phaseId: phase.id,
             status: report.status === 'completed' ? 'completed' : 'failed',
-            artifacts: report.result ? [report.result] : [],
+            artifacts: artifactFiles,
             summary: report.error?.message ?? report.result ?? '',
         };
 

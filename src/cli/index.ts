@@ -115,6 +115,11 @@ import { WorkflowService } from '../workflow/workflow-service';
 import type { DesktopProviderStatuses, DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
 import { isTaskCancellationError } from '../shared/task-cancellation';
+import { createRuntimeCoordinator } from '../app/runtime';
+import { ChannelService } from '../channel/channel-service';
+import { createChannelRegistry } from '../channel/channel-registry-factory';
+import { createChannelCommand } from '../commands/channel-command';
+import { loadChannelsConfig } from '../channel/channel-config';
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const config = loadAppConfig();
@@ -192,6 +197,8 @@ export interface CliDependencies {
   readonly setFileReviewHandler: (handler: EditReviewHandler | null) => void;
   readonly getTaskRunner: () => AgentTaskRunner;
   readonly getContextResolver: () => ContextResolver;
+  readonly channelService: ChannelService;
+  readonly createSessionForChannel: (channelId: string, message: import('../channel/channel-types').InboundMessage) => Promise<string>;
   readonly databaseClose: () => void;
 }
 
@@ -252,6 +259,14 @@ export async function runInteractiveCliSession(
   write('Enter /help for commands, type a slash command or plain-text task, or use /exit to quit.\n');
   cli.setToolApprovalHandler(async (request) => promptForToolApproval(request, lineReader.readLine, write));
   let availableNextStepActions: ActionSuggestion[] = [];
+
+  // Start any configured external channels (feishu long-connection, etc.)
+  try {
+    const channelConfig = await loadChannelsConfig();
+    await cli.channelService.start(channelConfig.channels);
+  } catch (err) {
+    write(`[channel] startup failed: ${err instanceof Error ? err.message : String(err)}\n`);
+  }
 
   try {
     while (true) {
@@ -1253,7 +1268,27 @@ export function createCliDependencies(
     selectionState.modelId = resolved.runtimeStatus.modelId;
   };
 
-  registerCoreCommands(dispatcher, () => currentWorkspace);
+  // Submit input handler for RuntimeCoordinator
+  const submitInputHandler = (input: IpcInputEnvelope, signal?: AbortSignal) => {
+    return inputAbortSignalContext.run(signal, () => inputRouter.route(input));
+  };
+  // Set up channel (IM integration) service
+  const channelRegistry = createChannelRegistry({ credentialStore });
+  const createSessionForChannel = async (_channelId: string, message: import('../channel/channel-types').InboundMessage): Promise<string> => {
+    const title = message.text ? `Channel: ${message.text.slice(0, 40)}` : 'Channel session';
+    const agentId = selectionState.modelId ?? ensureAgentInstance();
+    return (await sessionService.createSession(title, undefined, agentId)).id;
+  };
+  const channelService = new ChannelService({
+    runtime: createRuntimeCoordinator({ config: currentConfig, submitInput: submitInputHandler }),
+    registry: channelRegistry,
+    createSession: createSessionForChannel,
+  });
+  const setCredential = async (target: string, secret: string): Promise<void> => {
+    await credentialStore.writeSecret(target, secret);
+  };
+
+  registerCoreCommands(dispatcher, () => currentWorkspace, channelService, setCredential);
   const handleCurrentSessionChange = (sessionId: string | null): void => {
     syncSelectionFromSession(sessionId);
   };
@@ -1466,6 +1501,8 @@ export function createCliDependencies(
     return runTask(args.join(' '), 'CLI task execution');
   });
 
+
+
   const currentSession = options.startNewSession && !options.deferAgentSelection
     ? sessionService.createSession('Desktop session', null, ensureAgentInstance())
     : sessionService.getCurrentSession();
@@ -1475,6 +1512,8 @@ export function createCliDependencies(
 
   return {
     dispatcher,
+    channelService,
+    createSessionForChannel,
     submitInput(input: string | IpcInputEnvelope, signal?: AbortSignal) {
       const envelope = typeof input === 'string'
         ? createIpcEnvelopeFromText(input, selectionState.sessionId ?? currentConfig.defaultSessionId)
@@ -1580,6 +1619,7 @@ export function createCliDependencies(
       return contextResolver;
     },
     databaseClose(): void {
+      channelService.dispose();
       pepeSupervisor.stopAll();
       database.close();
     },

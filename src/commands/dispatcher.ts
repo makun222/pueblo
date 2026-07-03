@@ -1,6 +1,8 @@
 import { failureResult, successResult, type CommandResult } from '../shared/result';
 import { createAutoSaveHandler } from './auto-save-command.js';
 import { createUndoHandler } from './undo-command.js';
+import { createChannelCommand } from './channel-command.js';
+import type { ChannelService } from '../channel/channel-service.js';
 
 export interface DispatchRequest {
   readonly input: string;
@@ -130,6 +132,8 @@ export function createCommandSelectionState(): CommandSelectionState {
 export function registerCoreCommands(
   dispatcher: CommandDispatcher,
   getWorkspaceRoot: () => string,
+  channelService?: ChannelService,
+  setCredential?: (target: string, secret: string) => Promise<void>,
 ): void {
   dispatcher.register('/ping', () => successResult('PING_OK', 'Pueblo foundation is ready'));
   dispatcher.register('/help', () => successResult('HELP', 'Available commands', {
@@ -137,4 +141,11 @@ export function registerCoreCommands(
   }));
   dispatcher.register('/auto-save', createAutoSaveHandler());
   dispatcher.register('/undo', createUndoHandler(getWorkspaceRoot));
+
+  if (channelService) {
+    dispatcher.register('/channel', createChannelCommand({
+      channelService,
+      setCredential: setCredential ?? (async () => {}),
+    }));
+  }
 }

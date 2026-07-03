@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createResultBlocks, extractTaskOutputSummaryPayload, successResult } from '../../src/shared/result';
+import { createResultBlocks, extractNextStepSuggestionsFromText, extractTaskOutputSummaryPayload, extractTaskOutputSummaryText, successResult } from '../../src/shared/result';
 
 describe('Result Block Rendering', () => {
   it('should render only outputSummary and metadata for successful task payloads', () => {
@@ -273,39 +273,102 @@ describe('Result Block Rendering', () => {
     expect(blocks[1]?.content).toContain('Runtime Plan Path: D:/workspace/.plans/workflow-2/feature.plan.md');
   });
 
-  it('normalizes next_step_actions by dropping invalid entries, deduping prompts, and enforcing a limit', () => {
-    const payload = extractTaskOutputSummaryPayload(JSON.stringify({
-      outputSummary: 'Apply the fix',
-      next_step_actions: [
-        { label: 'Fix parser', prompt: 'src/shared/result.ts tighten action parsing' },
-        { label: 'Fix parser again', prompt: 'src/shared/result.ts tighten action parsing' },
-        { label: '', prompt: 'missing label should drop' },
-        { label: 'Add CLI menu', prompt: 'src/cli/index.ts add numbered next-step actions' },
-        { label: 'Improve focus', prompt: 'src/desktop/renderer/App.tsx focus the input after action clicks' },
-        { label: 'Fifth action', prompt: 'this one should be trimmed by the max limit' },
-      ],
-    }));
+  it('parses next_step_actions from a 下一步建议 free-text section, deduping prompts, filtering invalid entries, and capping at 4', () => {
+    const freeText = [
+      'Apply the fix.',
+      '',
+      '## 下一步建议',
+      '- 修复解析器: src/shared/result.ts tighten action parsing',
+      '- 修复解析器again: src/shared/result.ts tighten action parsing',
+      '- : missing label should drop',
+      '- 这个动作的标签长度远远超过三十个字符的限制所以必须被解析器丢弃: dropped prompt here',
+      '- 添加CLI菜单: src/cli/index.ts add numbered next-step actions',
+      '- 改善焦点: src/desktop/renderer/App.tsx focus the input after action clicks',
+      '- 第五个动作: this one should be kept within the max limit',
+    ].join('\n');
+    const payload = extractTaskOutputSummaryPayload(JSON.stringify({ outputSummary: freeText }));
 
     expect(payload?.next_step_actions).toEqual([
-      { label: 'Fix parser', prompt: 'src/shared/result.ts tighten action parsing' },
-      { label: 'Add CLI menu', prompt: 'src/cli/index.ts add numbered next-step actions' },
-      { label: 'Improve focus', prompt: 'src/desktop/renderer/App.tsx focus the input after action clicks' },
-      { label: 'Fifth action', prompt: 'this one should be trimmed by the max limit' },
+      { label: '修复解析器', prompt: 'src/shared/result.ts tighten action parsing' },
+      { label: '添加CLI菜单', prompt: 'src/cli/index.ts add numbered next-step actions' },
+      { label: '改善焦点', prompt: 'src/desktop/renderer/App.tsx focus the input after action clicks' },
+      { label: '第五个动作', prompt: 'this one should be kept within the max limit' },
     ]);
   });
 
-  it('ignores JSON-like markdown fallback lines when extracting next_step_actions', () => {
-    const payload = extractTaskOutputSummaryPayload([
-      'Follow-up notes:',
-      '```json',
-      '{',
-      '  "label": "Fix parser",',
-      '  "prompt": "src/shared/result.ts tighten action parsing"',
-      '}',
-      '```',
-    ].join('\n'));
+  it('returns no next_step_actions when there is no 下一步建议 heading', () => {
+    const payload = extractTaskOutputSummaryPayload(JSON.stringify({
+      outputSummary: [
+        'Follow-up notes:',
+        '```json',
+        '{',
+        '  "label": "Fix parser",',
+        '  "prompt": "src/shared/result.ts tighten action parsing"',
+        '}',
+        '```',
+      ].join('\n'),
+    }));
 
     expect(payload?.next_step_actions).toBeUndefined();
+  });
+
+  it('parses a 下一步建议 section directly from a non-JSON outputSummary', () => {
+    const freeText = [
+      'Summary body.',
+      '',
+      '## 下一步建议',
+      '- 修复解析器: src/shared/result.ts tighten action parsing',
+    ].join('\n');
+    const payload = extractTaskOutputSummaryPayload(freeText);
+
+    expect(payload?.next_step_actions).toEqual([
+      { label: '修复解析器', prompt: 'src/shared/result.ts tighten action parsing' },
+    ]);
+  });
+
+  it('strips the 下一步建议 section from the displayed summary text', () => {
+    const freeText = [
+      'Summary body line one.',
+      'Summary body line two.',
+      '',
+      '## 下一步建议',
+      '- 修复解析器: src/shared/result.ts tighten action parsing',
+      '- 添加CLI菜单: src/cli/index.ts add numbered next-step actions',
+    ].join('\n');
+    const displayed = extractTaskOutputSummaryText(JSON.stringify({ outputSummary: freeText }));
+
+    expect(displayed).toContain('Summary body line one.');
+    expect(displayed).toContain('Summary body line two.');
+    expect(displayed).not.toContain('下一步建议');
+    expect(displayed).not.toContain('修复解析器');
+    expect(displayed).not.toContain('添加CLI菜单');
+  });
+
+  it('splits each suggestion line on the first colon and drops empty/oversized labels', () => {
+    const suggestions = extractNextStepSuggestionsFromText([
+      '## 下一步建议',
+      '- 修复解析器: src/shared/result.ts: tighten on line 12',
+      '- 添加CLI菜单: src/cli/index.ts add numbered selection',
+      '- : empty label should drop',
+      '- : also empty prompt is fine but label empty drops',
+      '',
+    ].join('\n'));
+
+    expect(suggestions).toEqual([
+      { label: '修复解析器', prompt: 'src/shared/result.ts: tighten on line 12' },
+      { label: '添加CLI菜单', prompt: 'src/cli/index.ts add numbered selection' },
+    ]);
+  });
+
+  it('yields no buttons when the section has no parseable lines', () => {
+    const suggestions = extractNextStepSuggestionsFromText([
+      '## 下一步建议',
+      'Some prose without a colon',
+      '- : ',
+      '',
+    ].join('\n'));
+
+    expect(suggestions).toBeUndefined();
   });
 
   it('does not turn plain suggestions into desktop action buttons', () => {

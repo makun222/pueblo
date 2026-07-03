@@ -24,6 +24,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.68.0",
     "@modelcontextprotocol/sdk": "^1.8.0",
     "better-sqlite3": "^12.11.1",
     "commander": "^14.0.0",

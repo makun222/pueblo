@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CliDependencies } from '../../src/cli/index';
 import { renderToolApprovalPrompt, runInteractiveCliSession } from '../../src/cli/index';
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../src/agent/task-runner';
-import { successResult } from '../../src/shared/result';
+import { extractTaskOutputSummaryPayload, successResult } from '../../src/shared/result';
 import type { IpcInputEnvelope } from '../../src/shared/schema';
 
 describe('interactive cli session', () => {
@@ -13,6 +13,8 @@ describe('interactive cli session', () => {
     let index = 0;
     const cli: CliDependencies = {
       dispatcher: {} as never,
+      channelService: { start: async () => {}, dispose: () => {} } as never,
+      createSessionForChannel: async () => 'session-id' as never,
       async submitInput(input: string | IpcInputEnvelope) {
         const normalizedInput = typeof input === 'string' ? input : input.inputText;
         handledInputs.push(normalizedInput);
@@ -99,6 +101,8 @@ describe('interactive cli session', () => {
     let index = 0;
     const cli: CliDependencies = {
       dispatcher: {} as never,
+      channelService: { start: async () => {}, dispose: () => {} } as never,
+      createSessionForChannel: async () => 'session-id' as never,
       async submitInput(input: string | IpcInputEnvelope) {
         const normalizedInput = typeof input === 'string' ? input : input.inputText;
         handledInputs.push(normalizedInput);
@@ -175,6 +179,97 @@ describe('interactive cli session', () => {
     expect(writes.join('')).toContain('[HANDLED] Handled src/shared/result.ts tighten action parsing');
   });
 
+  it('surfaces next-step actions parsed from a 下一步建议 free-text section as /1 shortcuts', async () => {
+    const writes: string[] = [];
+    const inputs = ['inspect workflow', '/1', '/exit'];
+    const handledInputs: string[] = [];
+    let index = 0;
+    const taskData = {
+      outputSummary: JSON.stringify({
+        outputSummary: [
+          'Workflow round finished.',
+          '',
+          '## 下一步建议',
+          '- 修复解析器: src/shared/result.ts tighten action parsing',
+        ].join('\n'),
+      }),
+    };
+
+    const cli: CliDependencies = {
+      dispatcher: {} as never,
+      channelService: { start: async () => {}, dispose: () => {} } as never,
+      createSessionForChannel: async () => 'session-id' as never,
+      async submitInput(input: string | IpcInputEnvelope) {
+        const normalizedInput = typeof input === 'string' ? input : input.inputText;
+        handledInputs.push(normalizedInput);
+
+        if (normalizedInput === 'inspect workflow') {
+          const payload = extractTaskOutputSummaryPayload(taskData.outputSummary);
+          return successResult('HANDLED', 'Handled inspect workflow', taskData, payload?.next_step_actions);
+        }
+
+        return successResult('HANDLED', `Handled ${normalizedInput}`);
+      },
+      async getRuntimeStatus() {
+        return {
+          providerId: null,
+          providerName: null,
+          agentProfileId: null,
+          agentProfileName: null,
+          agentInstanceId: null,
+          modelId: null,
+          modelName: null,
+          activeSessionId: null,
+          contextCount: {
+            estimatedTokens: 0,
+            contextWindowLimit: null,
+            utilizationRatio: null,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        };
+      },
+      listAgentProfiles() { return []; },
+      startAgentSession() { throw new Error('not implemented for interactive test'); },
+      listAgentSessions() { return []; },
+      getSession() { return null; },
+      listSessionMemories() { return []; },
+      selectSession() { throw new Error('not implemented for interactive test'); },
+      setProgressReporter() {},
+      setToolApprovalHandler() {},
+      setToolApprovalBatchHandler() {},
+      setFileReviewHandler() {},
+      getTaskRunner() { return {} as never; },
+      getContextResolver() { return {} as never; },
+      databaseClose() {},
+    };
+
+    await runInteractiveCliSession(cli, {
+      isInteractive: true,
+      readLine: async () => inputs[index++] ?? '/exit',
+      write: (text) => {
+        writes.push(text);
+      },
+    });
+
+    expect(handledInputs).toEqual(['inspect workflow', 'src/shared/result.ts tighten action parsing']);
+    expect(writes.join('')).toContain('/1 修复解析器');
+    expect(writes.join('')).toContain('src/shared/result.ts tighten action parsing');
+    expect(writes.join('')).toContain('Type /1 through /1 to run a suggested next step.');
+  });
+
   it('renders approval previews with title and detail blocks', () => {
     const prompt = renderToolApprovalPrompt({
       taskId: 'task-1',
@@ -204,6 +299,8 @@ describe('interactive cli session', () => {
     let approvalHandler: ((request: ToolApprovalRequest) => Promise<ToolApprovalDecision>) | null = null;
     const cli: CliDependencies = {
       dispatcher: {} as never,
+      channelService: { start: async () => {}, dispose: () => {} } as never,
+      createSessionForChannel: async () => 'session-id' as never,
       async submitInput() {
         return successResult('HANDLED', 'Handled');
       },

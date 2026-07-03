@@ -243,16 +243,14 @@ function buildPuebloSystemMessage(taskContext: TaskContext): string | null {
     );
   }
 
-  // Next-step instructions: guide LLM to output structured action suggestions
+  // Next-step instructions: guide LLM to output follow-up suggestions as free text
   sections.push(
-    'Next-step action hints:',
-    '- When you complete a task, your task-result JSON output must include a "next_step_actions" array.',
-    '- Each element is a JSON object with fields: "label" (string, <=30 chars), "prompt" (string), and optional "description" (string).',
-    '- "label": a short button label describing the suggested next step.',
-    '- "prompt": the full, specific user input to send when the button is clicked. Must include concrete file paths, function names, or line numbers.',
-    '- "description": (optional) longer explanation shown as tooltip or detail text.',
-    '- Example: "next_step_actions": [{"label":"Fix /amber init handler","prompt":"src/cli/index.ts the /amber init handler also needs to call amberRun two-step execution after generatePipeline()","description":"Add amberRun call to init handler"}]',
-    '- Output at most 4 next-step action suggestions. If no follow-up is needed, output an empty array or omit the field.',
+    'Next-step suggestions:',
+    '- After your summary, if there are concrete follow-ups the user can run directly, add a section titled exactly "## 下一步建议".',
+    '- Under it, list up to 4 choices, one per line: "- action: next_context".',
+    '- action: short verb phrase (<=30 chars) shown as the button label.',
+    '- next_context: the text you want to send as the user input for next conversation; can include concrete file paths / function names / line numbers.',
+    '- If no follow-up is needed, omit the section entirely. Do not output JSON.',
   );
 
   if (taskContext.puebloProfile.summaryPolicy.lineageHint) {

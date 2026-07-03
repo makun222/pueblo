@@ -60,7 +60,8 @@ function parseSimpleYaml(content: string): YamlNode {
     /** 列表上下文栈，支持嵌套列表的自动恢复 */
     const listCtxStack: ListContext[] = [];
 
-    for (const rawLine of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const rawLine = lines[lineIndex];
         const line = rawLine.trimEnd();
         if (line.trim() === '' || line.trim().startsWith('#')) {
             continue; // 跳过空行和注释
@@ -162,8 +163,29 @@ function parseSimpleYaml(content: string): YamlNode {
                         indent,
                     });
                 } else {
-                    // 标量值
-                    stack[stack.length - 1][key] = value.replace(/^["']|["']$/g, '');
+                    // 标量值（支持多行双引号字符串）
+                    let finalVal = value;
+                    if (finalVal.startsWith('"') && !finalVal.endsWith('"')) {
+                        for (let j = lineIndex + 1; j < lines.length; j++) {
+                            finalVal += '\n' + lines[j];
+                            lineIndex = j;
+                            // 只有当当前行末尾有奇数个未转义双引号时才视为真正的闭合行
+                            const currentLine = lines[j];
+                            const trimmed = currentLine.trimEnd();
+                            if (trimmed.endsWith('"')) {
+                                let quoteCount = 0;
+                                for (let k = 0; k < trimmed.length; k++) {
+                                    if (trimmed[k] === '"' && (k === 0 || trimmed[k - 1] !== '\\')) {
+                                        quoteCount++;
+                                    }
+                                }
+                                if (quoteCount % 2 === 1) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    stack[stack.length - 1][key] = finalVal.replace(/^["']|["']$/g, '');
                     // 不清除列表上下文 — 嵌套在列表中的 KV 行需要保持列表上下文
                 }
             }

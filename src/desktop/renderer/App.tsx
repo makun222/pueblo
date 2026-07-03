@@ -30,6 +30,7 @@ const MESSAGE_TRACE_STEP_PAGE_SIZE = 100;
 const MESSAGE_TRACE_INITIAL_MESSAGE_LIMIT = 25;
 const MESSAGE_TRACE_MESSAGE_PAGE_SIZE = 25;
 const ACTION_HINT_DURATION_MS = 2400;
+const MAX_INPUT_HEIGHT = 120;
 const TOOL_APPROVAL_SIDEBAR_MIN_WIDTH = 280;
 const TOOL_APPROVAL_SIDEBAR_DEFAULT_WIDTH = 336;
 const TOOL_APPROVAL_SIDEBAR_MAX_WIDTH = 560;
@@ -256,7 +257,7 @@ export function App() {
   const streamTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRunIdRef = useRef(0);
   const actionHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const outputPaneRef = useRef<HTMLElement | null>(null);
   const toolApprovalSidebarRef = useRef<HTMLElement | null>(null);
   const contextBreakdownRef = useRef<HTMLDivElement | null>(null);
@@ -878,6 +879,15 @@ export function App() {
     }
   };
 
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) {
+      return;
+    }
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_HEIGHT)}px`;
+  }, [input]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const submittedInput = input;
@@ -890,6 +900,13 @@ export function App() {
     setActionInputHint(null);
     setInput('');
     await executeInput(submittedInput, { recordUserEntry: true, attachments: pendingAttachments });
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void handleSubmit(e as unknown as React.FormEvent);
+    }
   };
 
   const handleActionClick = (prompt: string) => {
@@ -1724,16 +1741,17 @@ export function App() {
           </div>
         ) : null}
         <button type="button" className="input-label input-label-upload" onClick={() => { void handleSelectInputFiles(); }}>pueblo&gt;</button>
-        <input
+        <textarea
           ref={inputRef}
           id="pueblo-input"
-          type="text"
+          rows={1}
           className={actionInputHint ? 'input-pane-input input-pane-input-suggested' : 'input-pane-input'}
           value={input}
           onChange={(e) => {
             setInput(e.target.value);
             setActionInputHint(null);
           }}
+          onKeyDown={handleInputKeyDown}
           placeholder={inputPlaceholder}
           disabled={needsAgentSelection || isSubmitting}
           autoFocus

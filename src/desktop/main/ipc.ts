@@ -30,6 +30,12 @@ import { perfEnd, perfLog, perfStart } from '../../utils/perf-logger';
 import type { DesktopLoopJobManager, CallModelFn } from './loop-job-manager.js';
 import { AppWindow } from './app-window.js';
 import type { LoopConfig } from '../../agent/loop-runner.js';
+import { ChannelService } from '../../channel/channel-service';
+import { createChannelRegistry } from '../../channel/channel-registry-factory';
+import { createFeishuChannelAdapter } from '../../channel/channels/feishu/feishu-adapter';
+import type { ChannelConfig } from '../../channel/channel-types';
+import { loadChannelsConfig } from '../../channel/channel-config';
+import { registerChannelIpcHandlers } from '../../channel/channel-ipc';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
 const TALK_STATE_CHANNEL = 'talk-state';
@@ -154,6 +160,31 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     submitInput: cli.submitInput,
   });
 
+  // ── External channel integration (feishu long-connection, etc.) ──
+  const channelRegistry = createChannelRegistry();
+  const channelService = new ChannelService({
+    runtime,
+    registry: channelRegistry,
+    createSession: cli.createSessionForChannel,
+  });
+  const disposeChannelIpc = registerChannelIpcHandlers(mainWindow, {
+    channelService,
+    testChannel: async (channelConfig: ChannelConfig) => {
+      try {
+        const adapter = createFeishuChannelAdapter(channelConfig);
+        const result = await adapter.testConnection(channelConfig);
+        adapter.dispose();
+        return { ok: result.ok, error: result.error };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+  // Start any configured, enabled channels (best-effort; failures are logged)
+  loadChannelsConfig()
+    .then((channelConfig) => channelService.start(channelConfig.channels))
+    .catch((err) => console.error('[Channel] startup failed:', err));
+
   const executeInput = async (
     envelope: IpcInputEnvelope,
     signal?: AbortSignal,
@@ -248,6 +279,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     disposeTalkStateListener();
     void talkService?.dispose();
     talkService = null;
+    disposeChannelIpc();
+    channelService.dispose();
     disposeRuntimeListener();
     runtime.dispose();
     removeDesktopIpcHandlers();

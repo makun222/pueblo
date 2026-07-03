@@ -456,8 +456,11 @@ describe('task message builder', () => {
     const messages = buildProviderMessages(context, 'Inspect the current failure');
     const systemContent = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n');
 
-    expect(systemContent).toContain('"label" (string, <=30 chars)');
-    expect(systemContent).toContain('"next_step_actions": [{"label":"Fix /amber init handler"');
+    expect(systemContent).toContain('## 下一步建议');
+    expect(systemContent).toContain('- 动作: 具体信息');
+    expect(systemContent).toContain('Do not output JSON');
+    expect(systemContent).not.toContain('"next_step_actions": [{"label":"Fix /amber init handler"');
+    expect(systemContent).not.toContain('"label" (string, <=30 chars)');
     expect(systemContent).not.toContain('a unique identifier for this action suggestion');
   });
 

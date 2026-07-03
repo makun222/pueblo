@@ -722,14 +722,28 @@ function normalizeNextStepActions(actions: unknown): NextStepActionPayload[] | u
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function parseMarkdownNextStepActionLine(line: string): NextStepActionPayload | null {
-  const colonIndex = line.indexOf(':');
+const NEXT_STEP_SUGGESTION_HEADING_REGEX = /^#{2,3}\s+下一步建议\s*$/;
+const NEXT_STEP_SUGGESTION_LIST_PREFIX_REGEX = /^\s*(?:[-*]|\d+\.)\s+/;
+
+/**
+ * Parse a single `动作: 具体信息` suggestion line into a validated action payload.
+ * Strips an optional leading list marker (`-`, `*`, or `1.`), then splits on the
+ * first colon. Label must be non-empty and <=30 chars; prompt must be non-empty and
+ * <=500 chars. Returns null for anything that does not look like a suggestion line.
+ */
+function parseNextStepSuggestionLine(line: string): NextStepActionPayload | null {
+  const stripped = line.replace(NEXT_STEP_SUGGESTION_LIST_PREFIX_REGEX, '').trim();
+  if (!stripped) {
+    return null;
+  }
+
+  const colonIndex = stripped.indexOf(':');
   if (colonIndex <= 0) {
     return null;
   }
 
-  const label = line.slice(0, colonIndex).replace(/^[-*]\s*/, '').trim();
-  const prompt = line.slice(colonIndex + 1).trim();
+  const label = stripped.slice(0, colonIndex).trim();
+  const prompt = stripped.slice(colonIndex + 1).trim();
 
   if (!label || !prompt) {
     return null;
@@ -739,7 +753,8 @@ function parseMarkdownNextStepActionLine(line: string): NextStepActionPayload | 
     return null;
   }
 
-  if (/^["'{\[]/.test(line) || /["{}\[\]]/.test(label) || prompt.startsWith('"')) {
+  // Reject anything that looks like JSON / array markup rather than free text.
+  if (/["{}\[\]]/.test(label) || prompt.startsWith('"')) {
     return null;
   }
 
@@ -747,63 +762,114 @@ function parseMarkdownNextStepActionLine(line: string): NextStepActionPayload | 
 }
 
 /**
- * Extract next_step_actions from markdown when JSON.parse of outputSummary fails.
- * Handles LLM responses that embed structured data inside markdown fenced code blocks.
+ * Extract next-step action suggestions from the LLM's free-text `outputSummary`.
+ *
+ * Looks for a `## 下一步建议` (or `### 下一步建议`) heading and collects the
+ * list lines that follow it, up to the next markdown heading or end of text.
+ * Each line is parsed into `{ label, prompt }` via `parseNextStepSuggestionLine`,
+ * then normalized (validated, deduped by prompt, capped at 4). Tolerates CRLF.
+ *
+ * Returns `undefined` when there is no heading or no parseable suggestion line.
  */
-function extractNextStepActionsFromMarkdown(
-  outputSummary: string,
-): NextStepActionPayload[] | undefined {
-  const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)```/g;
-  const codeBlocks: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = codeBlockRegex.exec(outputSummary)) !== null) {
-    codeBlocks.push(match[1].trim());
-  }
-
-  if (codeBlocks.length === 0) {
+export function extractNextStepSuggestionsFromText(text: string): NextStepActionPayload[] | undefined {
+  if (!text) {
     return undefined;
   }
 
-  const lastBlock = codeBlocks[codeBlocks.length - 1];
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
 
-  try {
-    const parsed = JSON.parse(lastBlock);
-    const nestedActions = normalizeNextStepActions(parsed?.next_step_actions);
-    if (nestedActions) {
-      return nestedActions;
+  let startIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (NEXT_STEP_SUGGESTION_HEADING_REGEX.test(lines[i])) {
+      startIdx = i + 1;
+      break;
     }
-
-    const blockActions = normalizeNextStepActions(parsed);
-    if (blockActions) {
-      return blockActions;
-    }
-  } catch {
-    // Not valid JSON, continue to the stricter markdown fallback.
   }
 
-  return normalizeNextStepActions(
-    lastBlock
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => parseMarkdownNextStepActionLine(line))
-      .filter((action): action is NextStepActionPayload => action !== null),
-  );
+  if (startIdx < 0) {
+    return undefined;
+  }
+
+  const nextHeadingRegex = /^#{1,6}\s/;
+  const rawLines: string[] = [];
+  for (let i = startIdx; i < lines.length; i++) {
+    const line = lines[i];
+    if (nextHeadingRegex.test(line)) {
+      break;
+    }
+    const trimmed = line.trim();
+    if (trimmed) {
+      rawLines.push(trimmed);
+    }
+  }
+
+  if (rawLines.length === 0) {
+    return undefined;
+  }
+
+  const parsed = rawLines
+    .map((line) => parseNextStepSuggestionLine(line))
+    .filter((action): action is NextStepActionPayload => action !== null);
+
+  return normalizeNextStepActions(parsed);
+}
+
+/**
+ * Remove the `## 下一步建议` section (heading + following list lines, up to the
+ * next heading or EOF) from the LLM free text so the displayed summary does not
+ * duplicate the action buttons. Trailing blank lines are trimmed and runs of 3+
+ * newlines are collapsed. Tolerates CRLF. If no heading is present the text is
+ * returned unchanged (apart from CRLF normalization).
+ */
+export function stripNextStepSection(text: string): string {
+  if (!text) {
+    return text;
+  }
+
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const nextHeadingRegex = /^#{1,6}\s/;
+  const out: string[] = [];
+  let skipping = false;
+
+  for (const line of lines) {
+    if (!skipping && NEXT_STEP_SUGGESTION_HEADING_REGEX.test(line)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (nextHeadingRegex.test(line)) {
+        skipping = false;
+        out.push(line);
+      }
+      continue;
+    }
+    out.push(line);
+  }
+
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
 }
 
 function parseTaskResultPayload(outputSummary: string): ParsedTaskOutputSummary {
   try {
     const parsed = JSON.parse(outputSummary) as TaskResultPayload;
+    const llmText = typeof parsed.outputSummary === 'string' ? parsed.outputSummary : '';
+    // Parse suggestions from the LLM's inner free text BEFORE stripping it.
+    const fromText = extractNextStepSuggestionsFromText(llmText);
     const { next_step_actions: rawNextStepActions, ...rest } = parsed;
-    const next_step_actions = normalizeNextStepActions(rawNextStepActions);
+    const next_step_actions = fromText ?? normalizeNextStepActions(rawNextStepActions);
+    const stripped = llmText ? stripNextStepSection(llmText) : null;
     return {
       ...rest,
+      ...(stripped !== null ? { outputSummary: stripped } : {}),
       ...(next_step_actions ? { next_step_actions } : {}),
     };
   } catch {
-    const next_step_actions = extractNextStepActionsFromMarkdown(outputSummary);
+    const next_step_actions = extractNextStepSuggestionsFromText(outputSummary);
+    const stripped = stripNextStepSection(outputSummary);
     return {
-      outputSummary,
+      outputSummary: stripped,
       ...(next_step_actions && next_step_actions.length > 0 ? { next_step_actions } : {}),
     };
   }
