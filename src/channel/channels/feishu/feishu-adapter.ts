@@ -1,4 +1,4 @@
-// ---------------------------------------------------------------------------
+﻿// ---------------------------------------------------------------------------
 // Feishu Channel Adapter — implements ChannelAdapter for feishu
 // ---------------------------------------------------------------------------
 
@@ -9,179 +9,209 @@ import type {
   ChannelKind,
   ChannelSendResult,
   ChannelTestResult,
+  InboundMessage,
   OutboundMessage,
 } from '../../channel-types';
 import { BaseChannelAdapter } from '../../channel-adapter';
+import {
+  createLarkChannel,
+  type NormalizedMessage,
+  type LarkChannel,
+} from '@larksuite/channel';
 import type { CredentialStore } from '../../../providers/credential-store';
-import { createDefaultCredentialStore } from '../../../providers/credential-store';
-import { ChannelAuthError, ChannelConnectionError } from '../../channel-errors';
-import { safeParseFeishuOptions } from './feishu-config';
-import { FeishuClient, resolveFeishuAppSecret } from './feishu-client';
-import { FeishuLongConnection } from './feishu-connection';
+import { channelDebugLog } from '../../channel-debug-log';
 
-const FEISHU_CAPABILITIES: ChannelCapabilities = {
-  inboundEvents: true,
-  outboundReply: true,
-  card: true,
-  longConnection: true,
-};
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-export interface FeishuChannelAdapterOptions {
-  readonly credentialStore?: CredentialStore;
-  readonly clientFactory?: (options: import('./feishu-client').FeishuClientOptions) => FeishuClient;
-  /** Inject a WebSocket constructor (for tests) */
-  readonly webSocketCtor?: unknown;
+export interface FeishuSecret {
+  appId: string;
+  appSecret: string;
 }
 
-export function createFeishuChannelAdapter(
-  config: ChannelConfig,
-  credentialStore?: CredentialStore,
-): FeishuChannelAdapter {
-  return new FeishuChannelAdapter(config, { credentialStore });
+export async function safeParseFeishuOptions(
+  options: ChannelConfig['options'],
+): Promise<FeishuSecret> {
+  if (!options || typeof options !== 'object') {
+    throw new Error('Missing feishu options');
+  }
+  const opts = options as Record<string, unknown>;
+  const appId = typeof opts.appId === 'string' ? opts.appId : '';
+  const appSecret = typeof opts.appSecret === 'string' ? opts.appSecret : '';
+  if (!appId || !appSecret) {
+    throw new Error('feishu options must include appId and appSecret');
+  }
+  return { appId, appSecret };
 }
 
-export class FeishuChannelAdapter extends BaseChannelAdapter {
-  readonly capabilities: ChannelCapabilities = FEISHU_CAPABILITIES;
+// ---------------------------------------------------------------------------
+// Adapter
+// ---------------------------------------------------------------------------
 
-  private readonly store: CredentialStore;
-  private readonly clientFactory?: (options: import('./feishu-client').FeishuClientOptions) => FeishuClient;
-  private client: FeishuClient | null = null;
-  private connection: FeishuLongConnection | null = null;
-  private currentConfig: ChannelConfig | null = null;
-  private disposed = false;
+export class FeishuAdapter extends BaseChannelAdapter {
+  readonly capabilities: ChannelCapabilities = {
+    inboundEvents: true,
+    outboundReply: true,
+    card: true,
+    longConnection: true,
+  };
 
-  constructor(config: ChannelConfig, options: FeishuChannelAdapterOptions = {}) {
-    super(config.id, 'feishu');
-    this.store = options.credentialStore ?? createDefaultCredentialStore();
-    this.clientFactory = options.clientFactory;
+  private larkChannel: LarkChannel | null = null;
+  private unsubscribers: Array<() => void> = [];
+
+  constructor(channelId: string, kind: ChannelKind = 'feishu') {
+    super(channelId, kind);
   }
 
-  async connect(config: ChannelConfig, handler: ChannelEventHandler): Promise<void> {
-    this.currentConfig = config;
-    const options = safeParseFeishuOptions(config.options ?? {});
-    if (!options) {
-      this.setStatus('error', 'invalid feishu config options');
-      throw new ChannelConnectionError(config.id, 'invalid feishu config options');
-    }
-
-    const credentialTarget = config.credentialTarget ?? `pueblo:feishu:${config.id}`;
-    const appSecret = this.store.isSupported()
-      ? resolveFeishuAppSecret(credentialTarget, (target) => this.store.readSecret(target))
-      : null;
-    if (appSecret === null) {
-      // When the credential store is unsupported, fall back to an options-supplied
-      // secret (e.g. env or plain config) if present — otherwise fail.
-      const optionsSecret = readOptionSecret(config.options);
-      if (!optionsSecret) {
-        this.setStatus('error', 'feishu appSecret not available');
-        throw new ChannelAuthError(config.id, 'feishu appSecret not found');
-      }
-      return this.connectWith(config, options.appId, optionsSecret, handler);
-    }
-
-    return this.connectWith(config, options.appId, appSecret, handler);
-  }
-
-  private async connectWith(
+  async connect(
     config: ChannelConfig,
-    appId: string,
-    appSecret: string,
     handler: ChannelEventHandler,
   ): Promise<void> {
-    const options = safeParseFeishuOptions(config.options ?? {});
-    if (!options) throw new ChannelConnectionError(config.id, 'invalid feishu config options');
-
-    const clientOptions = {
-      channelId: config.id,
-      appId,
-      appSecret,
-      imApiBaseUrl: options.imApiBaseUrl,
-    };
-    this.client = this.clientFactory ? this.clientFactory(clientOptions) : new FeishuClient(clientOptions);
-
-    this.connection = new FeishuLongConnection({
-      channelId: config.id,
-      client: this.client,
-      verificationToken: options.verificationToken,
-    });
-    this.connection.setEventHandler(handler);
-
+    channelDebugLog(`FeishuAdapter.connect: BEGIN channelId=${this.channelId}`);
     try {
+      const { appId, appSecret } = await safeParseFeishuOptions(config.options);
+      channelDebugLog(`FeishuAdapter.connect: options parsed OK, appId=${appId }`);
+      this.handler = handler;
       this.setStatus('connecting');
-      await this.connection.connect();
-      this.setStatus('connected');
+
+      const larkChannel = createLarkChannel({ appId, appSecret });
+      this.larkChannel = larkChannel;
+      channelDebugLog('FeishuAdapter.connect: larkChannel created, binding events…');
+
+      // Bind events
+      const unsubMessage = larkChannel.on('message', (msg: NormalizedMessage) => {
+        const inbound = this.toInboundMessage(msg);
+        channelDebugLog(`FeishuAdapter: larkChannel message: ${JSON.stringify(inbound)}`);
+        this.handler?.onMessage(inbound);
+      });
+
+      const unsubError = larkChannel.on('error', (err: unknown) => {
+        channelDebugLog(`FeishuAdapter: larkChannel error: ${String(err)}`);
+        console.error('feishu channel error', err);
+        this.handler?.onError(
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      });
+
+      this.unsubscribers = [unsubMessage, unsubError];
+
+      try {
+        channelDebugLog('FeishuAdapter.connect: calling larkChannel.connect()…');
+        await larkChannel.connect();
+        this.setStatus('connected');
+        channelDebugLog('FeishuAdapter.connect: OK — WebSocket connected');
+        console.log('feishu channel connected');
+      } catch (err) {
+        channelDebugLog(`FeishuAdapter.connect: larkChannel.connect() FAILED: ${String(err)}`);
+        this.setStatus('disconnected', String(err));
+        console.error('feishu connect failed', err);
+        throw err;
+      }
     } catch (err) {
-      this.setStatus('error', err instanceof Error ? err.message : String(err));
+      channelDebugLog(`FeishuAdapter.connect: FATAL early failure: ${String(err)}`);
       throw err;
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this.connection) {
-      await this.connection.disconnect();
+    for (const unsub of this.unsubscribers) {
+      unsub();
     }
+    this.unsubscribers = [];
+    if (this.larkChannel) {
+      try {
+        await this.larkChannel.disconnect();
+      } catch (err) {
+        console.warn('feishu disconnect error', err);
+      }
+      this.larkChannel = null;
+    }
+    this.handler = null;
     this.setStatus('disconnected');
+    console.log('feishu channel disconnected');
   }
 
   async send(message: OutboundMessage): Promise<ChannelSendResult> {
-    if (!this.client || !this.currentConfig) {
-      return { ok: false, error: 'feishu adapter not connected' };
+    if (!this.larkChannel) {
+      return { ok: false, error: 'channel not connected' };
     }
-    const receiveId = message.externalConversationId;
 
     try {
-      if (message.card !== undefined) {
-        const content = FeishuClient.buildCardContent(message.card);
-        const res = message.replyToMessageId
-          ? await this.client.replyMessage(message.replyToMessageId, 'interactive', content)
-          : await this.client.sendMessage(receiveId, 'chat_id', 'interactive', content);
-        return { ok: res.code === 0, externalMessageId: res.data?.message_id };
+      const opts: { replyTo?: string } = {};
+      if (message.replyToMessageId) {
+        opts.replyTo = message.replyToMessageId;
       }
-      const content = FeishuClient.buildTextContent(message.text ?? '');
-      const res = message.replyToMessageId
-        ? await this.client.replyMessage(message.replyToMessageId, 'text', content)
-        : await this.client.sendMessage(receiveId, 'chat_id', 'text', content);
-      return { ok: res.code === 0, externalMessageId: res.data?.message_id };
+
+      let input: { text: string } | { card: object };
+      if (message.card != null) {
+        input = { card: message.card as object };
+      } else {
+        input = { text: message.text ?? '' };
+      }
+
+      const result = await this.larkChannel.send(
+        message.externalConversationId,
+        input,
+        opts,
+      );
+
+      return { ok: true, externalMessageId: result.messageId };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      console.error('feishu send failed', err);
+      return { ok: false, error: String(err) };
     }
   }
 
   async testConnection(config: ChannelConfig): Promise<ChannelTestResult> {
+    const { appId, appSecret } = await safeParseFeishuOptions(config.options);
+    const testChannel = createLarkChannel({ appId, appSecret });
     try {
-      const options = safeParseFeishuOptions(config.options ?? {});
-      if (!options) return { ok: false, error: 'invalid feishu config options' };
-
-      const credentialTarget = config.credentialTarget ?? `pueblo:feishu:${config.id}`;
-      const appSecret = this.store.isSupported()
-        ? this.store.readSecret(credentialTarget)
-        : readOptionSecret(config.options);
-      if (!appSecret) return { ok: false, error: 'feishu appSecret not found' };
-
-      const client = new FeishuClient({
-        channelId: config.id,
-        appId: options.appId,
-        appSecret,
-        imApiBaseUrl: options.imApiBaseUrl,
-      });
-      await client.getTenantAccessToken();
+      await testChannel.connect();
+      await testChannel.disconnect();
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: String(err) };
     }
   }
 
   dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.connection?.dispose();
-    this.connection = null;
-    this.client = null;
+    for (const unsub of this.unsubscribers) {
+      unsub();
+    }
+    this.unsubscribers = [];
+    if (this.larkChannel) {
+      this.larkChannel.disconnect().catch(() => {});
+      this.larkChannel = null;
+    }
+    this.handler = null;
     this.setStatus('disconnected');
+  }
+
+  // -- Mapping ----------------------------------------------------------
+
+  private toInboundMessage(msg: NormalizedMessage): InboundMessage {
+    return {
+      channelId: this.channelId,
+      externalConversationId: msg.chatId,
+      externalMessageId: msg.messageId,
+      senderId: msg.senderId,
+      senderName: msg.senderName,
+      text: msg.content ?? '',
+      raw: msg.raw,
+      receivedAt: Date.now(),
+    };
   }
 }
 
-function readOptionSecret(options: Record<string, unknown>): string | null {
-  const secret = options.appSecret;
-  return typeof secret === 'string' && secret.length > 0 ? secret : null;
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export function createFeishuChannelAdapter(
+  config: ChannelConfig,
+  _credentialStore?: CredentialStore,
+): FeishuAdapter {
+  const channelId = config.id ?? `feishu-${Date.now()}`;
+  return new FeishuAdapter(channelId);
 }

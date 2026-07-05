@@ -23,6 +23,8 @@ import {
   resolveChannelSessionId,
 } from './channel-config';
 import { ChannelConnectionError } from './channel-errors';
+import { perfLog } from '../utils/perf-logger';
+import { channelDebugLog } from './channel-debug-log';
 
 export interface ChannelServiceDependencies {
   readonly runtime: RuntimeCoordinator;
@@ -51,12 +53,21 @@ export class ChannelService {
 
   /** Start all enabled channel configs; individual failures do not abort the batch */
   async start(configs: ChannelConfig[]): Promise<void> {
+    channelDebugLog(`ChannelService.start: ${configs.filter(c => c.enabled).length}/${configs.length} enabled channels`);
     for (const config of configs) {
-      if (!config.enabled) continue;
-      if (this.active.has(config.id)) continue;
+      if (!config.enabled) {
+        channelDebugLog(`ChannelService.start: SKIP id=${config.id} (disabled)`);
+        continue;
+      }
+      if (this.active.has(config.id)) {
+        channelDebugLog(`ChannelService.start: SKIP id=${config.id} (already active)`);
+        continue;
+      }
       try {
         await this.startChannel(config);
+        channelDebugLog(`ChannelService.start: OK id=${config.id} kind=${config.kind}`);
       } catch (err) {
+        channelDebugLog(`ChannelService.start: FAIL id=${config.id} kind=${config.kind} err=${String(err)}`);
         console.error(`[Channel] Failed to start "${config.id}":`, err);
       }
     }
@@ -64,12 +75,20 @@ export class ChannelService {
 
   /** Start (or restart) a single channel by config */
   async startChannel(config: ChannelConfig): Promise<void> {
+    channelDebugLog(`startChannel: BEGIN id=${config.id} kind=${config.kind}`);
     if (this.disposed) throw new ChannelConnectionError(config.id, 'service disposed');
     const existing = this.active.get(config.id);
     if (existing) {
+      channelDebugLog(`startChannel: id=${config.id} reconnecting (existing adapter found)`);
       await existing.adapter.disconnect();
     }
     const adapter = this.deps.registry.getAdapter(config);
+    if (!adapter) {
+      channelDebugLog(`startChannel: FAIL id=${config.id} kind=${config.kind} — no adapter in registry`);
+      throw new ChannelConnectionError(config.id, `No adapter for kind "${config.kind}"`);
+    }
+    channelDebugLog(`startChannel: adapter obtained for id=${config.id}, calling connect…`);
+    perfLog(`[Channel:${config.id}] connecting...`, 0);
     const handler: ChannelEventHandler = {
       onMessage: (message) => {
         void this.handleInbound(message, config);
@@ -80,6 +99,7 @@ export class ChannelService {
     this.active.set(config.id, { config, adapter });
     this.handlers.set(config.id, handler);
     await adapter.connect(config, handler);
+    channelDebugLog(`startChannel: OK id=${config.id} connected and active`);
   }
 
   async stopChannel(channelId: string): Promise<boolean> {
@@ -126,9 +146,15 @@ export class ChannelService {
   // ─── Inbound → submitInput → outbound reply ───────────────────────────
 
   private async handleInbound(message: InboundMessage, config: ChannelConfig): Promise<void> {
+    channelDebugLog(`[handleInbound] RECV channelId=${message.channelId} kind=${config.kind} senderId=${message.externalConversationId} text="${message.text?.slice(0, 80)}"`);
+
     let sessionId = await resolveChannelSessionId(message.channelId, message.externalConversationId);
+    channelDebugLog(`[handleInbound] resolveSession: ${sessionId ?? 'null (will create new)'}`);
+
     if (!sessionId) {
+      channelDebugLog(`[handleInbound] creating new session...`);
       sessionId = await this.deps.createSession(message.channelId, message);
+      channelDebugLog(`[handleInbound] new sessionId=${sessionId}`);
       await recordChannelSession(message.channelId, message.externalConversationId, sessionId);
     }
 
@@ -143,12 +169,17 @@ export class ChannelService {
     };
 
     try {
+      channelDebugLog(`[handleInbound] submitInput sessionId=${sessionId} text="${message.text?.slice(0, 80)}"`);
       const result = await this.deps.runtime.submitInput(envelope);
+      channelDebugLog(`[handleInbound] submitInput OK, status=${result?.status ?? 'unknown'}`);
       const replyText = extractReplyText(result);
+      channelDebugLog(`[handleInbound] replyText=${replyText ? '"' + replyText.slice(0, 80) + '"' : 'null'}`);
       if (replyText) {
         await this.safeReply(message.channelId, message.externalConversationId, replyText);
+        channelDebugLog(`[handleInbound] safeReply sent OK`);
       }
     } catch (err) {
+      channelDebugLog(`[handleInbound] ERROR: ${err instanceof Error ? err.message : String(err)}`);
       console.error(`[Channel:${message.channelId}] submitInput failed:`, err);
       await this.safeReply(
         message.channelId,

@@ -5,6 +5,7 @@
 
 import type { ChannelConfig } from './channel-types';
 import { ChannelRegistry } from './channel-registry';
+import { channelDebugLog } from './channel-debug-log';
 import { createFeishuChannelAdapter } from './channels/feishu/feishu-adapter';
 import type { CredentialStore } from '../providers/credential-store';
 
@@ -13,12 +14,15 @@ export interface CreateChannelRegistryOptions {
 }
 
 export function createChannelRegistry(options: CreateChannelRegistryOptions = {}): ChannelRegistry {
+  channelDebugLog('createChannelRegistry: registering factories…');
   const registry = new ChannelRegistry();
   const credentialStore = options.credentialStore;
 
   registry.register('feishu', (config: ChannelConfig) =>
     createFeishuChannelAdapter(config, credentialStore),
   );
+  channelDebugLog('createChannelRegistry: registered factory for kind=feishu');
 
+  channelDebugLog('createChannelRegistry: done');
   return registry;
 }

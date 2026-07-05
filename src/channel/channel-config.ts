@@ -5,6 +5,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
+import { channelDebugLog } from './channel-debug-log';
 import type {
   ChannelConfig,
   ChannelsConfig,
@@ -32,13 +33,30 @@ const DEFAULT_CHANNELS_CONFIG: ChannelsConfig = { channels: [] };
 
 export async function loadChannelsConfig(): Promise<ChannelsConfig> {
   const configPath = getChannelsConfigPath();
+  channelDebugLog(`loadChannelsConfig: path=${configPath}, exists=${existsSync(configPath)}`);
   try {
     const data = await readFile(configPath, 'utf-8');
-    const parsed = JSON.parse(data) as Partial<ChannelsConfig>;
-    return {
-      channels: Array.isArray(parsed.channels) ? parsed.channels : [],
+    const parsed = JSON.parse(data);
+    // 兼容顶层数组格式: [...] 自动转为 { channels: [...] }
+    if (Array.isArray(parsed)) {
+      const result = { channels: parsed as ChannelConfig[] };
+      for (const ch of result.channels) {
+        channelDebugLog(`loadChannelsConfig: channel id=${ch.id} kind=${ch.kind} enabled=${ch.enabled ?? 'default(true)'}`);
+      }
+      channelDebugLog(`loadChannelsConfig: loaded ${result.channels.length} channel(s) (array format)`);
+      return result;
+    }
+    const config = parsed as Partial<ChannelsConfig>;
+    const result = {
+      channels: Array.isArray(config.channels) ? config.channels : [],
     };
-  } catch {
+    for (const ch of result.channels) {
+      channelDebugLog(`loadChannelsConfig: channel id=${ch.id} kind=${ch.kind} enabled=${ch.enabled ?? 'default(true)'}`);
+    }
+    channelDebugLog(`loadChannelsConfig: loaded ${result.channels.length} channel(s)`);
+    return result;
+  } catch (err) {
+    channelDebugLog(`loadChannelsConfig: ERROR ${String(err)}`);
     return DEFAULT_CHANNELS_CONFIG;
   }
 }
