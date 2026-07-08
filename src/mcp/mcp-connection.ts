@@ -5,6 +5,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { createInterface, type Interface as ReadlineInterface } from 'readline';
 import type { McpServerConfig, McpConnectionState, McpToolDefinition } from './mcp-types';
+import { appLogger } from '../utils/logger.js';
 import {
   buildRequest,
   buildNotification,
@@ -89,7 +90,7 @@ export class McpConnection {
         child.stderr?.on('data', (data: Buffer) => {
           const msg = data.toString().trim();
           if (msg) {
-            console.debug(`[MCP:${config.id}] stderr:`, msg);
+            appLogger.debug(`[MCP:${config.id}] stderr:`, msg);
           }
         });
 
@@ -100,7 +101,7 @@ export class McpConnection {
         // Handle process exit
         child.on('exit', (code, signal) => {
           this.processExited = true;
-          console.debug(`[MCP:${config.id}] Process exited code=${code} signal=${signal} pending=${this.pending.size}`);
+          appLogger.debug(`[MCP:${config.id}] Process exited code=${code} signal=${signal} pending=${this.pending.size}`);
           this.cleanup();
           // Reject all pending requests
           for (const [id, pending] of this.pending) {
@@ -111,7 +112,7 @@ export class McpConnection {
         });
 
         child.stdin?.on('error', (err) => {
-          console.debug(`[MCP:${config.id}] stdin error: ${err.message}`);
+          appLogger.debug(`[MCP:${config.id}] stdin error: ${err.message}`);
         });
 
         child.on('error', (err) => {
@@ -198,7 +199,7 @@ export class McpConnection {
       throw new Error(`MCP process for "${this.serverId}" already exited, cannot send request "${method}"`);
     }
     if (!this.process?.stdin?.writable) {
-      console.debug(`[MCP:${this.serverId}] Cannot send request "${method}": stdin not writable (processExited=${this.processExited})`);
+      appLogger.debug(`[MCP:${this.serverId}] Cannot send request "${method}": stdin not writable (processExited=${this.processExited})`);
       throw new Error('MCP connection not established');
     }
 
@@ -208,7 +209,7 @@ export class McpConnection {
     return new Promise<JsonRpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(request.id);
-        console.debug(`[MCP:${this.serverId}] Request "${method}" id=${request.id} timed out after ${actualTimeout}ms`);
+        appLogger.debug(`[MCP:${this.serverId}] Request "${method}" id=${request.id} timed out after ${actualTimeout}ms`);
         reject(new Error(`MCP request "${method}" timed out after ${actualTimeout}ms`));
       }, actualTimeout);
 
@@ -216,13 +217,13 @@ export class McpConnection {
 
       try {
         const data = JSON.stringify(request) + '\n';
-        console.debug(`[MCP:${this.serverId}] >> ${method} id=${request.id} pending=${this.pending.size}`);
+        appLogger.debug(`[MCP:${this.serverId}] >> ${method} id=${request.id} pending=${this.pending.size}`);
         this.process!.stdin!.write(data);
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(request.id);
         const msg = `MCP write failed for "${method}" id=${request.id}: ${err instanceof Error ? err.message : String(err)}`;
-        console.debug(`[MCP:${this.serverId}] ${msg}`);
+        appLogger.debug(`[MCP:${this.serverId}] ${msg}`);
         reject(new Error(msg));
       }
     });
@@ -252,18 +253,18 @@ export class McpConnection {
 
   private sendNotification(method: string, params?: unknown): void {
     if (this.processExited) {
-      console.debug(`[MCP:${this.serverId}] Cannot send notification "${method}": process already exited`);
+      appLogger.debug(`[MCP:${this.serverId}] Cannot send notification "${method}": process already exited`);
       return;
     }
     if (!this.process?.stdin?.writable) {
-      console.debug(`[MCP:${this.serverId}] Cannot send notification "${method}": stdin not writable (processExited=${this.processExited})`);
+      appLogger.debug(`[MCP:${this.serverId}] Cannot send notification "${method}": stdin not writable (processExited=${this.processExited})`);
       return;
     }
     const notification = buildNotification(method, params);
     try {
       this.process.stdin.write(JSON.stringify(notification) + '\n');
     } catch (err) {
-      console.debug(`[MCP:${this.serverId}] Write failed for notification "${method}": ${err instanceof Error ? err.message : String(err)}`);
+      appLogger.debug(`[MCP:${this.serverId}] Write failed for notification "${method}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

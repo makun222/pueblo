@@ -474,4 +474,128 @@ describe('edit tool', () => {
       endLine: 3,
     });
   });
+
+  describe('line mode', () => {
+    it('replaces a single line with empty oldText + startLine + endLine', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-line-'));
+      tempDirs.push(tempDir);
+      const filePath = path.join(tempDir, 'sample.txt');
+      fs.writeFileSync(filePath, 'line1\nline2\nline3');
+
+      const editTool = createEditTool();
+      const result = await editTool({
+        cwd: tempDir,
+        path: 'sample.txt',
+        oldText: '',
+        newText: 'replaced',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.status).toBe('succeeded');
+
+      const content = fs.readFileSync(filePath, 'utf-8');
+      expect(content).toBe('line1\nreplaced\nline3');
+    });
+
+    it('replaces multiple lines with empty oldText + startLine + endLine', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-line-'));
+      tempDirs.push(tempDir);
+      const filePath = path.join(tempDir, 'sample.txt');
+      fs.writeFileSync(filePath, 'line1\nline2\nline3\nline4');
+
+      const editTool = createEditTool();
+      const result = await editTool({
+        cwd: tempDir,
+        path: 'sample.txt',
+        oldText: '',
+        newText: 'new2\nnew3',
+        startLine: 2,
+        endLine: 3,
+      });
+
+      expect(result.status).toBe('succeeded');
+
+      const content = fs.readFileSync(filePath, 'utf-8');
+      expect(content).toBe('line1\nnew2\nnew3\nline4');
+    });
+
+    it('replaces from startLine to end of file when endLine is omitted', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-line-'));
+      tempDirs.push(tempDir);
+      const filePath = path.join(tempDir, 'sample.txt');
+      fs.writeFileSync(filePath, 'line1\nline2\nline3');
+
+      const editTool = createEditTool();
+      const result = await editTool({
+        cwd: tempDir,
+        path: 'sample.txt',
+        oldText: '',
+        newText: 'replaced2\nreplaced3',
+        startLine: 2,
+      });
+
+      expect(result.status).toBe('succeeded');
+
+      const content = fs.readFileSync(filePath, 'utf-8');
+      expect(content).toBe('line1\nreplaced2\nreplaced3');
+    });
+
+    it('replaces from start of file when only endLine is provided', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-line-'));
+      tempDirs.push(tempDir);
+      const filePath = path.join(tempDir, 'sample.txt');
+      fs.writeFileSync(filePath, 'line1\nline2\nline3');
+
+      const editTool = createEditTool();
+      const result = await editTool({
+        cwd: tempDir,
+        path: 'sample.txt',
+        oldText: '',
+        newText: 'replaced',
+        endLine: 2,
+      });
+
+      expect(result.status).toBe('succeeded');
+
+      const content = fs.readFileSync(filePath, 'utf-8');
+      expect(content).toBe('replaced\nline3');
+    });
+
+    it('handles out-of-bounds startLine gracefully with an error', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-line-'));
+      tempDirs.push(tempDir);
+      const filePath = path.join(tempDir, 'sample.txt');
+      fs.writeFileSync(filePath, 'line1\nline2');
+
+      const editTool = createEditTool();
+      const result = await editTool({
+        cwd: tempDir,
+        path: 'sample.txt',
+        oldText: '',
+        newText: 'x',
+        startLine: 999,
+        endLine: 999,
+      });
+
+      expect(result.status).toBe('failed');
+    });
+
+    it('fails gracefully when using line mode on a non-existent file', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-edit-line-'));
+      tempDirs.push(tempDir);
+
+      const editTool = createEditTool();
+      const result = await editTool({
+        cwd: tempDir,
+        path: 'nonexistent.txt',
+        oldText: '',
+        newText: 'content',
+        startLine: 1,
+        endLine: 1,
+      });
+
+      expect(result.status).toBe('failed');
+    });
+  });
 });

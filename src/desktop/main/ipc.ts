@@ -27,6 +27,7 @@ import type {
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
 import { perfEnd, perfLog, perfStart } from '../../utils/perf-logger';
+import { channelLogger } from '../../utils/logger.js';
 import type { DesktopLoopJobManager, CallModelFn } from './loop-job-manager.js';
 import { AppWindow } from './app-window.js';
 import type { LoopConfig } from '../../agent/loop-runner.js';
@@ -183,7 +184,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
   // Start any configured, enabled channels (best-effort; failures are logged)
   loadChannelsConfig()
     .then((channelConfig) => channelService.start(channelConfig.channels))
-    .catch((err) => console.error('[Channel] startup failed:', err));
+    .catch((err) => channelLogger.error('[Channel] startup failed:', err));
 
   const executeInput = async (
     envelope: IpcInputEnvelope,

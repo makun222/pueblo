@@ -144,12 +144,12 @@ export function buildEditApprovalPreview(request: EditToolRequest): EditApproval
 
     return {
       title: `Allow edit in ${preparedEdit.relativePath}?`,
-      summary: buildEditPreviewSummary(preparedEdit.relativePath, preparedEdit.scope.label, request.oldText, request.newText),
+      summary: buildEditPreviewSummary(preparedEdit.relativePath, preparedEdit.scope.label, preparedEdit.normalizedOldText, request.newText),
       detail: [
         `Path: ${preparedEdit.relativePath}`,
         `Scope: ${preparedEdit.scope.label}`,
         matchSummary,
-        formatDiffPreview(preparedEdit.scope.label, request.oldText, request.newText, {
+        formatDiffPreview(preparedEdit.scope.label, preparedEdit.normalizedOldText, request.newText, {
           oldPrefix: '-',
           newPrefix: '+',
           maxLinesPerSide: 10,
@@ -207,10 +207,15 @@ function prepareEditRequest(request: EditToolRequest): PreparedEditRequest {
 
   const content = fs.readFileSync(absolutePath, 'utf8');
   const normalizedContent = normalizeLineEndings(content);
-  const normalizedOldText = normalizeLineEndings(request.oldText);
   const normalizedNewText = normalizeLineEndings(request.newText);
   const scope = resolveEditScope(normalizedContent, request.startLine, request.endLine);
   const scopedContent = normalizedContent.slice(scope.startOffset, scope.endOffset);
+
+  // Line-mode: extract the targeted lines from file content as oldText
+  const isLineMode = request.oldText.length === 0 && (request.startLine !== undefined || request.endLine !== undefined);
+  const normalizedOldText = isLineMode
+    ? extractLines(normalizedContent, request.startLine, request.endLine)
+    : normalizeLineEndings(request.oldText);
 
   return {
     absolutePath,
@@ -221,7 +226,7 @@ function prepareEditRequest(request: EditToolRequest): PreparedEditRequest {
     normalizedNewText,
     scope,
     scopedContent,
-    matchCount: countOccurrences(scopedContent, normalizedOldText),
+    matchCount: isLineMode ? 1 : countOccurrences(scopedContent, normalizedOldText),
   };
 }
 
@@ -231,9 +236,7 @@ function validateEditRequest(request: EditToolRequest): void {
     throw new Error('Path is required');
   }
 
-  if (request.oldText.length === 0 && (request.startLine !== undefined || request.endLine !== undefined)) {
-    throw new Error('startLine and endLine are not supported when oldText is empty');
-  }
+  // Line-mode: oldText can be empty when startLine/endLine are provided
 
   if (
     request.startLine !== undefined
@@ -266,7 +269,7 @@ function resolveEditPath(workspaceRoot: string, requestedPath: string): Resolved
 }
 
 function isCreateFileEdit(request: EditToolRequest): boolean {
-  return request.oldText.length === 0;
+  return request.startLine === undefined && request.endLine === undefined && request.oldText.length === 0;
 }
 
 function prepareTextEditOutcome(request: EditToolRequest): PendingEditOutcome {
@@ -296,14 +299,14 @@ function prepareTextEditOutcome(request: EditToolRequest): PendingEditOutcome {
     output: [
       `path: ${preparedEdit.relativePath}`,
       `scope: ${preparedEdit.scope.label}`,
-      `oldTextChars: ${request.oldText.length}`,
+      `oldTextChars: ${preparedEdit.normalizedOldText.length}`,
       `newTextChars: ${request.newText.length}`,
     ],
     successSummary: `Edited ${preparedEdit.relativePath} by replacing one exact match${preparedEdit.scope.label === 'file' ? '' : ` within ${preparedEdit.scope.label}`}`,
     reviewDetail: [
       `Path: ${preparedEdit.relativePath}`,
       `Scope: ${preparedEdit.scope.label}`,
-      formatDiffPreview(preparedEdit.scope.label, request.oldText, request.newText, {
+      formatDiffPreview(preparedEdit.scope.label, preparedEdit.normalizedOldText, request.newText, {
         oldPrefix: '-',
         newPrefix: '+',
         maxLinesPerSide: 10,
@@ -688,6 +691,13 @@ function restoreLineEndings(content: string, lineEnding: '\n' | '\r\n'): string 
   }
 
   return content.replace(/\n/g, '\r\n');
+}
+
+function extractLines(content: string, startLine?: number, endLine?: number): string {
+  const lines = content.split('\n');
+  const startIdx = startLine !== undefined ? Math.max(0, startLine - 1) : 0;
+  const endIdx = endLine !== undefined ? Math.min(endLine, lines.length) : lines.length;
+  return lines.slice(startIdx, endIdx).join('\n');
 }
 
 function countOccurrences(content: string, search: string): number {

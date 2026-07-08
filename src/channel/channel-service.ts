@@ -25,6 +25,7 @@ import {
 import { ChannelConnectionError } from './channel-errors';
 import { perfLog } from '../utils/perf-logger';
 import { channelDebugLog } from './channel-debug-log';
+import { channelLogger } from '../utils/logger.js';
 
 export interface ChannelServiceDependencies {
   readonly runtime: RuntimeCoordinator;
@@ -68,7 +69,7 @@ export class ChannelService {
         channelDebugLog(`ChannelService.start: OK id=${config.id} kind=${config.kind}`);
       } catch (err) {
         channelDebugLog(`ChannelService.start: FAIL id=${config.id} kind=${config.kind} err=${String(err)}`);
-        console.error(`[Channel] Failed to start "${config.id}":`, err);
+        channelLogger.error(`Failed to start "${config.id}":`, err);
       }
     }
   }
@@ -93,8 +94,8 @@ export class ChannelService {
       onMessage: (message) => {
         void this.handleInbound(message, config);
       },
-      onError: (error) => console.error(`[Channel:${config.id}] error:`, error),
-      onStatusChange: (state) => console.debug(`[Channel:${config.id}] status=${state.status}`),
+      onError: (error) => channelLogger.error(`[${config.id}] error:`, error),
+      onStatusChange: (state) => channelLogger.debug(`[${config.id}] status=${state.status}`),
     };
     this.active.set(config.id, { config, adapter });
     this.handlers.set(config.id, handler);
@@ -171,7 +172,7 @@ export class ChannelService {
     try {
       channelDebugLog(`[handleInbound] submitInput sessionId=${sessionId} text="${message.text?.slice(0, 80)}"`);
       const result = await this.deps.runtime.submitInput(envelope);
-      channelDebugLog(`[handleInbound] submitInput OK, status=${result?.status ?? 'unknown'}`);
+      channelDebugLog(`[handleInbound] submitInput OK, status=${result?.code ?? 'unknown'}`);
       const replyText = extractReplyText(result);
       channelDebugLog(`[handleInbound] replyText=${replyText ? '"' + replyText.slice(0, 80) + '"' : 'null'}`);
       if (replyText) {
@@ -180,7 +181,7 @@ export class ChannelService {
       }
     } catch (err) {
       channelDebugLog(`[handleInbound] ERROR: ${err instanceof Error ? err.message : String(err)}`);
-      console.error(`[Channel:${message.channelId}] submitInput failed:`, err);
+      channelLogger.error(`[${message.channelId}] submitInput failed:`, err);
       await this.safeReply(
         message.channelId,
         message.externalConversationId,
@@ -194,7 +195,7 @@ export class ChannelService {
     try {
       await this.send(channelId, { externalConversationId, text });
     } catch (err) {
-      console.error(`[Channel:${channelId}] reply failed:`, err);
+      channelLogger.error(`[${channelId}] reply failed:`, err);
     }
   }
 }

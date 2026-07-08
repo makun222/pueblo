@@ -20,6 +20,7 @@ import {
 } from '@larksuite/channel';
 import type { CredentialStore } from '../../../providers/credential-store';
 import { channelDebugLog } from '../../channel-debug-log';
+import { channelLogger } from '../../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,7 +89,7 @@ export class FeishuAdapter extends BaseChannelAdapter {
 
       const unsubError = larkChannel.on('error', (err: unknown) => {
         channelDebugLog(`FeishuAdapter: larkChannel error: ${String(err)}`);
-        console.error('feishu channel error', err);
+        channelLogger.error('feishu channel error', err);
         this.handler?.onError(
           err instanceof Error ? err : new Error(String(err)),
         );
@@ -101,11 +102,11 @@ export class FeishuAdapter extends BaseChannelAdapter {
         await larkChannel.connect();
         this.setStatus('connected');
         channelDebugLog('FeishuAdapter.connect: OK — WebSocket connected');
-        console.log('feishu channel connected');
+        channelLogger.info('feishu channel connected');
       } catch (err) {
         channelDebugLog(`FeishuAdapter.connect: larkChannel.connect() FAILED: ${String(err)}`);
         this.setStatus('disconnected', String(err));
-        console.error('feishu connect failed', err);
+        channelLogger.error('feishu connect failed', err);
         throw err;
       }
     } catch (err) {
@@ -123,13 +124,13 @@ export class FeishuAdapter extends BaseChannelAdapter {
       try {
         await this.larkChannel.disconnect();
       } catch (err) {
-        console.warn('feishu disconnect error', err);
+        channelLogger.warn('feishu disconnect error', err);
       }
       this.larkChannel = null;
     }
     this.handler = null;
     this.setStatus('disconnected');
-    console.log('feishu channel disconnected');
+    channelLogger.info('feishu channel disconnected');
   }
 
   async send(message: OutboundMessage): Promise<ChannelSendResult> {
@@ -158,7 +159,7 @@ export class FeishuAdapter extends BaseChannelAdapter {
 
       return { ok: true, externalMessageId: result.messageId };
     } catch (err) {
-      console.error('feishu send failed', err);
+      channelLogger.error('feishu send failed', err);
       return { ok: false, error: String(err) };
     }
   }

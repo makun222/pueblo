@@ -1,4 +1,5 @@
 import type { LoopProgressEvent, OnRoundProgress } from '../shared/result.ts';
+import { perfLogger } from '../utils/logger';
 export type { LoopProgressEvent, OnRoundProgress };
 
 // ---------------------------------------------------------------------------
@@ -203,7 +204,7 @@ export class LoopRunner {
       round: number; totalRounds: number; elapsed?: number;
       ok?: boolean; tokens?: number; outputLen?: number;
     }) => {
-      console.log(JSON.stringify({
+      perfLogger.info(JSON.stringify({
         event: 'loop_round', phase, timestamp: new Date().toISOString(), ...data,
       }));
     };

@@ -1,98 +1,32 @@
-import fs from 'node:fs';
-import path from 'node:path';
+﻿/**
+ * LLM response logger — wraps the unified Logger for NDJSON-format LLM
+ * interaction logging.
+ *
+ * Output directory: .logs/llm/llm-{YYYY-MM-DD}.jsonl  (single NDJSON file per day).
+ *
+ * Maintains backward-compatible createLlmResponseLogger / LlmResponseLogger types.
+ */
 
-export interface LlmResponseLoggerOptions {
-  readonly baseDir?: string;
-  readonly now?: () => Date;
-}
+import { llmLogger } from '../utils/logger.js';
 
-export interface LlmResponseLogEntry {
-  readonly providerId: string;
-  readonly category: string;
-  readonly message: string;
-  readonly requestUrl?: string;
-  readonly modelId?: string;
-  readonly requestBody?: string;
-  readonly requestPayload?: unknown;
-  readonly promptMessages?: unknown;
-  readonly requestMetrics?: unknown;
-  readonly status?: number;
-  readonly statusText?: string;
-  readonly responseText?: string;
-  readonly payload?: unknown;
-  readonly details?: unknown;
-}
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-export interface LlmResponseLogger {
-  log(entry: LlmResponseLogEntry): void;
-}
+export type LlmResponseLogEntry = Record<string, unknown>;
 
-export function createLlmResponseLogger(options: LlmResponseLoggerOptions = {}): LlmResponseLogger {
-  const baseDir = options.baseDir ?? path.join(process.cwd(), 'logs', 'llmRespons');
-  const now = options.now ?? (() => new Date());
+export type LlmResponseLogger = {
+  log: (entry: LlmResponseLogEntry) => Promise<void>;
+};
 
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export function createLlmResponseLogger(_options?: { baseDir?: string }): LlmResponseLogger {
   return {
-    log(entry: LlmResponseLogEntry): void {
-      try {
-        fs.mkdirSync(baseDir, { recursive: true });
-
-        const timestamp = now();
-        const isoTimestamp = timestamp.toISOString();
-        const fileName = `${toFileSafeTimestamp(isoTimestamp)}-${sanitizeSegment(entry.providerId)}-${sanitizeSegment(entry.category)}.json`;
-        const filePath = path.join(baseDir, fileName);
-
-        fs.writeFileSync(filePath, JSON.stringify({
-          timestamp: isoTimestamp,
-          ...entry,
-          requestPayload: normalizeUnknown(entry.requestPayload),
-          promptMessages: normalizeUnknown(entry.promptMessages),
-          requestMetrics: normalizeUnknown(entry.requestMetrics),
-          payload: normalizeUnknown(entry.payload),
-          details: normalizeUnknown(entry.details),
-        }, null, 2), 'utf8');
-      } catch {
-        // Logging must never break provider execution.
-      }
+    async log(entry: LlmResponseLogEntry): Promise<void> {
+      llmLogger.llmInteraction(entry);
     },
   };
-}
-
-function normalizeUnknown(value: unknown): unknown {
-  if (value instanceof Error) {
-    const normalized: Record<string, unknown> = {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-    };
-
-    for (const propertyName of Object.getOwnPropertyNames(value)) {
-      if (propertyName === 'name' || propertyName === 'message' || propertyName === 'stack') {
-        continue;
-      }
-
-      normalized[propertyName] = normalizeUnknown(Reflect.get(value, propertyName));
-    }
-
-    return normalized;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeUnknown(item));
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, nestedValue]) => [key, normalizeUnknown(nestedValue)]),
-    );
-  }
-
-  return value ?? null;
-}
-
-function sanitizeSegment(value: string): string {
-  return value.trim().replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'entry';
-}
-
-function toFileSafeTimestamp(value: string): string {
-  return value.replace(/[:.]/g, '-');
 }

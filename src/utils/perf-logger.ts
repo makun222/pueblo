@@ -1,78 +1,41 @@
-/**
- * Minimal performance logger for getRuntimeStatus bottleneck analysis.
- * Writes to .logs/perf-{date}.log in the workspace root.
- * Zero dependencies —uses synchronous fs writes to avoid delaying the process.
+﻿/**
+ * Performance & Amber logger — wraps the unified Logger with backward-compatible
+ * function signatures.
+ *
+ * Output directory: .logs/perf/  and  .logs/amber/  (daily-rolled).
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 
-const PERF_LOG_DIR = '.logs';
+import { perfLogger, amberLogger } from './logger.js';
 
-function getLogPath(): string {
-  const root = process.cwd();
-  const dir = path.join(root, PERF_LOG_DIR);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  const date = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  return path.join(dir, `perf-${date}.log`);
+// ---------------------------------------------------------------------------
+// perfLog — daily-rolled text (was single-run file per start, now unified)
+// ---------------------------------------------------------------------------
+
+export function perfLog(label: string, ms: number, extra?: string): void {
+  perfLogger.perf(label, ms, extra);
 }
 
-function now(): number {
+// ---------------------------------------------------------------------------
+// perfStart / perfEnd — in-memory timer
+// ---------------------------------------------------------------------------
+
+export function perfStart(_label: string): number {
   return performance.now();
 }
 
-function ts(): string {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${hh}:${mm}:${ss}.${ms}`;
-}
-
-export function perfLog(label: string, ms: number, extra?: string): void {
-  const line = `[${ts()}] ${label} | ${ms.toFixed(1)}ms${extra ? ` | ${extra}` : ''}\n`;
-  try {
-    fs.appendFileSync(getLogPath(), line, 'utf-8');
-  } catch {
-    // silently ignore write failures
-  }
-}
-
-export function perfStart(label: string): number {
-  const t = now();
-  const line = `[${ts()}] START: ${label}\n`;
-  try {
-    fs.appendFileSync(getLogPath(), line, 'utf-8');
-  } catch { /* ignore */ }
-  return t;
-}
-
 export function perfEnd(label: string, start: number, extra?: string): void {
-  const elapsed = now() - start;
-  perfLog(`END: ${label}`, elapsed, extra);
+  const elapsed = performance.now() - start;
+  perfLogger.perf(`END: ${label}`, elapsed, extra);
 }
 
 // ---------------------------------------------------------------------------
-// General-purpose Amber run logger -- writes to .logs/amber-{date}.log
+// amberLog — backward-compatible amber pipeline logger
 // ---------------------------------------------------------------------------
-
-function getAmberLogPath(): string {
-  const root = process.cwd();
-  const dir = path.join(root, PERF_LOG_DIR);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  const date = new Date().toISOString().slice(0, 10);
-  return path.join(dir, 'amber-' + date + '.log');
-}
 
 export function amberLog(level: 'info' | 'warn' | 'error', message: string): void {
-  const line = '[' + ts() + '][' + level.toUpperCase() + '] ' + message + "\n";
-  try {
-    fs.appendFileSync(getAmberLogPath(), line, 'utf-8');
-  } catch {
-    // silently ignore write failures
+  switch (level) {
+    case 'error': amberLogger.error(message); break;
+    case 'warn':  amberLogger.warn(message);  break;
+    default:      amberLogger.info(message);  break;
   }
 }

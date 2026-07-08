@@ -6,6 +6,8 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import fs from 'node:fs';
 import path from 'node:path';
+import { setAutoSaveEnabled } from '../shared/auto-save-state';
+import { amberLogger } from '../utils/logger';
 import { perfEnd, perfLog, perfStart } from '../utils/perf-logger';
 import { guardVagueGoal, type CallModelFn } from '../utils/guard-vague-goal';
 import { Command } from 'commander';
@@ -26,7 +28,9 @@ import {
   type ToolApprovalRequest,
 } from '../agent/task-runner';
 import { InputRouter } from '../commands/input-router';
+import { createAgentCommand } from '../commands/agent-command';
 import { createModelCommand } from '../commands/model-command';
+import { createProviderCommand } from '../commands/provider-command';
 import { createProviderConfigCommand } from '../commands/provider-config-command';
 import {
   createMemoryAddCommand,
@@ -535,6 +539,7 @@ export function createCliDependencies(
     userInputOverride?: string | null,
     uploadedAttachments: InputAttachmentManifest[] = [],
     skillId?: string | null,
+    sessionId?: string | null,
   ) => {
     const trimmedGoal = goal.trim();
     const normalizedUserInput = userInputOverride?.trim() || trimmedGoal;
@@ -551,7 +556,7 @@ export function createCliDependencies(
     // guarded goal will be validated after providerId/modelId are resolved
 
     const resolvedContext = await contextResolver.resolve({
-      activeSessionId: selectionState.sessionId ?? currentConfig.defaultSessionId,
+      activeSessionId: sessionId ?? selectionState.sessionId ?? currentConfig.defaultSessionId,
       explicitProviderId: selectionState.providerId,
       explicitModelId: selectionState.modelId,
       pendingUserInput: normalizedUserInput,
@@ -589,7 +594,7 @@ export function createCliDependencies(
       return failureResult('VAGUE_GOAL', `Goal is too vague: ${guardResult.data!.reason}`, ['Please provide a more specific task goal.']);
     }
     */
-    let sessionId = resolvedContext.taskContext.sessionId;
+    sessionId = sessionId ?? resolvedContext.taskContext.sessionId;
     if (!sessionId) {
       const session = sessionService.createSession(createSessionTitle(trimmedGoal), modelId, ensureAgentInstance());
       sessionId = session.id;
@@ -1219,7 +1224,7 @@ export function createCliDependencies(
 
   const inputRouter = new InputRouter({
     dispatcher,
-    runTaskFromText: (text, attachments, skillId) => runTask(text, 'Plain-text task execution', undefined, attachments ?? [], skillId),
+    runTaskFromText: (text, attachments, skillId, sessionId) => runTask(text, 'Plain-text task execution', undefined, attachments ?? [], skillId, sessionId),
     routeTextInput: async (text, attachments) => {
       if (getActiveWorkflow()) {
         return continueActiveWorkflow(text, 'Plain-text active workflow continuation', attachments ?? []);
@@ -1276,7 +1281,7 @@ export function createCliDependencies(
   const channelRegistry = createChannelRegistry({ credentialStore });
   const createSessionForChannel = async (_channelId: string, message: import('../channel/channel-types').InboundMessage): Promise<string> => {
     const title = message.text ? `Channel: ${message.text.slice(0, 40)}` : 'Channel session';
-    const agentId = selectionState.modelId ?? ensureAgentInstance();
+    const agentId = ensureAgentInstance();
     return (await sessionService.createSession(title, undefined, agentId)).id;
   };
   const channelService = new ChannelService({
@@ -1423,6 +1428,12 @@ export function createCliDependencies(
     return setWorkspaceRoot(settingArgs.join(' ').trim() || process.cwd());
   });
 
+  dispatcher.register('/fast', async () => {
+    setAutoSaveEnabled(true);
+    taskRunner.setAllowAll(true);
+    return successResult('FAST_ENABLED', 'fast mode enabled (auto-save on + isAllowALL=true)');
+  });
+
   dispatcher.register('/amber', async (args) => {
     const [subcommand, ...rest] = args;
     if (subcommand !== 'init') {
@@ -1501,6 +1512,41 @@ export function createCliDependencies(
     return runTask(args.join(' '), 'CLI task execution');
   });
 
+  // /provider 命令
+  dispatcher.register('/provider', createProviderCommand({
+    listProviderProfiles: () => providerRegistry.listProfiles(),
+    setSelection: (providerId: string, modelId?: string): void => {
+      selectionState.providerId = providerId;
+      if (modelId !== undefined) {
+        selectionState.modelId = modelId;
+      }
+    },
+    getSelection: () => ({
+      providerId: selectionState.providerId,
+      modelId: selectionState.modelId,
+    }),
+  }));
+
+  // /agent 命令
+  dispatcher.register('/agent', createAgentCommand({
+    listAgentProfiles: () => agentInstanceService.listProfileTemplates(),
+    startAgentSession: async (profileId: string) => {
+      activeAgentProfileId = profileId;
+      const agentInstance = agentInstanceService.markActive(
+        agentInstanceService.getOrCreateDefaultAgentInstance(profileId, currentWorkspace).id,
+      );
+      activeAgentInstanceId = agentInstance.id;
+      const mostRecentSession = sessionService.getMostRecentSessionForAgentInstance(agentInstance.id);
+      const session = mostRecentSession
+        ? sessionService.selectSession(mostRecentSession.id)
+        : sessionService.createSession(
+            `${agentInstance.profileName} session`,
+            selectionState.modelId,
+            agentInstance.id,
+          );
+      await syncSelectionFromSession(session.id);
+    },
+  }));
 
 
   const currentSession = options.startNewSession && !options.deferAgentSelection

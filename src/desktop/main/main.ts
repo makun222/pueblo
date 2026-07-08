@@ -10,6 +10,7 @@ import { DesktopLoopJobManager } from './loop-job-manager';
 import { McpClientManager } from '../../mcp/mcp-client';
 import { loadConfig, saveConfig } from '../../mcp/mcp-config';
 import { registerMcpIpcHandlers } from '../../mcp/mcp-ipc';
+import { appLogger, Logger } from '../../utils/logger.js';
 
 let appWindow: AppWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -56,7 +57,7 @@ async function createMainWindow(): Promise<void> {
     const mcpClient = new McpClientManager();
     if (mcpServers.length > 0) {
       void mcpClient.restartServers(mcpServers).catch((err: any) => {
-        console.error('[MCP] Failed to start MCP servers:', err);
+        appLogger.error('[MCP] Failed to start MCP servers:', err);
       });
     }
 
@@ -71,7 +72,7 @@ async function createMainWindow(): Promise<void> {
           await saveConfig({ servers: newServers });
           await mcpClient.restartServers(newServers);
         } catch (err: any) {
-          console.error('[MCP] Failed to save/reload MCP servers:', err);
+          appLogger.error('[MCP] Failed to save/reload MCP servers:', err);
         }
       },
     );
@@ -253,6 +254,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   disposeDesktopRuntime?.();
   disposeDesktopRuntime = null;
+  Logger.cleanupAll();
 });
 
 app.on('activate', () => {

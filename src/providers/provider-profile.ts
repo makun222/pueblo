@@ -1,4 +1,5 @@
 import type { ProviderCapability, ProviderModel, ProviderProfile } from '../shared/schema';
+export type { ProviderProfile };
 import { providerProfileSchema } from '../shared/schema';
 
 export interface CreateProviderProfileInput {

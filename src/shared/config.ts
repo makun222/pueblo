@@ -273,7 +273,19 @@ export function loadAppConfig(options: ConfigLoadOptions = {}): AppConfig {
   const configPath = resolveConfigPath(options);
 
   if (!fs.existsSync(configPath)) {
-    return appConfigSchema.parse({});
+    const defaults = appConfigSchema.parse({});
+    return {
+      ...defaults,
+      databasePath: path.resolve(cwd, defaults.databasePath),
+      pepe: {
+        ...defaults.pepe,
+        memoryBasePath: path.resolve(cwd, defaults.pepe.memoryBasePath),
+      },
+      workflow: {
+        ...defaults.workflow,
+        runtimeDirectory: path.resolve(cwd, defaults.workflow.runtimeDirectory),
+      },
+    };
   }
 
   const raw = fs.readFileSync(configPath, 'utf8');

@@ -2,6 +2,7 @@
 // MCP Client — Singleton orchestrator for all MCP server connections
 // ---------------------------------------------------------------------------
 
+import { appLogger } from '../utils/logger.js';
 import type { McpServerConfig, McpConnectionState, McpToolDefinition } from './mcp-types';
 import { McpConnection } from './mcp-connection';
 import { loadConfig, upsertServerConfig, deleteServerConfig } from './mcp-config';
@@ -53,7 +54,7 @@ export class McpClientManager {
 
     for (const result of results) {
       if (result.status === 'rejected') {
-        console.error('[MCP] Server initialization error:', result.reason);
+        appLogger.error('[MCP] Server initialization error:', result.reason);
       }
     }
 
@@ -104,14 +105,14 @@ export class McpClientManager {
 
         if (attempt < maxRetries) {
           const delay = baseDelayMs * Math.pow(2, attempt); // 1s, 2s, 4s
-          console.warn(
+          appLogger.warn(
             `[MCP] Connection to "${config.id}" failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${errorMessage}`,
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           state.status = 'error';
           state.lastError = `Connection failed after ${maxRetries + 1} attempts: ${errorMessage}`;
-          console.error(
+          appLogger.error(
             `[MCP] Connection to "${config.id}" failed after ${maxRetries + 1} attempts: ${errorMessage}`,
           );
         }
@@ -209,7 +210,7 @@ export class McpClientManager {
 
         if (attempt < maxRetries) {
           const delay = baseDelayMs * Math.pow(2, attempt); // 1s, 2s, 4s
-          console.warn(
+          appLogger.warn(
             `[MCP] Test connection to "${config.id}" failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${lastError}`,
           );
           await new Promise((resolve) => setTimeout(resolve, delay));

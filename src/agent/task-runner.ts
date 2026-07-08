@@ -25,6 +25,7 @@ import {
   ExecuteTurnInput as CamelExecuteTurnInput,
   ExecuteTurnOutput as CamelExecuteTurnOutput,
 } from './camel/camel-types';
+import { appLogger } from '../utils/logger';
 import { amberLog } from '../utils/perf-logger';
 import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
@@ -227,9 +228,9 @@ export class AgentTaskRunner {
           JSON.stringify({ taskId, modelMessageTrace, stepTrace }, null, 2),
           'utf-8',
         );
-        console.log(`[task-runner] Context trace dumped: ${dumpPath}`);
+        appLogger.info(`Context trace dumped: ${dumpPath}`);
       } catch (dumpErr) {
-        console.warn('[task-runner] Failed to dump context trace:', dumpErr);
+        appLogger.warn('Failed to dump context trace:', dumpErr);
       }
 
       const enrichedOutput = this.createCompletedOutputSummary(
@@ -894,13 +895,13 @@ export class AgentTaskRunner {
         const { toolCall } = pr;
         const isShellExec = toolCall.toolName === 'shell_exec' || toolCall.toolName === 'exec';
         const command = isShellExec ? String((toolCall.args as { command?: string }).command ?? '') : '';
-        console.log(`tool call ${toolCall.toolName} with command "${command}".is approvalling: ${isShellExec && this.isMustApproval(command)}`);
+        appLogger.debug(`tool call ${toolCall.toolName} with command "${command}".is approvalling: ${isShellExec && this.isMustApproval(command)}`);
         if (isShellExec && this.isMustApproval(command)) {
           mustApprovalRequests.push(pr); // Still needs user approval
-          console.log(`tool call ${toolCall.toolName} with command "${command}".must approval`);
+          appLogger.debug(`tool call ${toolCall.toolName} with command "${command}".must approval`);
         } else {
           approvals.set(pr.request.toolCallId, 'allow-once'); // Auto-approve
-          console.log(`tool call ${toolCall.toolName} with command "${command}".auto-approved`);
+          appLogger.debug(`tool call ${toolCall.toolName} with command "${command}".auto-approved`);
         }
       }
 

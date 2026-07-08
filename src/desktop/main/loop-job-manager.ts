@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import {
 	LoopJobManager as AgentLoopJobManager,
 } from '../../agent/loop-job-manager.js';
+import { appLogger } from '../../utils/logger.js';
 import {
 	LoopRunner,
 } from '../../agent/loop-runner.js';
@@ -165,7 +166,7 @@ export class DesktopLoopJobManager {
 			this.agentManager.cancel(jobId);
 			return { ok: true };
 		} catch (e) {
-			console.error(`cancelLoopJob: agent cancel failed:`, e);
+			appLogger.error(`cancelLoopJob: agent cancel failed:`, e);
 			return { ok: false };
 		}
 	}
@@ -176,7 +177,7 @@ export class DesktopLoopJobManager {
 			this.agentManager.pauseJob(jobId);
 			return { ok: true };
 		} catch (e) {
-			console.error(`pauseJob: agent pause failed:`, e);
+			appLogger.error(`pauseJob: agent pause failed:`, e);
 			return { ok: false };
 		}
 	}
@@ -187,7 +188,7 @@ export class DesktopLoopJobManager {
 			this.agentManager.resumeJob(jobId);
 			return { ok: true };
 		} catch (e) {
-			console.error(`resumeJob: agent resume failed:`, e);
+			appLogger.error(`resumeJob: agent resume failed:`, e);
 			return { ok: false };
 		}
 	}

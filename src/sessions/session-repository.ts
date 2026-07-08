@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { RepositoryBase, fromJson, toJson, type RepositoryContext } from '../persistence/repository-base';
+import { sessionLogger } from '../utils/logger.js';
 import { agentSessionSummarySchema, sessionMessageSchema, sessionSchema, type AgentSessionSummary, type Session, type SessionMessage } from '../shared/schema';
 import { createSessionModel } from './session-model';
 
@@ -359,7 +360,7 @@ function deserializeMessageHistory(sessionId: string, serializedHistory: string,
       // Attempt to handle v1 entries with timestamp instead of createdAt
       const obj = entry as Record<string, unknown>;
       if (obj && typeof obj.timestamp === 'string') {
-        console.warn(`[session-repository] mapping legacy 'timestamp' to 'createdAt' for entry ${obj.id ?? '(no id)'}`);
+        sessionLogger.warn(`[session-repository] mapping legacy 'timestamp' to 'createdAt' for entry ${obj.id ?? '(no id)'}`);
         const mapped = sessionMessageSchema.safeParse({
           ...obj,
           createdAt: obj.timestamp,
@@ -370,7 +371,7 @@ function deserializeMessageHistory(sessionId: string, serializedHistory: string,
         }
       }
       // Still invalid — skip this single entry and continue
-      console.warn(`[session-repository] skipping invalid message entry ${(entry as Record<string, unknown>).id ?? '(no id)'}`);
+      sessionLogger.warn(`[session-repository] skipping invalid message entry ${(entry as Record<string, unknown>).id ?? '(no id)'}`);
       return [];
     }
 

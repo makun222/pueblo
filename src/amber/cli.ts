@@ -12,6 +12,7 @@ import { parseAgentMdFile } from './parsers/agent-template-parser.js';
 import { discoverSkills, discoverArtifactTemplates } from './template-resolver.js';
 import type { ExecuteTurnFn } from '../agent/camel/camel-types.js';
 import { generatePipeline } from './pipeline-generator.js';
+import { amberLogger } from '../utils/logger.js';
 import { amberLog } from '../utils/perf-logger.js';
 
 const defaultExecuteTurn: ExecuteTurnFn = async () => {
@@ -216,7 +217,7 @@ export async function amberInit(rawArgs: string[], executeTurn?: ExecuteTurnFn):
     } else if (args.spec) {
         requirement = fs.readFileSync(args.spec, 'utf-8');
     } else {
-        console.error('Error: --requirement or --spec is required');
+        amberLogger.error('Error: --requirement or --spec is required');
         process.exit(1);
     }
 
@@ -224,17 +225,17 @@ export async function amberInit(rawArgs: string[], executeTurn?: ExecuteTurnFn):
         args.output ??
         path.join(process.cwd(), 'generated-pipelines', slugify(requirement));
 
-    console.log(
+    amberLogger.info(
         `Generating pipeline for: "${requirement.slice(0, 80)}${requirement.length > 80 ? '...' : ''}"`,
     );
-    console.log(`Output: ${outputDir}`);
+    amberLogger.info(`Output: ${outputDir}`);
 
     const result = await generatePipeline({ requirement, outputDir });
 
-    console.log(`✓ Pipeline generated: ${result.pipelinePath}`);
+    amberLogger.info(`✓ Pipeline generated: ${result.pipelinePath}`);
 
     if (args.run) {
-        console.log('\nRunning generated pipeline...\n');
+        amberLogger.info('\nRunning generated pipeline...\n');
         // 运行 meta-pipeline（而不是骨架 pipeline.yaml），由 meta-pipeline 产出真正的 pipeline.yaml
         amberLog('info',`amberInit.runMetaPipeline,metaPipelinePath:${ result.metaPipelinePath }, pipelinePath:${ result.pipelinePath }`);
         await amberRun(['run', '--pipeline', result.metaPipelinePath], executeTurn);
@@ -266,8 +267,8 @@ export async function amberRun(rawArgs: string[], executeTurn?: ExecuteTurnFn): 
         throw new Error('Missing required argument: --repo-path');
     }
 
-    const runLog = (msg: string) => { console.log(msg); amberLog('info', msg); };
-    const runLogErr = (msg: string) => { console.log(msg); amberLog('error', msg); };
+    const runLog = (msg: string) => { amberLogger.info(msg); amberLog('info', msg); };
+    const runLogErr = (msg: string) => { amberLogger.error(msg); amberLog('error', msg); };
 
     const puebloPath = process.cwd();
     const amberContext = buildAmberRunContext({ puebloPath, cliArgs });
