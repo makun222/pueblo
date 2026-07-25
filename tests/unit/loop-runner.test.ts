@@ -1,135 +1,220 @@
-import { describe, it, expect, vi } from 'vitest';
-import { LoopRunner } from '../../src/agent/loop-runner.js';
-import { LoopJobManager } from '../../src/agent/loop-job-manager.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { LoopRunner, type LoopConfig, type LoopRoundResult, type RunRoundFn } from '../../src/agent/loop-runner.js';
+import { LoopJobManager, LoopJobStatus } from '../../src/agent/loop-job-manager.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeRoundFn(outputs: string[]): RunRoundFn {
+  let i = 0;
+  return async (cfg, _prev, _sig) => {
+    const out = outputs[i % outputs.length] ?? 'round ' + cfg.round + ' default';
+    i++;
+    return { output: out, tokenUsage: 100 };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// LoopRunner
+// ---------------------------------------------------------------------------
 
 describe('LoopRunner', () => {
-  it('parses --goal and --max-rounds correctly via createLoopCommand', async () => {
-    // 验证 createLoopCommand 能正确解析参数
-    const { createLoopCommand } = await import('../../src/commands/loop-command.js');
-    const mockTaskRunner = { run: vi.fn() } as any;
-    const mockContextResolver = { resolve: vi.fn() } as any;
-    const mockSessionService = {} as any;
+  let runner: LoopRunner;
 
-    const handler = createLoopCommand({
-      taskRunner: mockTaskRunner,
-      contextResolver: mockContextResolver,
-      sessionService: mockSessionService,
-    });
+  beforeEach(() => { runner = new LoopRunner(); });
+  afterEach(() => { vi.restoreAllMocks(); });
 
-    // 模拟输入: /loop --goal="写一个斐波那契函数" --max-rounds=3
-    const result = await handler({
-      type: 'message',
-      text: '/loop --goal="写一个斐波那契函数" --max-rounds=3',
-      sessionId: 'test-session',
-      userId: 'test-user',
-    });
-
-    expect(result.code).toBe('LOOP_COMPLETED');
-    expect(result.data).toHaveProperty('goal', '写一个斐波那契函数');
-    expect(result.data).toHaveProperty('maxRounds', 3);
+  // 1. basic rounds & finalSummary
+  it('should complete maxRounds and produce finalSummary', async () => {
+    const cfg: LoopConfig = { goal: 'task X', maxRounds: 3, judge: 'flag', flag: 'DONE:' };
+    const fn = makeRoundFn(['A', 'B', 'C']);
+    const r = await runner.run(cfg, fn);
+    expect(r.state).toBe('max_rounds');
+    expect(r.rounds).toHaveLength(3);
+    expect(r.finalSummary).toContain('A');
+    expect(r.finalSummary).toContain('B');
+    expect(r.finalSummary).toContain('C');
   });
 
-  it('runs maxRounds iterations and accumulates context', async () => {
-    const manager = new LoopJobManager();
-    const runRoundMock = vi.fn();
-    
-    // 第1轮返回初始斐波那契代码
-    runRoundMock.mockResolvedValueOnce({
-      output: 'function fibonacci(n) { if (n <= 1) return n; return fibonacci(n-1) + fibonacci(n-2); }',
-      tokenUsage: 150,
-    });
-    // 第2轮返回优化后的代码
-    runRoundMock.mockResolvedValueOnce({
-      output: 'function fibonacci(n) {\n  if (n <= 1) return n;\n  let a = 0, b = 1;\n  for (let i = 2; i <= n; i++) {\n    [a, b] = [b, a + b];\n  }\n  return b;\n}',
-      tokenUsage: 200,
-    });
-    // 第3轮返回带测试的代码
-    runRoundMock.mockResolvedValueOnce({
-      output: '// 斐波那契数列\nfunction fibonacci(n) {\n  if (n <= 1) return n;\n  let a = 0, b = 1;\n  for (let i = 2; i <= n; i++) {\n    [a, b] = [b, a + b];\n  }\n  return b;\n}\n\n// 测试\nconsole.log(fibonacci(10)); // 55',
-      tokenUsage: 250,
-    });
-
-    const runner = new LoopRunner({
-      goal: '写一个斐波那契函数',
-      maxRounds: 3,
-      loopJobManager: manager,
-      runRound: runRoundMock,
-      signal: new AbortController().signal,
-    });
-
-    const result = await runner.run();
-
-    // 验证运行了3轮
-    expect(runRoundMock).toHaveBeenCalledTimes(3);
-    expect(result.roundsCompleted).toBe(3);
-    
-    // 验证累计Token
-    expect(result.totalTokenUsage).toBe(600); // 150 + 200 + 250
-
-    // 验证最终输出包含最终轮次的内容
-    expect(result.output).toContain('fibonacci');
-    expect(result.output).toContain('55');
-
-    // 验证每轮的config传递正确
-    const firstCallArgs = runRoundMock.mock.calls[0][0];
-    expect(firstCallArgs.round).toBe(1);
-    expect(firstCallArgs.goal).toBe('写一个斐波那契函数');
-    expect(firstCallArgs.maxRounds).toBe(3);
-
-    // 验证第二轮收到了第一轮的上下文
-    const secondCallArgs = runRoundMock.mock.calls[1];
-    expect(secondCallArgs[0].round).toBe(2);
-    expect(secondCallArgs[1]!.output).toContain('fibonacci'); // prevResult
+  // 2. early goal detection via flag
+  it('should stop on goal_met when flag matches', async () => {
+    const cfg: LoopConfig = { goal: 'api', maxRounds: 10, judge: 'flag', flag: 'DONE:' };
+    const fn = makeRoundFn(['thinking', 'DONE: api designed']);
+    const r = await runner.run(cfg, fn);
+    expect(r.state).toBe('goal_met');
+    expect(r.rounds).toHaveLength(2);
   });
 
-  it('respects maxRounds=1 (single round)', async () => {
-    const manager = new LoopJobManager();
-    const runRoundMock = vi.fn().mockResolvedValue({
-      output: 'function add(a, b) { return a + b; }',
-      tokenUsage: 50,
-    });
-
-    const runner = new LoopRunner({
-      goal: '写一个加法函数',
-      maxRounds: 1,
-      loopJobManager: manager,
-      runRound: runRoundMock,
-      signal: new AbortController().signal,
-    });
-
-    const result = await runner.run();
-    expect(runRoundMock).toHaveBeenCalledTimes(1);
-    expect(result.roundsCompleted).toBe(1);
-    expect(result.output).toContain('add');
+  // 3. AbortSignal cancellation
+  it('should stop when aborted via signal', async () => {
+    const ctrl = new AbortController();
+    const cfg: LoopConfig = { goal: 'long', maxRounds: 20, judge: 'flag', signal: ctrl.signal };
+    const fn: RunRoundFn = async (c, _p, _s) => {
+      if (c.round === 1) ctrl.abort();
+      return { output: 'r' + c.round, tokenUsage: 10 };
+    };
+    const r = await runner.run(cfg, fn);
+    expect(r.state).toBe('cancelled');
+    expect(r.rounds.length).toBeLessThanOrEqual(2);
   });
 
-  it('supports cancellation via AbortSignal', async () => {
-    const manager = new LoopJobManager();
-    const ac = new AbortController();
-    const runRoundMock = vi.fn().mockImplementation(async (_config: any, _prev: any, signal: AbortSignal) => {
-      // 模拟长时间运行的任务
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, 10000);
-        signal.addEventListener('abort', () => {
-          clearTimeout(timer);
-          reject(new DOMException('Aborted', 'AbortError'));
-        });
-      });
-      return { output: 'never', tokenUsage: 0 };
-    });
+  // 4. token tracking
+  it('should track token usage', async () => {
+    const cfg: LoopConfig = { goal: 't', maxRounds: 3, judge: 'flag' };
+    const fn: RunRoundFn = async () => ({ output: 'x', tokenUsage: 300 });
+    const r = await runner.run(cfg, fn);
+    expect(r.rounds).toHaveLength(3);
+    expect(r.totalTokens).toBe(900);
+  });
+});
 
-    const runner = new LoopRunner({
-      goal: '测试取消',
-      maxRounds: 5,
-      loopJobManager: manager,
-      runRound: runRoundMock,
-      signal: ac.signal,
-    });
+// ---------------------------------------------------------------------------
+// LoopJobManager
+// ---------------------------------------------------------------------------
 
-    // 在启动后立即取消
-    const runPromise = runner.run();
-    ac.abort();
+describe('LoopJobManager', () => {
+  let runner: LoopRunner;
+  let mgr: LoopJobManager;
+  let fn: RunRoundFn;
 
-    await expect(runPromise).rejects.toThrow('Aborted');
+  beforeEach(() => {
+    runner = new LoopRunner();
+    fn = makeRoundFn(['j1', 'j2', 'DONE: ok']);
+    mgr = new LoopJobManager({ loopRunner: runner, runRound: fn });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  // 5. start & complete a job
+  it('should start and execute a job to completion', async () => {
+    const { jobId } = mgr.start({ goal: 'q', maxRounds: 3, judge: 'flag', flag: 'DONE:' });
+    expect(mgr.activeCount()).toBe(1);
+    const st = mgr.getState(jobId);
+    expect(st).not.toBeNull();
+    expect(st!.state).toBe('queued');
+
+    await mgr.waitForCompletion(jobId);
+
+    const done = mgr.getState(jobId);
+    expect(done!.state).toBe('completed');
+    expect(done!.results.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // 6. cancel a running job
+  it('should cancel a running job', async () => {
+    const slow: RunRoundFn = async (c, _p, _s) => {
+      await new Promise(r => setTimeout(r, 200));
+      return { output: 'slow' + c.round, tokenUsage: 10 };
+    };
+    const sm = new LoopJobManager({ loopRunner: runner, runRound: slow });
+    const { jobId } = sm.start({ goal: 's', maxRounds: 10, judge: 'flag' });
+    await new Promise(r => setTimeout(r, 50));
+    sm.cancel(jobId);
+    await sm.waitForCompletion(jobId);
+    expect(sm.getState(jobId)!.state).toBe('cancelled');
+  });
+});
+
+describe('buildFinalSummary', () => {
+  /** Helper: create a minimal LoopRunner to access private buildFinalSummary */
+  const makeRunner = () => {
+    const mockChatDriver = {
+      close: async () => {},
+      run: async () => ({ content: [{ type: 'text' as const, text: 'hi' }], stopReason: 'end_turn' as const }),
+    };
+    return new LoopRunner({ maxRounds: 2 } as LoopConfig, mockChatDriver);
+  };
+
+  const makeRound = (output: string): LoopRoundResult => ({
+    output,
+    iteration: 0,
+    tokenUsage: { input: 10, output: 5, total: 15, cache: 0 },
+    toolCalls: [],
+    stopReason: 'end_turn' as LoopRoundResult['stopReason'],
+  });
+
+  it('should return (no output) when rounds array is empty', () => {
+    const runner = makeRunner();
+    const result = (runner as any).buildFinalSummary('task-1', [], 0);
+    expect(result).toContain('(no output)');
+    expect(result).toContain('after 0 round(s)');
+    expect(result).not.toContain('---');
+  });
+
+  it('should return (no output) when all rounds have empty output', () => {
+    const runner = makeRunner();
+    const rounds: LoopRoundResult[] = [
+      makeRound(''),
+      makeRound(''),
+      makeRound('  '),
+    ];
+    const result = (runner as any).buildFinalSummary('task-2', rounds, 45);
+    expect(result).toContain('(no output)');
+    expect(result).toContain('after 3 round(s)');
+    expect(result).toContain('45 tokens');
+    expect(result).not.toContain('---');
+  });
+
+  it('should use last round output when non-empty', () => {
+    const runner = makeRunner();
+    const rounds: LoopRoundResult[] = [
+      makeRound('first output'),
+      makeRound('second output'),
+      makeRound('final output'),
+    ];
+    const result = (runner as any).buildFinalSummary('task-3', rounds, 100);
+    expect(result).toContain('final output');
+    expect(result).not.toContain('first output');
+    expect(result).not.toContain('second output');
+    expect(result).toContain('after 3 round(s)');
+    expect(result).toContain('100 tokens');
+  });
+
+  it('should merge previous non-empty rounds when last round is empty', () => {
+    const runner = makeRunner();
+    const rounds: LoopRoundResult[] = [
+      makeRound('round 1 content'),
+      makeRound(''),
+      makeRound('round 3 content'),
+      makeRound(''),
+    ];
+    const result = (runner as any).buildFinalSummary('task-4', rounds, 80);
+    expect(result).toContain('round 1 content');
+    expect(result).toContain('round 3 content');
+    expect(result).toContain('\n\n---\n\n');
+    expect(result).toContain('after 4 round(s)');
+    expect(result).toContain('80 tokens');
+  });
+
+  it('should skip empty rounds when merging (only one non-empty)', () => {
+    const runner = makeRunner();
+    const rounds: LoopRoundResult[] = [
+      makeRound('only content'),
+      makeRound(''),
+      makeRound(''),
+      makeRound(''),
+    ];
+    const result = (runner as any).buildFinalSummary('task-5', rounds, 99);
+    expect(result).toContain('only content');
+    expect(result).not.toContain('\n\n---\n\n'); // no separator when only one
+    expect(result).toContain('after 4 round(s)');
+    expect(result).toContain('99 tokens');
+  });
+
+  it('should handle single round with output', () => {
+    const runner = makeRunner();
+    const rounds: LoopRoundResult[] = [makeRound('solo output')];
+    const result = (runner as any).buildFinalSummary('task-6', rounds, 15);
+    expect(result).toContain('solo output');
+    expect(result).toContain('after 1 round(s)');
+    expect(result).toContain('15 tokens');
+  });
+
+  it('should handle single empty round', () => {
+    const runner = makeRunner();
+    const rounds: LoopRoundResult[] = [makeRound('')];
+    const result = (runner as any).buildFinalSummary('task-7', rounds, 15);
+    expect(result).toContain('(no output)');
+    expect(result).toContain('after 1 round(s)');
   });
 });

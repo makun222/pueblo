@@ -35,8 +35,30 @@ import {
   providerUndoEditToolArgsSchema,
   providerUndoEditToolInputSchema,
   providerMemoRecallToolInputSchema,
+  ToolExecutionPolicy,
 } from '../providers/provider-adapter';
 import { throwIfTaskCancelled } from '../shared/task-cancellation';
+
+/**
+ * A plugin-style tool provider that contributes extra tools
+ * (e.g. sub-agent lifecycle tools) to the ToolService.
+ */
+export interface CustomToolProvider {
+  getDefinitions(): Array<{
+    name: string;
+    description: string;
+    inputSchema: object;
+    executionPolicy?: ToolExecutionPolicy;
+  }>;
+  execute(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{
+    status: 'succeeded' | 'failed';
+    output: string[];
+    summary: string;
+  }>;
+}
 
 export interface ToolServiceDependencies {
   readonly repository: ToolInvocationRepository;
@@ -45,6 +67,7 @@ export interface ToolServiceDependencies {
   readonly editShadowRoot?: string | (() => string);
   readonly memoRecallTool?: MemoRecallTool;
   readonly mcpClientManager?: McpClientManager;
+  readonly customToolProviders?: readonly CustomToolProvider[];
 }
 
 export interface ExecuteToolInput {
@@ -52,6 +75,7 @@ export interface ExecuteToolInput {
   readonly inputSummary?: string;
   readonly executionCwd?: string;
   readonly signal?: AbortSignal;
+  readonly onOutput?: (data: string) => void;
 }
 
 export interface ToolApprovalDescription {
@@ -109,14 +133,22 @@ export class ToolService {
   private readonly undoEditTool = createUndoEditTool();
   private readonly memoRecallTool?: MemoRecallTool;
   private readonly mcpClientManager?: McpClientManager;
+  private customToolProviders: CustomToolProvider[] = [];
 
   constructor(private readonly dependencies: ToolServiceDependencies) {
     this.memoRecallTool = dependencies.memoRecallTool;
     this.mcpClientManager = dependencies.mcpClientManager;
+    if (dependencies.customToolProviders) {
+      this.customToolProviders = [...dependencies.customToolProviders];
+    }
     this.editTool = createEditTool({
       getReviewHandler: () => this.dependencies.resolveEditReviewHandler?.() ?? null,
       shadowRoot: this.dependencies.editShadowRoot,
     });
+  }
+
+  registerCustomToolProvider(provider: CustomToolProvider): void {
+    this.customToolProviders.push(provider);
   }
 
   getDefaultExecutionCwd(): string {
@@ -202,6 +234,20 @@ export class ToolService {
           inputSchema: (mcpTool.definition.inputSchema ?? { type: 'object' as const, properties: {}, required: [], additionalProperties: false }) as any,
           executionPolicy: 'approval-required' as const,
         });
+      }
+    }
+
+    // Merge custom tool provider definitions (e.g. sub-agent tools)
+    if (this.customToolProviders) {
+      for (const provider of this.customToolProviders) {
+        for (const def of provider.getDefinitions()) {
+          tools.push({
+            name: def.name,
+            description: def.description,
+            inputSchema: def.inputSchema as any,
+            executionPolicy: def.executionPolicy ?? 'free',
+          });
+        }
       }
     }
 
@@ -364,9 +410,9 @@ export class ToolService {
       case 'grep':
         return this.runGrep(parseProviderToolArgs('grep', input.args), executionCwd);
       case 'exec':
-        return this.runExec(parseProviderToolArgs('exec', input.args), executionCwd, input.signal);
+        return this.runExec(parseProviderToolArgs('exec', input.args), executionCwd, input.signal, input.onOutput);
       case 'shell_exec':
-        return this.runShellExec(parseProviderToolArgs('shell_exec', input.args), executionCwd, input.signal);
+        return this.runShellExec(parseProviderToolArgs('shell_exec', input.args), executionCwd, input.signal, input.onOutput);
       case 'read':
         return this.runRead(parseProviderToolArgs('read', input.args), executionCwd);
       case 'edit':
@@ -377,7 +423,47 @@ export class ToolService {
         return this.runUndoEdit(parseProviderToolArgs('undo_edit', input.args), executionCwd);
       case 'memo_recall':
         return this.runMemoRecall(parseProviderToolArgs('memo_recall', input.args));
+      default:
+        break;
     }
+
+    // 委托给自定义工具提供者（如 sub-agent tools）
+    // 使用类型断言绕过 discriminated union 的 exhaustive narrowing。
+    // 自定义工具名称不在 ExecuteToolRequest 的已知变体列表中，
+    // switch 的 exhaustive return 会将 input 收窄为 never。
+    const safeInput = input as unknown as { toolName: string; args: Record<string, unknown> };
+    if (this.customToolProviders) {
+      for (const provider of this.customToolProviders) {
+        const defs = provider.getDefinitions();
+        if (defs.some(def => def.name === safeInput.toolName)) {
+          try {
+            const result = await provider.execute(safeInput.toolName, safeInput.args);
+            return {
+              toolName: safeInput.toolName as ToolExecutionResult['toolName'],
+              status: result.status,
+              output: result.output,
+              summary: result.summary,
+            };
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            return {
+              toolName: safeInput.toolName as ToolExecutionResult['toolName'],
+              status: 'failed',
+              output: [msg],
+              summary: `Custom tool failed: ${safeInput.toolName}`,
+            };
+          }
+        }
+      }
+    }
+
+    // 未知工具
+    return {
+      toolName: safeInput.toolName as ToolExecutionResult['toolName'],
+      status: 'failed',
+      output: [],
+      summary: `Unknown tool: ${safeInput.toolName}`,
+    };
   }
 
   private resolveDefaultExecutionCwd(): string {
@@ -394,12 +480,12 @@ export class ToolService {
     return this.grepTool({ pattern: args.pattern, include: args.include, cwd: executionCwd });
   }
 
-  private runExec(args: ProviderExecToolArgs, executionCwd: string, signal?: AbortSignal): Promise<ToolExecutionResult> {
-    return this.execTool({ command: args.command, cwd: executionCwd, signal });
+  private runExec(args: ProviderExecToolArgs, executionCwd: string, signal?: AbortSignal, onOutput?: (data: string) => void): Promise<ToolExecutionResult> {
+    return this.execTool({ command: args.command, cwd: executionCwd, signal, onOutput });
   }
 
-  private runShellExec(args: ProviderShellExecToolArgs, executionCwd: string, signal?: AbortSignal): Promise<ToolExecutionResult> {
-    return this.shellExecTool({ mode: args.mode, command: args.command, cwd: executionCwd, signal });
+  private runShellExec(args: ProviderShellExecToolArgs, executionCwd: string, signal?: AbortSignal, onOutput?: (data: string) => void): Promise<ToolExecutionResult> {
+    return this.shellExecTool({ mode: args.mode, command: args.command, cwd: executionCwd, signal, onOutput });
   }
 
   private runRead(args: ProviderReadToolArgs, executionCwd: string): Promise<ToolExecutionResult> {

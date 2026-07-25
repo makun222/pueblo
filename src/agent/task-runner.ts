@@ -1130,6 +1130,7 @@ export class AgentTaskRunner {
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
           signal: args.signal,
+          onOutput: (data: string) => { this.reportProgress?.(data); },
         });
       case 'shell_exec':
         return this.toolService.execute({
@@ -1139,6 +1140,7 @@ export class AgentTaskRunner {
           inputSummary: args.inputSummary,
           executionCwd: args.executionCwd,
           signal: args.signal,
+          onOutput: (data: string) => { this.reportProgress?.(data); },
         });
       case 'read':
         return this.toolService.execute({

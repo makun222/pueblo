@@ -8,6 +8,7 @@ export interface ShellExecToolRequest {
   readonly command: string;
   readonly cwd: string;
   readonly signal?: AbortSignal;
+  readonly onOutput?: (chunk: string) => void;
 }
 
 function killProcessTree(pid: number): void {
@@ -61,8 +62,8 @@ export function createShellExecTool() {
         let stderr = '';
         let settled = false;
 
-        childProcess.stdout?.on('data', (data: string) => { stdout += data; });
-        childProcess.stderr?.on('data', (data: string) => { stderr += data; });
+        childProcess.stdout?.on('data', (data: string) => { stdout += data; request.onOutput?.(data); });
+        childProcess.stderr?.on('data', (data: string) => { stderr += data; request.onOutput?.(data); });
 
         childProcess.on('error', (err) => {
           if (!settled) { settled = true; reject(err); }

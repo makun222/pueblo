@@ -281,7 +281,7 @@ export class LoopRunner {
       let goalMet = false;
 
       // Flag check (always checked first, regardless of judge mode)
-      if (scanForFlag(output, config.flag)) {
+      if (scanForFlag(output, config.flag ?? 'DONE:')) {
         goalMet = true;
       }
 
@@ -382,7 +382,6 @@ export class LoopRunner {
     rounds: LoopRoundResult[],
     totalTokens: number,
   ): string {
-    const lastOutput = rounds.length > 0 ? rounds[rounds.length - 1].output : '(no output)';
     const prefix = state === 'goal_met'
       ? '✅ Goal achieved'
       : state === 'token_budget'
@@ -393,6 +392,29 @@ export class LoopRunner {
             ? '❌ Error'
             : '⏱️ Maximum rounds reached';
 
-    return `${prefix} after ${rounds.length} round(s), ${totalTokens} tokens.\n\n${lastOutput}`;
+    if (rounds.length === 0) {
+      return `${prefix} after 0 round(s), ${totalTokens} tokens.\n\n(no output)`;
+    }
+
+    const lastOutput = rounds[rounds.length - 1].output.trim();
+
+    // If the final round produced useful content, use it directly.
+    if (lastOutput.length > 0) {
+      return `${prefix} after ${rounds.length} round(s), ${totalTokens} tokens.\n\n${lastOutput}`;
+    }
+
+    // Fallback: the final round is empty (e.g. API returned an empty response).
+    // Merge all non-empty assistant outputs from earlier rounds so the user still
+    // sees the work that was done.
+    const nonEmptyOutputs = rounds
+      .map((r) => r.output.trim())
+      .filter((o) => o.length > 0);
+
+    const content =
+      nonEmptyOutputs.length > 0
+        ? nonEmptyOutputs.join('\n\n---\n\n')
+        : '(no output)';
+
+    return `${prefix} after ${rounds.length} round(s), ${totalTokens} tokens.\n\n${content}`;
   }
 }
