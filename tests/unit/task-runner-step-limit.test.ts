@@ -268,6 +268,69 @@ class StreamingFinalProviderAdapter implements ProviderAdapter {
   }
 }
 
+class StreamingEmptyFinalProviderAdapter implements ProviderAdapter {
+  callCount = 0;
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    this.callCount += 1;
+    context.onTextDelta?.('Recovered');
+    context.onTextDelta?.(' from stream');
+    return {
+      type: 'final',
+      outputSummary: '',
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class EmptyFinalRecoveryProviderAdapter implements ProviderAdapter {
+  recoveryAvailableTools: readonly unknown[] | null = null;
+  recoveryPrompt: string | null = null;
+
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    const recoveryPrompt = context.messages.find((message) => (
+      message.role === 'user'
+      && message.content.includes('上一次响应没有包含可展示给用户的最终内容。')
+    ));
+    if (!recoveryPrompt) {
+      return {
+        type: 'final',
+        outputSummary: '',
+      };
+    }
+
+    this.recoveryAvailableTools = context.availableTools;
+    this.recoveryPrompt = recoveryPrompt.content;
+    return {
+      type: 'final',
+      outputSummary: 'Recovered user-facing final response',
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
+class EmptyFinalRecoveryFailureProviderAdapter implements ProviderAdapter {
+  callCount = 0;
+
+  async runStep(): Promise<ProviderStepResult> {
+    this.callCount += 1;
+    return {
+      type: 'final',
+      outputSummary: '',
+    };
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
 class AbortableProviderAdapter implements ProviderAdapter {
   async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
     return await new Promise<ProviderStepResult>((_resolve, reject) => {
@@ -884,6 +947,106 @@ describe('AgentTaskRunner step limit', () => {
 
     expect(result.status).toBe('completed');
     expect(streamedChunks).toEqual(['Hello', ' world']);
+  });
+
+  it('uses streamed text when a final response has an empty summary', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    const adapter = new StreamingEmptyFinalProviderAdapter();
+    registry.register(profile, adapter);
+
+    const streamedChunks: string[] = [];
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository(), undefined, undefined, {
+      reportAssistantDelta: (text) => {
+        streamedChunks.push(text);
+      },
+    });
+
+    const result = await runner.run({
+      goal: 'Stream a final answer',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+    const outputSummary = JSON.parse(result.outputSummary ?? '{}') as { outputSummary?: string };
+
+    expect(result.status).toBe('completed');
+    expect(outputSummary.outputSummary).toBe('Recovered from stream');
+    expect(streamedChunks).toEqual(['Recovered', ' from stream']);
+    expect(adapter.callCount).toBe(1);
+  });
+
+  it('retries once without tools when a final response has no display text', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    const adapter = new EmptyFinalRecoveryProviderAdapter();
+    registry.register(profile, adapter);
+
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository(), {
+      describeTools: () => [
+        {
+          name: 'read',
+          description: 'Read file contents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+            },
+            required: ['path'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    } as unknown as ToolService);
+
+    const result = await runner.run({
+      goal: 'Provide a final answer',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    });
+    const outputSummary = JSON.parse(result.outputSummary ?? '{}') as { outputSummary?: string };
+
+    expect(result.status).toBe('completed');
+    expect(outputSummary.outputSummary).toBe('Recovered user-facing final response');
+    expect(adapter.recoveryAvailableTools).toEqual([]);
+    expect(adapter.recoveryPrompt).toContain('不要调用任何工具。');
+  });
+
+  it('fails instead of completing with an empty final response after recovery', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    const adapter = new EmptyFinalRecoveryFailureProviderAdapter();
+    registry.register(profile, adapter);
+
+    const runner = new AgentTaskRunner(registry, createInMemoryRepository());
+
+    await expect(runner.run({
+      goal: 'Provide a final answer',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+    })).rejects.toThrow('Provider returned no user-facing final response after recovery.');
+
+    expect(adapter.callCount).toBe(2);
   });
 
   it('includes aggregated file changes in the completed task payload', async () => {

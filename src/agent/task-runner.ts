@@ -117,10 +117,16 @@ const STEP_BUDGET_HANDOFF_PROMPT = [
   '在推荐的下一步请求部分，建议用户发送一个具体的下一回合请求，以便在不重复已完成工作的情况下继续。',
   '对未完成的工作保持诚实，并保持回应简洁且可操作。',
 ].join(' ');
+const EMPTY_FINAL_RESPONSE_RECOVERY_PROMPT = [
+  '上一次响应没有包含可展示给用户的最终内容。',
+  '不要调用任何工具。',
+  '根据已经完成的工作，只输出面向用户的最终答复。',
+  '答复应说明结论、已完成或已验证的事项，以及仍未完成的事项（如有）。',
+].join(' ');
 
 interface AgentStepTraceEntry {
   readonly stepNumber: number;
-  readonly type: 'tool-call' | 'tool-result' | 'final';
+  readonly type: 'tool-call' | 'tool-result' | 'empty-final' | 'final';
   readonly summary: string;
   readonly toolName?: ProviderToolName;
   readonly toolCallId?: string;
@@ -459,17 +465,17 @@ export class AgentTaskRunner {
       });
 
       let result: ProviderStepResult;
+      let streamedStepText = '';
       try {
         result = await args.adapter.runStep({
           modelId: args.modelId,
           messages: stepMessages,
           availableTools: args.availableTools,
           signal: args.signal,
-          onTextDelta: this.reportAssistantDelta
-            ? (text) => {
-              this.reportAssistantDelta?.(text);
-            }
-            : undefined,
+          onTextDelta: (text) => {
+            streamedStepText += text;
+            this.reportAssistantDelta?.(text);
+          },
         });
       } catch (error) {
         if (error instanceof ProviderUnknownToolError) {
@@ -506,14 +512,50 @@ export class AgentTaskRunner {
       }
 
       if (result.type === 'final') {
-        this.emitProgress(`Step ${stepIndex + 1}: final response ready`);
+        const outputSummary = getNonEmptyFinalText(result.outputSummary, streamedStepText);
+        if (outputSummary) {
+          const source = getNonEmptyFinalText(result.outputSummary)
+            ? 'final response ready'
+            : 'final response recovered from streamed text';
+          this.emitProgress(`Step ${stepIndex + 1}: ${source}`);
+          args.stepTrace.push({
+            stepNumber: stepIndex + 1,
+            type: 'final',
+            summary: outputSummary,
+          });
+          return {
+            outputSummary,
+            usage: args.providerUsageRef.current,
+            requestMetrics: args.providerRequestMetricsRef.current,
+          };
+        }
+
+        const reason = 'Provider returned an empty terminal response.';
+        this.emitProgress(`Step ${stepIndex + 1}: empty final response; requesting recovery`);
         args.stepTrace.push({
           stepNumber: stepIndex + 1,
-          type: 'final',
-          summary: result.outputSummary,
+          type: 'empty-final',
+          summary: reason,
         });
+        const recoveryResult = await this.createEmptyFinalResponseRecoveryResult({
+          adapter: args.adapter,
+          modelId: args.modelId,
+          messages,
+          modelMessageTrace: args.modelMessageTrace,
+          stepTrace: args.stepTrace,
+          stepNumber: stepIndex + 2,
+          signal: args.signal,
+        });
+        args.providerUsageRef.current = mergeProviderUsage(args.providerUsageRef.current, recoveryResult.usage);
+        args.providerRequestMetricsRef.current = mergeProviderRequestMetrics(
+          args.providerRequestMetricsRef.current,
+          recoveryResult.requestMetrics,
+        );
+        if (recoveryResult.requestMetrics) {
+          this.reportRequestMetrics?.(recoveryResult.requestMetrics);
+        }
         return {
-          outputSummary: result.outputSummary,
+          outputSummary: recoveryResult.outputSummary,
           usage: args.providerUsageRef.current,
           requestMetrics: args.providerRequestMetricsRef.current,
         };
@@ -640,6 +682,72 @@ export class AgentTaskRunner {
       outputSummary: handoffResult.outputSummary,
       usage: args.providerUsageRef.current,
       requestMetrics: handoffResult.requestMetrics ?? args.providerRequestMetricsRef.current,
+    };
+  }
+
+  private async createEmptyFinalResponseRecoveryResult(args: {
+    readonly adapter: ReturnType<ProviderRegistry['getAdapter']>;
+    readonly modelId: string;
+    readonly messages: ProviderMessage[];
+    readonly modelMessageTrace: ModelMessageTraceEntry[];
+    readonly stepTrace: AgentStepTraceEntry[];
+    readonly stepNumber: number;
+    readonly signal?: AbortSignal;
+  }): Promise<ProviderRunResult> {
+    const recoveryMessages = [
+      ...args.messages,
+      {
+        role: 'user' as const,
+        content: EMPTY_FINAL_RESPONSE_RECOVERY_PROMPT,
+      },
+    ];
+    const stepMessages = prepareMessagesForModel(recoveryMessages);
+    args.modelMessageTrace.push({
+      stepNumber: args.stepNumber,
+      messages: stepMessages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        toolCallId: message.toolCallId,
+        toolName: message.toolName,
+        toolArgs: message.toolArgs,
+      })),
+    });
+
+    let streamedStepText = '';
+    const result = await args.adapter.runStep({
+      modelId: args.modelId,
+      messages: stepMessages,
+      availableTools: [],
+      signal: args.signal,
+      onTextDelta: (text) => {
+        streamedStepText += text;
+        this.reportAssistantDelta?.(text);
+      },
+    });
+
+    if (result.type !== 'final') {
+      throw new ProviderError('Provider requested tools while recovering an empty final response.', {
+        requestMetrics: result.requestMetrics,
+      });
+    }
+
+    const outputSummary = getNonEmptyFinalText(result.outputSummary, streamedStepText);
+    if (!outputSummary) {
+      throw new ProviderError('Provider returned no user-facing final response after recovery.', {
+        requestMetrics: result.requestMetrics,
+      });
+    }
+
+    this.emitProgress(`Step ${args.stepNumber}: final response recovery ready`);
+    args.stepTrace.push({
+      stepNumber: args.stepNumber,
+      type: 'final',
+      summary: outputSummary,
+    });
+    return {
+      outputSummary,
+      usage: result.usage,
+      requestMetrics: result.requestMetrics,
     };
   }
 
@@ -1432,6 +1540,17 @@ export class AgentTaskRunner {
 
 function uniqueValues(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function getNonEmptyFinalText(...candidates: readonly string[]): string | null {
+  for (const candidate of candidates) {
+    const trimmed = candidate.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return null;
 }
 
 function mergeProviderUsage(current: ProviderUsage | undefined, next: ProviderUsage | undefined): ProviderUsage | undefined {
