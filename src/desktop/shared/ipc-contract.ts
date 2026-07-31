@@ -100,6 +100,32 @@ export interface DesktopProviderStatuses {
   readonly deepseek: DesktopProviderStatus;
 }
 
+export interface DesktopGenericProviderConfiguration {
+  readonly id: string;
+  readonly displayName: string;
+  readonly baseUrl: string;
+  readonly modelIds: string[];
+  readonly defaultModelId: string | null;
+  readonly enabled: boolean;
+  readonly isDefault: boolean;
+  readonly apiKeyConfigured: boolean;
+}
+
+export interface DesktopSaveGenericProviderConfigurationInput {
+  readonly id: string;
+  readonly displayName: string;
+  readonly baseUrl: string;
+  readonly apiKey: string | null;
+  readonly modelIds: string[];
+  readonly defaultModelId: string;
+  readonly enabled: boolean;
+  readonly setAsDefault: boolean;
+}
+
+export interface DesktopProviderConfigurationList {
+  readonly genericOpenAIProviders: DesktopGenericProviderConfiguration[];
+}
+
 export interface DesktopWorkflowStatus {
   readonly hasActiveWorkflow: boolean;
   readonly workflowId: string | null;
@@ -193,6 +219,9 @@ export interface DesktopLoopJobProgress {
 }
 
 export interface DesktopBridge {
+  listProviderConfigurations(): Promise<DesktopProviderConfigurationList>;
+  saveGenericProviderConfiguration(input: DesktopSaveGenericProviderConfigurationInput): Promise<DesktopGenericProviderConfiguration>;
+  removeGenericProviderConfiguration(providerId: string): Promise<void>;
   submitInput(envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse>;
   cancelActiveSubmit(): Promise<void>;
   selectInputFiles(sessionId: string | null): Promise<InputAttachmentManifest[]>;

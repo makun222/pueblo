@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  DesktopProviderConfigurationList,
   DesktopFileReviewResponse,
   DesktopMenuAction,
+  DesktopSaveGenericProviderConfigurationInput,
+  DesktopGenericProviderConfiguration,
   DesktopRuntimeStatus,
   DesktopSessionSelectionResponse,
   DesktopSubmitResponse,
@@ -22,6 +25,11 @@ const TALK_STATE_CHANNEL = 'talk-state';
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   focusMonitor: (): Promise<void> => ipcRenderer.invoke('loop:focus-monitor'),
+  listProviderConfigurations: (): Promise<DesktopProviderConfigurationList> => ipcRenderer.invoke('provider-config:list'),
+  saveGenericProviderConfiguration: (input: DesktopSaveGenericProviderConfigurationInput): Promise<DesktopGenericProviderConfiguration> =>
+    ipcRenderer.invoke('provider-config:save-generic', input),
+  removeGenericProviderConfiguration: (providerId: string): Promise<void> =>
+    ipcRenderer.invoke('provider-config:remove-generic', providerId),
   submitInput: (envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse> => ipcRenderer.invoke('submit-input', envelope),
   cancelActiveSubmit: (): Promise<void> => ipcRenderer.invoke('cancel-active-submit'),
   selectInputFiles: (sessionId: string | null): Promise<InputAttachmentManifest[]> => ipcRenderer.invoke('select-input-files', sessionId),

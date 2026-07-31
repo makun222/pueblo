@@ -17,7 +17,10 @@ import { DesktopTalkService } from './talk-service';
 import type {
   DesktopFileReviewRequest,
   DesktopFileReviewResponse,
+  DesktopGenericProviderConfiguration,
+  DesktopProviderConfigurationList,
   DesktopRuntimeStatus,
+  DesktopSaveGenericProviderConfigurationInput,
   DesktopTalkContinuationResponse,
   DesktopTalkRequestResponse,
   DesktopTalkState,
@@ -44,6 +47,9 @@ const DESKTOP_IPC_CHANNELS = [
   'get-runtime-status',
   'get-tool-approval-state',
   'get-talk-state',
+  'provider-config:list',
+  'provider-config:save-generic',
+  'provider-config:remove-generic',
   'respond-tool-approval',
   'respond-file-review',
   'respond-talk-request',
@@ -68,6 +74,33 @@ interface PendingFileReview {
   readonly request: DesktopFileReviewRequest;
   readonly resolve: (decision: 'keep' | 'discard') => void;
   readonly reject: (error: Error) => void;
+}
+
+interface CliProviderConfigurationEntry {
+  readonly providerId?: unknown;
+  readonly id?: unknown;
+  readonly providerType?: unknown;
+  readonly type?: unknown;
+  readonly displayName?: unknown;
+  readonly name?: unknown;
+  readonly baseUrl?: unknown;
+  readonly modelIds?: unknown;
+  readonly models?: unknown;
+  readonly defaultModelId?: unknown;
+  readonly enabled?: unknown;
+  readonly isDefault?: unknown;
+  readonly default?: unknown;
+  readonly hasApiKey?: unknown;
+  readonly apiKeyConfigured?: unknown;
+  readonly apiKey?: unknown;
+}
+
+interface CliProviderConfigurationApi {
+  readonly listProviderConfigurations: () => Promise<readonly unknown[]> | readonly unknown[];
+  readonly saveGenericProviderConfiguration: (
+    input: DesktopSaveGenericProviderConfigurationInput,
+  ) => Promise<unknown> | unknown;
+  readonly removeGenericProviderConfiguration: (providerId: string) => Promise<void> | void;
 }
 
 export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager, appWindow?: AppWindow, mcpClientManager?: McpClientManager): () => void {
@@ -298,6 +331,53 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     incomingRequest: null,
     activeConversation: null,
   } satisfies DesktopTalkState);
+
+  ipcMain.handle('provider-config:list', async () => {
+    const providerApi = resolveProviderConfigurationApi(cli);
+    try {
+      const entries = await providerApi.listProviderConfigurations();
+      return {
+        genericOpenAIProviders: sanitizeGenericProviderConfigurations(entries),
+      } satisfies DesktopProviderConfigurationList;
+    } catch (error) {
+      throw new Error(`Failed to list provider configurations: ${toErrorMessage(error)}`);
+    }
+  });
+
+  ipcMain.handle('provider-config:save-generic', async (_event, input: DesktopSaveGenericProviderConfigurationInput) => {
+    const providerApi = resolveProviderConfigurationApi(cli);
+    const normalizedInput = normalizeGenericProviderInput(input);
+
+    try {
+      await providerApi.saveGenericProviderConfiguration(normalizedInput);
+      const entries = await providerApi.listProviderConfigurations();
+      const savedProvider = sanitizeGenericProviderConfigurations(entries)
+        .find((provider) => provider.id === normalizedInput.id);
+
+      if (!savedProvider) {
+        throw new Error(`Provider "${normalizedInput.id}" was saved but could not be loaded afterwards.`);
+      }
+
+      return savedProvider;
+    } catch (error) {
+      throw new Error(`Failed to save generic provider "${normalizedInput.id}": ${toErrorMessage(error)}`);
+    }
+  });
+
+  ipcMain.handle('provider-config:remove-generic', async (_event, providerId: string) => {
+    const providerApi = resolveProviderConfigurationApi(cli);
+    const normalizedProviderId = providerId.trim();
+
+    if (!normalizedProviderId) {
+      throw new Error('Provider id is required.');
+    }
+
+    try {
+      await providerApi.removeGenericProviderConfiguration(normalizedProviderId);
+    } catch (error) {
+      throw new Error(`Failed to remove generic provider "${normalizedProviderId}": ${toErrorMessage(error)}`);
+    }
+  });
 
   ipcMain.handle('respond-tool-approval', async (_event, response: DesktopToolApprovalResponse) => {
     if (!activeToolApprovalBatch?.batch) {
@@ -559,6 +639,167 @@ function resolveToolApprovalState(
     activeBatch: activeToolApprovalBatch?.batch ?? null,
     activeFileReview: activeFileReview?.request ?? null,
   };
+}
+
+function resolveProviderConfigurationApi(
+  cli: ReturnType<typeof createCliDependencies>,
+): CliProviderConfigurationApi {
+  const providerApi = cli as Partial<CliProviderConfigurationApi>;
+  if (
+    typeof providerApi.listProviderConfigurations !== 'function'
+    || typeof providerApi.saveGenericProviderConfiguration !== 'function'
+    || typeof providerApi.removeGenericProviderConfiguration !== 'function'
+  ) {
+    throw new Error(
+      'Provider configuration API is unavailable. Required CLI signatures: '
+      + 'listProviderConfigurations(): Promise<readonly unknown[]>; '
+      + 'saveGenericProviderConfiguration(input: DesktopSaveGenericProviderConfigurationInput): Promise<unknown>; '
+      + 'removeGenericProviderConfiguration(providerId: string): Promise<void>.',
+    );
+  }
+
+  return providerApi as CliProviderConfigurationApi;
+}
+
+function sanitizeGenericProviderConfigurations(entries: readonly unknown[]): DesktopGenericProviderConfiguration[] {
+  if (!Array.isArray(entries)) {
+    throw new Error('Provider configuration response must be an array.');
+  }
+
+  const configurations: DesktopGenericProviderConfiguration[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+
+    const value = entry as CliProviderConfigurationEntry;
+    const providerId = sanitizeNonEmptyString(value.providerId) ?? sanitizeNonEmptyString(value.id);
+    if (!providerId || providerId === 'github-copilot' || providerId === 'deepseek') {
+      continue;
+    }
+
+    const providerType = sanitizeNonEmptyString(value.providerType) ?? sanitizeNonEmptyString(value.type);
+    const baseUrl = sanitizeNonEmptyString(value.baseUrl);
+    const isLikelyGenericProvider = (providerType
+      ? providerType.toLowerCase().includes('openai') || providerType.toLowerCase().includes('generic')
+      : false) || Boolean(baseUrl);
+
+    if (!isLikelyGenericProvider) {
+      continue;
+    }
+
+    const modelIds = normalizeModelIds(value.modelIds ?? value.models);
+    const defaultModelId = sanitizeNonEmptyString(value.defaultModelId) ?? modelIds[0] ?? null;
+    const isDefault = toBoolean(value.isDefault, toBoolean(value.default, false));
+    const apiKeyConfigured = toBoolean(
+      value.apiKeyConfigured,
+      toBoolean(value.hasApiKey, sanitizeNonEmptyString(value.apiKey) !== null),
+    );
+
+    configurations.push({
+      id: providerId,
+      displayName: sanitizeNonEmptyString(value.displayName) ?? sanitizeNonEmptyString(value.name) ?? providerId,
+      baseUrl: baseUrl ?? 'https://api.openai.com/v1',
+      modelIds,
+      defaultModelId,
+      enabled: toBoolean(value.enabled, true),
+      isDefault,
+      apiKeyConfigured,
+    });
+  }
+
+  return configurations.sort((left, right) => left.displayName.localeCompare(right.displayName));
+}
+
+function normalizeGenericProviderInput(input: DesktopSaveGenericProviderConfigurationInput): DesktopSaveGenericProviderConfigurationInput {
+  const id = input.id.trim();
+  const displayName = input.displayName.trim();
+  const baseUrl = input.baseUrl.trim();
+  const modelIds = Array.from(new Set(input.modelIds.map((modelId) => modelId.trim()).filter((modelId) => modelId.length > 0)));
+  const defaultModelId = input.defaultModelId.trim();
+  const apiKey = input.apiKey?.trim() ?? null;
+
+  if (!id) {
+    throw new Error('Provider id is required.');
+  }
+
+  if (id === 'github-copilot' || id === 'deepseek') {
+    throw new Error('Built-in provider ids are reserved.');
+  }
+
+  if (!displayName) {
+    throw new Error('Display name is required.');
+  }
+
+  if (!baseUrl) {
+    throw new Error('Base URL is required.');
+  }
+
+  if (modelIds.length === 0) {
+    throw new Error('At least one model id is required.');
+  }
+
+  if (!defaultModelId) {
+    throw new Error('Default model id is required.');
+  }
+
+  if (!modelIds.includes(defaultModelId)) {
+    throw new Error('Default model id must match one of the configured model ids.');
+  }
+
+  return {
+    id,
+    displayName,
+    baseUrl,
+    apiKey: apiKey && apiKey.length > 0 ? apiKey : null,
+    modelIds,
+    defaultModelId,
+    enabled: input.enabled,
+    setAsDefault: input.setAsDefault,
+  };
+}
+
+function normalizeModelIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const ids = value
+    .map((model) => {
+      if (typeof model === 'string') {
+        return model.trim();
+      }
+
+      if (model && typeof model === 'object') {
+        const modelRecord = model as { id?: unknown; modelId?: unknown; name?: unknown };
+        return sanitizeNonEmptyString(modelRecord.id)
+          ?? sanitizeNonEmptyString(modelRecord.modelId)
+          ?? sanitizeNonEmptyString(modelRecord.name)
+          ?? '';
+      }
+
+      return '';
+    })
+    .filter((modelId) => modelId.length > 0);
+
+  return Array.from(new Set(ids));
+}
+
+function sanitizeNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function toBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function toErrorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value);
 }
 
 function createToolApprovalBatch(requests: readonly ToolApprovalRequest[]): DesktopToolApprovalBatch {

@@ -43,6 +43,21 @@ const deepseekSchema = z.object({
   baseUrl: z.string().url().default('https://api.deepseek.com'),
 });
 
+const genericProviderModelSchema = z.object({
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  supportsTools: z.boolean().default(true),
+  contextWindow: z.number().int().positive().optional(),
+});
+
+const genericProviderSchema = z.object({
+  id: z.string().trim().min(1),
+  displayName: z.string().trim().min(1),
+  baseUrl: z.string().url(),
+  credentialTarget: z.string().trim().min(1),
+  models: z.array(genericProviderModelSchema).min(1),
+});
+
 export const DEFAULT_PEPE_RANKING_CONFIG = {
   recentStickyWindow: 6,
   stickyMemoryBonus: 0.08,
@@ -188,6 +203,7 @@ const appConfigSchema = z.object({
   defaultAgentProfileId: z.string().min(1).nullable().default('code-master'),
   defaultSessionId: z.string().min(1).nullable().default(null),
   providers: z.array(providerSettingSchema).default([]),
+  genericProviders: z.array(genericProviderSchema).default([]),
   desktopWindow: desktopWindowSchema.default({
     enabled: true,
     title: 'Pueblo',
@@ -245,6 +261,8 @@ const appConfigSchema = z.object({
 export type ProviderSetting = z.infer<typeof providerSettingSchema>;
 export type DesktopWindowConfig = z.infer<typeof desktopWindowSchema>;
 export type DeepSeekConfig = z.infer<typeof deepseekSchema>;
+export type GenericProviderModelConfig = z.infer<typeof genericProviderModelSchema>;
+export type GenericProviderConfig = z.infer<typeof genericProviderSchema>;
 export type PepeRankingConfig = z.infer<typeof pepeRankingSchema>;
 export type PepeConfig = z.infer<typeof pepeSchema>;
 export type MemoryWeightPolicyConfig = z.infer<typeof memoryWeightPolicySchema>;

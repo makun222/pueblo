@@ -80,8 +80,14 @@ import { InMemoryProviderAdapter, type ProviderRequestMetrics } from '../provide
 import { ProviderError } from '../providers/provider-errors';
 import { ModelService } from '../providers/model-service';
 import { createProviderProfile } from '../providers/provider-profile';
-import { createConfiguredProviderRegistry } from '../providers/provider-registry-factory';
+import { createConfiguredProviderRegistry, registerGenericProvider } from '../providers/provider-registry-factory';
 import { ProviderRegistry } from '../providers/provider-registry';
+import {
+  listGenericProviderConfigurations,
+  persistGenericProviderConfiguration,
+  removeGenericProviderConfiguration,
+  type GenericProviderConfigurationInput,
+} from '../providers/generic-provider-config';
 import { loadAppConfig } from '../shared/config';
 import {
   extractTaskOutputSummaryPayload,
@@ -195,6 +201,9 @@ export interface CliDependencies {
   readonly getSession: (sessionId: string) => Session | null;
   readonly listSessionMemories: (sessionId: string) => MemoryRecord[];
   readonly selectSession: (sessionId: string) => Promise<{ runtimeStatus: DesktopRuntimeStatus; session: Session | null }>;
+  readonly listProviderConfigurations: () => ReturnType<typeof listGenericProviderConfigurations>;
+  readonly saveGenericProviderConfiguration: (input: GenericProviderConfigurationInput) => void;
+  readonly removeGenericProviderConfiguration: (providerId: string) => void;
   readonly setProgressReporter: (reporter: ((update: { title: string; message: string }) => void) | null) => void;
   readonly setToolApprovalHandler: (handler: ToolApprovalHandler | null) => void;
   readonly setToolApprovalBatchHandler: (handler: ToolApprovalBatchHandler | null) => void;
@@ -1646,6 +1655,38 @@ export function createCliDependencies(
         session,
       };
     },
+    listProviderConfigurations() {
+      return listGenericProviderConfigurations(currentConfig, credentialStore);
+    },
+    saveGenericProviderConfiguration(input: GenericProviderConfigurationInput): void {
+      const nextConfig = persistGenericProviderConfiguration(currentConfig, input, { credentialStore });
+      const provider = nextConfig.genericProviders.find((candidate) => candidate.id === input.id.trim());
+      const providerSetting = nextConfig.providers.find((candidate) => candidate.providerId === input.id.trim());
+      if (!provider || !providerSetting) {
+        throw new Error(`Provider "${input.id}" was saved but could not be resolved.`);
+      }
+
+      refreshRuntimeConfig(nextConfig);
+      registerGenericProvider(providerRegistry, provider, providerSetting.defaultModelId, credentialStore);
+      if (input.setAsDefault) {
+        applyConfiguredProviderSelection(provider.id, nextConfig);
+      }
+    },
+    removeGenericProviderConfiguration(providerId: string): void {
+      const normalizedProviderId = providerId.trim();
+      const nextConfig = removeGenericProviderConfiguration(currentConfig, normalizedProviderId, { credentialStore });
+      providerRegistry.unregister(normalizedProviderId);
+      refreshRuntimeConfig(nextConfig);
+
+      if (selectionState.providerId === normalizedProviderId) {
+        const nextProvider = nextConfig.providers.find((provider) => provider.providerId === nextConfig.defaultProviderId && provider.enabled);
+        selectionState.providerId = nextProvider?.providerId ?? null;
+        selectionState.modelId = nextProvider?.defaultModelId ?? null;
+        if (selectionState.sessionId && selectionState.modelId) {
+          sessionService.setCurrentModel(selectionState.sessionId, selectionState.modelId);
+        }
+      }
+    },
     setProgressReporter(reporter: ((update: { title: string; message: string }) => void) | null): void {
       progressReporter = reporter;
     },
@@ -1685,10 +1726,14 @@ export function createCliDependencies(
     return agentInstance.id;
   }
 
-  function applyConfiguredProviderSelection(providerId: 'github-copilot' | 'deepseek', nextConfig: AppConfig): void {
+  function applyConfiguredProviderSelection(providerId: string, nextConfig: AppConfig): void {
     const configuredProvider = nextConfig.providers.find((provider) => provider.providerId === providerId && provider.enabled);
     const defaultModelId = configuredProvider?.defaultModelId
-      ?? (providerId === 'github-copilot' ? 'copilot-chat' : 'deepseek-v4-flash');
+      ?? (providerId === 'github-copilot' ? 'copilot-chat' : providerId === 'deepseek' ? 'deepseek-v4-flash' : null);
+
+    if (!defaultModelId) {
+      throw new Error(`Configured provider "${providerId}" does not have a default model.`);
+    }
 
     selectionState.providerId = providerId;
     selectionState.modelId = defaultModelId;
