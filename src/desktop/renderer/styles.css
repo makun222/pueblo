@@ -1165,6 +1165,7 @@ select {
 .session-panel-new-composer input,
 .provider-config-field input,
 .provider-config-field select,
+.provider-config-field textarea,
   .status-chip-select-control,
   .input-pane input,
   .input-pane textarea {
@@ -1199,6 +1200,7 @@ select {
 .session-panel-new-composer input:hover,
 .provider-config-field input:hover,
 .provider-config-field select:hover,
+.provider-config-field textarea:hover,
 .status-chip-select-control:hover,
 .input-pane input:hover,
 .input-pane textarea:hover {
@@ -1210,6 +1212,7 @@ select {
 .session-panel-new-composer input:focus,
 .provider-config-field input:focus,
 .provider-config-field select:focus,
+.provider-config-field textarea:focus,
 .status-chip-select-control:focus,
 .input-pane input:focus,
 .input-pane textarea:focus {
@@ -1603,10 +1606,79 @@ select {
   max-width: 560px;
 }
 
+.provider-config-generic-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 560px);
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.provider-config-generic-list {
+  min-height: 100%;
+}
+
+.provider-config-generic-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.provider-config-generic-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-config-generic-provider-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.provider-config-generic-provider-actions,
+.provider-config-generic-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-config-generic-form {
+  max-width: 100%;
+}
+
+.provider-config-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.provider-config-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.provider-config-danger {
+  border-color: rgba(180, 35, 24, 0.36);
+  color: var(--danger);
+}
+
 .provider-config-field {
   font-size: 13px;
   font-weight: 700;
   color: var(--ink-strong);
+}
+
+.provider-config-field textarea {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .provider-config-primary,
@@ -2688,6 +2760,7 @@ select {
   }
 
   .session-panel-controls,
+  .provider-config-generic-layout,
   .input-pane {
     grid-template-columns: 1fr;
   }

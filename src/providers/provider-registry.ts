@@ -14,6 +14,10 @@ export class ProviderRegistry {
     this.entries.set(profile.id, { profile, adapter });
   }
 
+  unregister(providerId: string): void {
+    this.entries.delete(providerId);
+  }
+
   listProfiles(): ProviderProfile[] {
     return [...this.entries.values()].map((entry) => entry.profile);
   }

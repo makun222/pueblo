@@ -30,6 +30,7 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
         credentialSource: 'env',
       },
     ],
+    genericProviders: overrides.genericProviders ?? [],
     desktopWindow: {
       enabled: overrides.desktopWindow?.enabled ?? true,
       title: overrides.desktopWindow?.title ?? 'Pueblo',

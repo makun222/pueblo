@@ -7,6 +7,8 @@ import { resolveGitHubCopilotAuth, resolveGitHubCopilotToken } from './github-co
 import { createDefaultCredentialStore, type CredentialStore } from './credential-store';
 import { createGitHubCopilotProfile } from './github-copilot-profile';
 import { InMemoryProviderAdapter } from './provider-adapter';
+import { OpenAICompatibleAdapter } from './openai-compatible-adapter';
+import { resolveGenericProviderApiKey } from './generic-provider-config';
 import { createProviderProfile } from './provider-profile';
 import { ProviderRegistry } from './provider-registry';
 
@@ -52,6 +54,12 @@ export function createConfiguredProviderRegistry(
       continue;
     }
 
+    const genericProvider = config.genericProviders.find((provider) => provider.id === providerSetting.providerId);
+    if (genericProvider) {
+      registerGenericProvider(providerRegistry, genericProvider, providerSetting.defaultModelId, credentialStore);
+      continue;
+    }
+
     const profile = createProviderProfile({
       id: providerSetting.providerId,
       name: providerSetting.providerId,
@@ -70,6 +78,37 @@ export function createConfiguredProviderRegistry(
   }
 
   return providerRegistry;
+}
+
+export function registerGenericProvider(
+  providerRegistry: ProviderRegistry,
+  provider: AppConfig['genericProviders'][number],
+  defaultModelId: string | null | undefined,
+  credentialStore: CredentialStore = createDefaultCredentialStore(),
+): void {
+  const apiKey = resolveGenericProviderApiKey(provider, credentialStore);
+  const resolvedDefaultModelId = defaultModelId && provider.models.some((model) => model.id === defaultModelId)
+    ? defaultModelId
+    : provider.models[0]!.id;
+
+  providerRegistry.register(
+    createProviderProfile({
+      id: provider.id,
+      name: provider.displayName,
+      authState: apiKey ? 'configured' : 'missing',
+      defaultModelId: resolvedDefaultModelId,
+      models: provider.models.map((model) => ({
+        id: model.id,
+        name: model.name,
+        supportsTools: model.supportsTools,
+        contextWindow: model.contextWindow,
+      })),
+    }),
+    new OpenAICompatibleAdapter({
+      apiKey: apiKey ?? '',
+      baseUrl: provider.baseUrl,
+    }),
+  );
 }
 
 function registerGitHubCopilotProvider(

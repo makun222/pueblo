@@ -5,6 +5,7 @@ export interface CredentialStore {
   isSupported(): boolean;
   readSecret(target: string): string | null;
   writeSecret(target: string, secret: string): void;
+  deleteSecret?(target: string): void;
 }
 
 interface PowerShellRunResult {
@@ -48,6 +49,9 @@ public static class PuebloCredMan {
 
   [DllImport("Advapi32.dll", EntryPoint = "CredFree", SetLastError = true)]
   public static extern void CredFree([In] IntPtr cred);
+
+  [DllImport("Advapi32.dll", EntryPoint = "CredDeleteW", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern bool CredDelete(string target, UInt32 type, UInt32 flags);
 }
 "@
 
@@ -127,6 +131,17 @@ if ($operation -eq 'write') {
   exit 0
 }
 
+if ($operation -eq 'delete') {
+  $deleted = [PuebloCredMan]::CredDelete($target, 1, 0)
+  if (-not $deleted) {
+    $lastError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    if ($lastError -ne 1168) {
+      throw "Credential delete failed with Win32 error $lastError"
+    }
+  }
+  exit 0
+}
+
 throw "Unsupported credential operation: $operation"
 `;
 
@@ -189,6 +204,19 @@ export class WindowsCredentialManagerStore implements CredentialStore {
 
     if (result.status !== 0) {
       throw new Error(result.stderr || result.error?.message || 'Failed to write Windows credential.');
+    }
+  }
+
+  deleteSecret(target: string): void {
+    this.ensureSupported();
+    const result = this.runner(WINDOWS_CREDENTIAL_SCRIPT, {
+      ...process.env,
+      PUEBLO_CREDENTIAL_OPERATION: 'delete',
+      PUEBLO_CREDENTIAL_TARGET: target,
+    });
+
+    if (result.status !== 0) {
+      throw new Error(result.stderr || result.error?.message || 'Failed to delete Windows credential.');
     }
   }
 

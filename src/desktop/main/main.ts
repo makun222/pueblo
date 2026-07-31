@@ -215,6 +215,15 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
   ipcMain.removeHandler('get-talk-state');
   ipcMain.handle('get-talk-state', async () => ({ localPid: process.pid, incomingRequest: null, activeConversation: null }));
 
+  ipcMain.removeHandler('provider-config:list');
+  ipcMain.handle('provider-config:list', failWithStartupError);
+
+  ipcMain.removeHandler('provider-config:save-generic');
+  ipcMain.handle('provider-config:save-generic', failWithStartupError);
+
+  ipcMain.removeHandler('provider-config:remove-generic');
+  ipcMain.handle('provider-config:remove-generic', failWithStartupError);
+
   ipcMain.removeHandler('respond-tool-approval');
   ipcMain.handle('respond-tool-approval', async () => ({ activeBatch: null, activeFileReview: null }));
 

@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererAction, RendererExecCommand, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopFileReviewRequest,
+  DesktopGenericProviderConfiguration,
   DesktopMenuAction,
+  DesktopProviderConfigurationList,
   DesktopProviderStatus,
   DesktopRuntimeStatus,
+  DesktopSaveGenericProviderConfigurationInput,
   DesktopSessionSelectionResponse,
   DesktopSubmitResponse,
   DesktopTalkActiveConversation,
@@ -79,8 +82,9 @@ interface TranscriptGroup {
   readonly searchText: string;
 }
 
-type ProviderConfigMode = 'github-copilot' | 'deepseek';
+type ProviderConfigMode = 'github-copilot' | 'deepseek' | 'generic-openai';
 type SessionSortMode = 'updated-desc' | 'updated-asc';
+const GENERIC_PROVIDER_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
 const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
   providerId: null,
@@ -161,6 +165,9 @@ const EMPTY_RUNTIME_STATUS: DesktopRuntimeStatus = {
 declare global {
   interface Window {
     electronAPI: {
+      listProviderConfigurations: () => Promise<DesktopProviderConfigurationList>;
+      saveGenericProviderConfiguration: (input: DesktopSaveGenericProviderConfigurationInput) => Promise<DesktopGenericProviderConfiguration>;
+      removeGenericProviderConfiguration: (providerId: string) => Promise<void>;
       submitInput: (input: IpcInputEnvelope) => Promise<DesktopSubmitResponse>;
       cancelActiveSubmit: () => Promise<void>;
       selectInputFiles: (sessionId: string | null) => Promise<InputAttachmentManifest[]>;
@@ -216,6 +223,17 @@ export function App() {
   const [deepSeekModelId, setDeepSeekModelId] = useState('deepseek-v4-flash');
   const [deepSeekBaseUrl, setDeepSeekBaseUrl] = useState('https://api.deepseek.com');
   const [isDeepSeekEditing, setIsDeepSeekEditing] = useState(false);
+  const [isGenericProvidersLoading, setIsGenericProvidersLoading] = useState(false);
+  const [genericProviderConfigurations, setGenericProviderConfigurations] = useState<DesktopGenericProviderConfiguration[]>([]);
+  const [editingGenericProviderId, setEditingGenericProviderId] = useState<string | null>(null);
+  const [genericProviderId, setGenericProviderId] = useState('');
+  const [genericProviderDisplayName, setGenericProviderDisplayName] = useState('');
+  const [genericProviderBaseUrl, setGenericProviderBaseUrl] = useState(GENERIC_PROVIDER_DEFAULT_BASE_URL);
+  const [genericProviderApiKey, setGenericProviderApiKey] = useState('');
+  const [genericProviderModelsInput, setGenericProviderModelsInput] = useState('');
+  const [genericProviderDefaultModelId, setGenericProviderDefaultModelId] = useState('');
+  const [genericProviderEnabled, setGenericProviderEnabled] = useState(true);
+  const [genericProviderSetAsDefault, setGenericProviderSetAsDefault] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([]);
   const [activeSessionDetails, setActiveSessionDetails] = useState<Session | null>(null);
@@ -476,11 +494,22 @@ export function App() {
       const currentRuntimeStatus = runtimeStatusRef.current;
 
       if (action === 'configure-provider') {
+        const activeProviderId = currentRuntimeStatus.providerId;
+        const nextMode: ProviderConfigMode = activeProviderId === 'deepseek'
+          ? 'deepseek'
+          : activeProviderId === 'github-copilot' || !activeProviderId
+            ? 'github-copilot'
+            : 'generic-openai';
+
         setProviderConfigError(null);
-        setProviderConfigMode(currentRuntimeStatus.providerId === 'deepseek' ? 'deepseek' : 'github-copilot');
-        setIsDeepSeekEditing((currentRuntimeStatus.providerId === 'deepseek'
+        setProviderConfigMode(nextMode);
+        setIsDeepSeekEditing((nextMode === 'deepseek'
           ? (currentRuntimeStatus.providerStatuses?.deepseek?.authState ?? 'missing') !== 'configured'
           : false));
+        if (nextMode === 'generic-openai') {
+          resetGenericProviderForm();
+          void loadProviderConfigurations();
+        }
         setIsProviderConfigOpen(true);
         setIsAgentPickerOpen(false);
         return;
@@ -1053,6 +1082,139 @@ export function App() {
     setStartupError(null);
   };
 
+  const resetGenericProviderForm = () => {
+    setEditingGenericProviderId(null);
+    setGenericProviderId('');
+    setGenericProviderDisplayName('');
+    setGenericProviderBaseUrl(GENERIC_PROVIDER_DEFAULT_BASE_URL);
+    setGenericProviderApiKey('');
+    setGenericProviderModelsInput('');
+    setGenericProviderDefaultModelId('');
+    setGenericProviderEnabled(true);
+    setGenericProviderSetAsDefault(false);
+  };
+
+  const startEditingGenericProvider = (provider: DesktopGenericProviderConfiguration) => {
+    setEditingGenericProviderId(provider.id);
+    setGenericProviderId(provider.id);
+    setGenericProviderDisplayName(provider.displayName);
+    setGenericProviderBaseUrl(provider.baseUrl);
+    setGenericProviderApiKey('');
+    setGenericProviderModelsInput(provider.modelIds.join('\n'));
+    setGenericProviderDefaultModelId(provider.defaultModelId ?? provider.modelIds[0] ?? '');
+    setGenericProviderEnabled(provider.enabled);
+    setGenericProviderSetAsDefault(provider.isDefault);
+    setProviderConfigError(null);
+  };
+
+  const loadProviderConfigurations = async () => {
+    setIsGenericProvidersLoading(true);
+    try {
+      const configurations = await window.electronAPI.listProviderConfigurations();
+      setGenericProviderConfigurations(configurations.genericOpenAIProviders);
+    } catch (error) {
+      setGenericProviderConfigurations([]);
+      setProviderConfigError(error instanceof Error ? error.message : 'Failed to load provider configurations.');
+    } finally {
+      setIsGenericProvidersLoading(false);
+    }
+  };
+
+  const handleGenericProviderSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const providerId = genericProviderId.trim();
+    const displayName = genericProviderDisplayName.trim();
+    const baseUrl = genericProviderBaseUrl.trim();
+    const modelIds = parseGenericProviderModelIds(genericProviderModelsInput);
+    const defaultModelId = genericProviderDefaultModelId.trim();
+    const apiKey = genericProviderApiKey.trim();
+    const isEditing = editingGenericProviderId !== null;
+
+    if (!providerId) {
+      setProviderConfigError('Provider id is required.');
+      return;
+    }
+
+    if (!isValidGenericProviderId(providerId)) {
+      setProviderConfigError('Provider id can only include lowercase letters, numbers, "-" and "_".');
+      return;
+    }
+
+    if (!displayName) {
+      setProviderConfigError('Display name is required.');
+      return;
+    }
+
+    if (!baseUrl) {
+      setProviderConfigError('Base URL is required.');
+      return;
+    }
+
+    if (modelIds.length === 0) {
+      setProviderConfigError('At least one model id is required.');
+      return;
+    }
+
+    if (!defaultModelId) {
+      setProviderConfigError('Default model id is required.');
+      return;
+    }
+
+    if (!modelIds.includes(defaultModelId)) {
+      setProviderConfigError('Default model id must be listed in model ids.');
+      return;
+    }
+
+    if (!isEditing && !apiKey) {
+      setProviderConfigError('API key is required when creating a provider.');
+      return;
+    }
+
+    setProviderConfigPending('generic-openai-save');
+    setProviderConfigError(null);
+
+    try {
+      await window.electronAPI.saveGenericProviderConfiguration({
+        id: providerId,
+        displayName,
+        baseUrl,
+        apiKey: apiKey.length > 0 ? apiKey : null,
+        modelIds,
+        defaultModelId,
+        enabled: genericProviderEnabled,
+        setAsDefault: genericProviderSetAsDefault,
+      });
+      await loadProviderConfigurations();
+      resetGenericProviderForm();
+    } catch (error) {
+      setProviderConfigError(error instanceof Error ? error.message : 'Failed to save provider configuration.');
+    } finally {
+      setProviderConfigPending(null);
+    }
+  };
+
+  const handleGenericProviderDelete = async (providerId: string) => {
+    if (!providerId.trim()) {
+      setProviderConfigError('Provider id is required.');
+      return;
+    }
+
+    setProviderConfigPending(`generic-openai-delete:${providerId}`);
+    setProviderConfigError(null);
+    try {
+      await window.electronAPI.removeGenericProviderConfiguration(providerId);
+      await loadProviderConfigurations();
+      if (editingGenericProviderId === providerId) {
+        resetGenericProviderForm();
+      }
+    } catch (error) {
+      setProviderConfigError(error instanceof Error ? error.message : 'Failed to remove provider configuration.');
+    } finally {
+      setProviderConfigPending(null);
+    }
+  };
+
   const handleGitHubProviderLogin = async () => {
     setProviderConfigPending('github-copilot');
     setProviderConfigError(null);
@@ -1105,6 +1267,7 @@ export function App() {
   const availableProviders = runtimeStatus.availableProviders ?? EMPTY_RUNTIME_STATUS.availableProviders ?? [];
   const selectedProviderProfile = findProviderProfile(availableProviders, runtimeStatus.providerId);
   const availableModels = selectedProviderProfile?.models ?? [];
+  const isEditingGenericProvider = editingGenericProviderId !== null;
   const activeToolApprovalBatch = toolApprovalState.activeBatch;
   const activeFileReview = toolApprovalState.activeFileReview;
   const activeTalkConversation = talkState.activeConversation;
@@ -1114,6 +1277,15 @@ export function App() {
   const todoItems = parseTodoMemoryItems(todoMemory);
   const staleTodoMemory = !hasActiveWorkflow ? selectLatestTodoMemory(activeSessionMemories) : null;
   const staleTodoItems = parseTodoMemoryItems(staleTodoMemory);
+
+  useEffect(() => {
+    if (!showProviderConfig || providerConfigMode !== 'generic-openai') {
+      return;
+    }
+
+    void loadProviderConfigurations();
+  }, [showProviderConfig, providerConfigMode]);
+
   const transcriptGroups = useMemo(() => createTranscriptGroups(transcriptEntries), [transcriptEntries]);
   const allTranscriptGroups = useMemo(() => [...archivedTranscriptGroups, ...transcriptGroups], [archivedTranscriptGroups, transcriptGroups]);
   const filteredTranscriptGroups = transcriptSearchTerm.trim().length > 0
@@ -1383,6 +1555,17 @@ export function App() {
             deepSeekApiKey,
             deepSeekModelId,
             deepSeekBaseUrl,
+            genericProviderConfigurations,
+            isGenericProvidersLoading,
+            isEditingGenericProvider,
+            genericProviderId,
+            genericProviderDisplayName,
+            genericProviderBaseUrl,
+            genericProviderApiKey,
+            genericProviderModelsInput,
+            genericProviderDefaultModelId,
+            genericProviderEnabled,
+            genericProviderSetAsDefault,
             githubProviderStatus,
             deepSeekProviderStatus,
             isDeepSeekEditing,
@@ -1390,11 +1573,16 @@ export function App() {
               setProviderConfigMode(mode);
               setProviderConfigError(null);
               setIsDeepSeekEditing(mode === 'deepseek' ? deepSeekProviderStatus.authState !== 'configured' : false);
+              if (mode === 'generic-openai') {
+                resetGenericProviderForm();
+                void loadProviderConfigurations();
+              }
             },
             onClose: runtimeStatus.providerId ? () => {
               setIsProviderConfigOpen(false);
               setProviderConfigError(null);
               setIsDeepSeekEditing(false);
+              resetGenericProviderForm();
             } : null,
             onGitHubLogin: () => {
               void handleGitHubProviderLogin();
@@ -1418,6 +1606,27 @@ export function App() {
             onDeepSeekBaseUrlChange: setDeepSeekBaseUrl,
             onDeepSeekSubmit: (event) => {
               void handleDeepSeekProviderSave(event);
+            },
+            onStartGenericProviderCreate: () => {
+              resetGenericProviderForm();
+              setProviderConfigError(null);
+            },
+            onStartGenericProviderEdit: (provider) => {
+              startEditingGenericProvider(provider);
+            },
+            onGenericProviderIdChange: setGenericProviderId,
+            onGenericProviderDisplayNameChange: setGenericProviderDisplayName,
+            onGenericProviderBaseUrlChange: setGenericProviderBaseUrl,
+            onGenericProviderApiKeyChange: setGenericProviderApiKey,
+            onGenericProviderModelsInputChange: setGenericProviderModelsInput,
+            onGenericProviderDefaultModelIdChange: setGenericProviderDefaultModelId,
+            onGenericProviderEnabledChange: setGenericProviderEnabled,
+            onGenericProviderSetAsDefaultChange: setGenericProviderSetAsDefault,
+            onGenericProviderSubmit: (event) => {
+              void handleGenericProviderSave(event);
+            },
+            onGenericProviderDelete: (providerId) => {
+              void handleGenericProviderDelete(providerId);
             },
           }) : (
             <>
@@ -2401,6 +2610,17 @@ function renderProviderConfigPanel(args: {
   deepSeekApiKey: string;
   deepSeekModelId: string;
   deepSeekBaseUrl: string;
+  genericProviderConfigurations: DesktopGenericProviderConfiguration[];
+  isGenericProvidersLoading: boolean;
+  isEditingGenericProvider: boolean;
+  genericProviderId: string;
+  genericProviderDisplayName: string;
+  genericProviderBaseUrl: string;
+  genericProviderApiKey: string;
+  genericProviderModelsInput: string;
+  genericProviderDefaultModelId: string;
+  genericProviderEnabled: boolean;
+  genericProviderSetAsDefault: boolean;
   githubProviderStatus: DesktopProviderStatus;
   deepSeekProviderStatus: DesktopProviderStatus;
   isDeepSeekEditing: boolean;
@@ -2413,6 +2633,18 @@ function renderProviderConfigPanel(args: {
   onDeepSeekModelChange: (value: string) => void;
   onDeepSeekBaseUrlChange: (value: string) => void;
   onDeepSeekSubmit: (event: React.FormEvent) => void;
+  onStartGenericProviderCreate: () => void;
+  onStartGenericProviderEdit: (provider: DesktopGenericProviderConfiguration) => void;
+  onGenericProviderIdChange: (value: string) => void;
+  onGenericProviderDisplayNameChange: (value: string) => void;
+  onGenericProviderBaseUrlChange: (value: string) => void;
+  onGenericProviderApiKeyChange: (value: string) => void;
+  onGenericProviderModelsInputChange: (value: string) => void;
+  onGenericProviderDefaultModelIdChange: (value: string) => void;
+  onGenericProviderEnabledChange: (value: boolean) => void;
+  onGenericProviderSetAsDefaultChange: (value: boolean) => void;
+  onGenericProviderSubmit: (event: React.FormEvent) => void;
+  onGenericProviderDelete: (providerId: string) => void;
 }) {
   const deepSeekConfigured = args.deepSeekProviderStatus.authState === 'configured';
 
@@ -2445,6 +2677,13 @@ function renderProviderConfigPanel(args: {
         >
           DeepSeek
         </button>
+        <button
+          type="button"
+          className={`provider-config-tab ${args.providerConfigMode === 'generic-openai' ? 'provider-config-tab-active' : ''}`}
+          onClick={() => args.onSelectMode('generic-openai')}
+        >
+          OpenAI Compatible
+        </button>
       </div>
       {args.providerConfigError ? <p className="provider-config-error">{args.providerConfigError}</p> : null}
       {args.providerConfigMode === 'github-copilot' ? (
@@ -2473,7 +2712,7 @@ function renderProviderConfigPanel(args: {
                 : 'Start GitHub device login'}
           </button>
         </div>
-      ) : deepSeekConfigured && !args.isDeepSeekEditing ? (
+      ) : args.providerConfigMode === 'deepseek' ? deepSeekConfigured && !args.isDeepSeekEditing ? (
         <div className="provider-config-card">
           <div className="provider-config-status-list">
             <p className="provider-config-status-item"><strong>Status:</strong> Configured</p>
@@ -2529,6 +2768,160 @@ function renderProviderConfigPanel(args: {
             </button>
           ) : null}
         </form>
+      ) : (
+        <div className="provider-config-generic-layout">
+          <section className="provider-config-card provider-config-generic-list" aria-label="generic-provider-list">
+            <header className="provider-config-generic-header">
+              <div>
+                <p className="provider-config-eyebrow">Configured Providers</p>
+                <p className="provider-config-copy">API keys are never displayed here after saving.</p>
+              </div>
+              <button
+                type="button"
+                className="provider-config-secondary"
+                onClick={args.onStartGenericProviderCreate}
+                disabled={args.providerConfigPending !== null}
+              >
+                Add Provider
+              </button>
+            </header>
+            {args.isGenericProvidersLoading ? (
+              <p className="provider-config-copy">Loading provider configurations...</p>
+            ) : args.genericProviderConfigurations.length === 0 ? (
+              <p className="provider-config-copy">No OpenAI-compatible providers configured yet.</p>
+            ) : (
+              <div className="provider-config-generic-provider-list">
+                {args.genericProviderConfigurations.map((provider) => (
+                  <article key={provider.id} className="provider-config-generic-provider-item">
+                    <div className="provider-config-status-list">
+                      <p className="provider-config-status-item"><strong>Name:</strong> {provider.displayName}</p>
+                      <p className="provider-config-status-item"><strong>ID:</strong> {provider.id}</p>
+                      <p className="provider-config-status-item"><strong>Base URL:</strong> {provider.baseUrl}</p>
+                      <p className="provider-config-status-item"><strong>Models:</strong> {provider.modelIds.join(', ') || 'None configured'}</p>
+                      <p className="provider-config-status-item"><strong>Default model:</strong> {provider.defaultModelId ?? 'Not set'}</p>
+                      <p className="provider-config-status-item"><strong>Enabled:</strong> {provider.enabled ? 'Yes' : 'No'}</p>
+                      <p className="provider-config-status-item"><strong>Default provider:</strong> {provider.isDefault ? 'Yes' : 'No'}</p>
+                      <p className="provider-config-status-item"><strong>API key:</strong> {provider.apiKeyConfigured ? 'Configured' : 'Missing'}</p>
+                    </div>
+                    <div className="provider-config-generic-provider-actions">
+                      <button
+                        type="button"
+                        className="provider-config-secondary"
+                        onClick={() => args.onStartGenericProviderEdit(provider)}
+                        disabled={args.providerConfigPending !== null}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="provider-config-secondary provider-config-danger"
+                        onClick={() => args.onGenericProviderDelete(provider.id)}
+                        disabled={args.providerConfigPending !== null}
+                      >
+                        {args.providerConfigPending === `generic-openai-delete:${provider.id}` ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+          <form className="provider-config-card provider-config-form provider-config-generic-form" onSubmit={args.onGenericProviderSubmit}>
+            <p className="provider-config-copy">
+              {args.isEditingGenericProvider
+                ? 'Update provider metadata, model ids, or optional API key rotation.'
+                : 'Add a new OpenAI-compatible provider. API key is required for the first save and stored securely.'}
+            </p>
+            <label className="provider-config-field">
+              <span>Provider ID</span>
+              <input
+                type="text"
+                value={args.genericProviderId}
+                onChange={(event) => args.onGenericProviderIdChange(event.target.value)}
+                placeholder="my-openai-provider"
+                disabled={args.isEditingGenericProvider}
+              />
+            </label>
+            <label className="provider-config-field">
+              <span>Display Name</span>
+              <input
+                type="text"
+                value={args.genericProviderDisplayName}
+                onChange={(event) => args.onGenericProviderDisplayNameChange(event.target.value)}
+                placeholder="My OpenAI Provider"
+              />
+            </label>
+            <label className="provider-config-field">
+              <span>Base URL</span>
+              <input
+                type="url"
+                value={args.genericProviderBaseUrl}
+                onChange={(event) => args.onGenericProviderBaseUrlChange(event.target.value)}
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label className="provider-config-field">
+              <span>API Key</span>
+              <input
+                type="password"
+                value={args.genericProviderApiKey}
+                onChange={(event) => args.onGenericProviderApiKeyChange(event.target.value)}
+                placeholder={args.isEditingGenericProvider ? 'Leave blank to keep current key' : 'Provider API key'}
+              />
+            </label>
+            <label className="provider-config-field">
+              <span>Models (one per line or comma-separated)</span>
+              <textarea
+                value={args.genericProviderModelsInput}
+                onChange={(event) => args.onGenericProviderModelsInputChange(event.target.value)}
+                placeholder={'gpt-5\ngpt-5-mini'}
+                rows={4}
+              />
+            </label>
+            <label className="provider-config-field">
+              <span>Default Model ID</span>
+              <input
+                type="text"
+                value={args.genericProviderDefaultModelId}
+                onChange={(event) => args.onGenericProviderDefaultModelIdChange(event.target.value)}
+                placeholder="gpt-5-mini"
+              />
+            </label>
+            <label className="provider-config-checkbox">
+              <input
+                type="checkbox"
+                checked={args.genericProviderEnabled}
+                onChange={(event) => args.onGenericProviderEnabledChange(event.target.checked)}
+              />
+              <span>Enabled</span>
+            </label>
+            <label className="provider-config-checkbox">
+              <input
+                type="checkbox"
+                checked={args.genericProviderSetAsDefault}
+                onChange={(event) => args.onGenericProviderSetAsDefaultChange(event.target.checked)}
+              />
+              <span>Use as default provider</span>
+            </label>
+            <div className="provider-config-generic-form-actions">
+              <button type="submit" className="provider-config-primary" disabled={args.providerConfigPending !== null}>
+                {args.providerConfigPending === 'generic-openai-save'
+                  ? 'Saving...'
+                  : args.isEditingGenericProvider
+                    ? 'Update Provider'
+                    : 'Save Provider'}
+              </button>
+              <button
+                type="button"
+                className="provider-config-secondary"
+                onClick={args.onStartGenericProviderCreate}
+                disabled={args.providerConfigPending !== null}
+              >
+                {args.isEditingGenericProvider ? 'Cancel Edit' : 'Clear Form'}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </section>
   );
@@ -2673,6 +3066,23 @@ function formatCredentialSource(value: DesktopProviderStatus['credentialSource']
     default:
       return 'Environment variable';
   }
+}
+
+function parseGenericProviderModelIds(value: string): string[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  const parsedModelIds = value
+    .split(/[\n,]/g)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return Array.from(new Set(parsedModelIds));
+}
+
+function isValidGenericProviderId(value: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/.test(value);
 }
 
 function clampToolApprovalSidebarWidth(value: number): number {
