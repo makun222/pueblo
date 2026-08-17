@@ -859,6 +859,9 @@ export function App() {
             }
             return {
               ...entry,
+              content: entry.content.trim().length > 0
+                ? `${entry.content}\n\n[Task cancelled. Partial output preserved.]`
+                : 'Task cancelled before any assistant output was available.',
               status: 'cancelled',
               completedAtMs: Date.now(),
               blockType: 'assistant',

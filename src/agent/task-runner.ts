@@ -31,7 +31,7 @@ import type { ToolExecutionResult } from '../tools/glob-tool';
 import type { TaskContext } from './task-context';
 import fs from 'node:fs';
 import path from 'node:path';
-import { throwIfTaskCancelled } from '../shared/task-cancellation';
+import { isTaskCancellationError, throwIfTaskCancelled } from '../shared/task-cancellation';
 
 export interface RunAgentTaskInput {
   readonly goal: string;
@@ -203,6 +203,7 @@ export class AgentTaskRunner {
     const modelMessageTrace: ModelMessageTraceEntry[] = [];
     const providerUsageRef: { current?: ProviderUsage } = {};
     const providerRequestMetricsRef: { current?: ProviderRequestMetrics } = {};
+    const streamedAssistantTextRef: { current: string } = { current: '' };
 
     try {
       this.emitProgress(`Started task: ${truncateProgressMessage(input.goal)}`);
@@ -219,6 +220,7 @@ export class AgentTaskRunner {
         modelMessageTrace,
         providerUsageRef,
         providerRequestMetricsRef,
+        streamedAssistantTextRef,
         signal: input.signal,
       });
 
@@ -280,6 +282,7 @@ export class AgentTaskRunner {
         modelMessageTrace,
         providerUsageRef.current,
         providerRequestMetricsRef.current,
+        streamedAssistantTextRef.current,
         error,
       );
       throw error;
@@ -408,6 +411,7 @@ export class AgentTaskRunner {
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly providerUsageRef: { current?: ProviderUsage };
     readonly providerRequestMetricsRef: { current?: ProviderRequestMetrics };
+    readonly streamedAssistantTextRef: { current: string };
     readonly signal?: AbortSignal;
   }): Promise<ProviderRunResult> {
     const messages = [...args.executionMessages];
@@ -474,6 +478,7 @@ export class AgentTaskRunner {
           signal: args.signal,
           onTextDelta: (text) => {
             streamedStepText += text;
+            args.streamedAssistantTextRef.current += text;
             this.reportAssistantDelta?.(text);
           },
         });
@@ -544,6 +549,7 @@ export class AgentTaskRunner {
           modelMessageTrace: args.modelMessageTrace,
           stepTrace: args.stepTrace,
           stepNumber: stepIndex + 2,
+          streamedAssistantTextRef: args.streamedAssistantTextRef,
           signal: args.signal,
         });
         args.providerUsageRef.current = mergeProviderUsage(args.providerUsageRef.current, recoveryResult.usage);
@@ -692,6 +698,7 @@ export class AgentTaskRunner {
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly stepTrace: AgentStepTraceEntry[];
     readonly stepNumber: number;
+    readonly streamedAssistantTextRef: { current: string };
     readonly signal?: AbortSignal;
   }): Promise<ProviderRunResult> {
     const recoveryMessages = [
@@ -721,6 +728,7 @@ export class AgentTaskRunner {
       signal: args.signal,
       onTextDelta: (text) => {
         streamedStepText += text;
+        args.streamedAssistantTextRef.current += text;
         this.reportAssistantDelta?.(text);
       },
     });
@@ -1470,13 +1478,19 @@ export class AgentTaskRunner {
     modelMessageTrace: ModelMessageTraceEntry[],
     providerUsage: ProviderUsage | undefined,
     providerRequestMetrics: ProviderRequestMetrics | undefined,
+    streamedAssistantText: string,
     error: unknown,
   ): void {
     const targetDirectory = input.taskContext?.targetDirectory ?? null;
     const toolExecutionCwd = this.resolveTaskExecutionCwd(input);
+    const cancelledOutputSummary = isTaskCancellationError(error)
+      ? getNonEmptyFinalText(response?.outputSummary ?? '', streamedAssistantText)
+      : null;
+    const resolvedFailureOutputSummary = cancelledOutputSummary
+      ?? `Task failed: ${this.getErrorMessage(error)}`;
     const failureOutput = withSourceAttribution(
       {
-        outputSummary: `Task failed: ${this.getErrorMessage(error)}`,
+        outputSummary: resolvedFailureOutputSummary,
         providerUsage,
         providerRequestMetrics,
         targetDirectory,
@@ -1497,7 +1511,7 @@ export class AgentTaskRunner {
         fileChanges: aggregateFileChanges(toolOutputs),
       },
       {
-        modelOutput: response?.outputSummary,
+        modelOutput: cancelledOutputSummary ?? response?.outputSummary,
         promptIds: this.getPrompts(input).map((prompt) => prompt.id),
         memoryIds: this.getMemoryIds(input),
         toolNames: toolOutputs.map((output) => output.toolName),

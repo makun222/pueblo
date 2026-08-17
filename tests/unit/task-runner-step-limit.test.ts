@@ -345,6 +345,21 @@ class AbortableProviderAdapter implements ProviderAdapter {
   }
 }
 
+class StreamingAbortableProviderAdapter implements ProviderAdapter {
+  async runStep(context: ProviderStepContext): Promise<ProviderStepResult> {
+    context.onTextDelta?.('partial draft');
+    return await new Promise<ProviderStepResult>((_resolve, reject) => {
+      context.signal?.addEventListener('abort', () => {
+        reject(context.signal?.reason ?? createTaskCancellationError('Task cancelled during provider execution.'));
+      }, { once: true });
+    });
+  }
+
+  async runTask(): Promise<ProviderRunResult> {
+    return { outputSummary: 'unused legacy mode' };
+  }
+}
+
 class UnknownToolThenFinalProviderAdapter implements ProviderAdapter {
   seenRetryPrompt: string | null = null;
 
@@ -1454,5 +1469,91 @@ describe('AgentTaskRunner step limit', () => {
     controller.abort(createTaskCancellationError('Task cancelled because the desktop window closed.'));
 
     await expect(pendingRun).rejects.toThrow('Task cancelled because the desktop window closed.');
+  });
+
+  it('persists streamed assistant draft when cancellation happens in-flight', async () => {
+    const profile = createProviderProfile({
+      id: 'openai',
+      name: 'OpenAI',
+      defaultModelId: 'gpt-4.1-mini',
+      models: [{ id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', supportsTools: true }],
+    });
+    const registry = new ProviderRegistry();
+    registry.register(profile, new StreamingAbortableProviderAdapter());
+
+    let latestTask: AgentTask | null = null;
+    const repository = {
+      create(input: {
+        goal: string;
+        sessionId: string | null;
+        providerId: string;
+        modelId: string;
+        inputContextSummary: string;
+        status: AgentTask['status'];
+        outputSummary?: string | null;
+        toolInvocationIds?: string[];
+      }): AgentTask {
+        latestTask = {
+          id: 'task-stream-cancel',
+          goal: input.goal,
+          sessionId: input.sessionId,
+          providerId: input.providerId,
+          modelId: input.modelId,
+          inputContextSummary: input.inputContextSummary,
+          status: input.status,
+          outputSummary: input.outputSummary ?? null,
+          toolInvocationIds: input.toolInvocationIds ?? [],
+          createdAt: new Date().toISOString(),
+          completedAt: input.status === 'completed' || input.status === 'failed' ? new Date().toISOString() : null,
+        };
+        return latestTask;
+      },
+      update(_taskId: string, input: {
+        goal: string;
+        sessionId: string | null;
+        providerId: string;
+        modelId: string;
+        inputContextSummary: string;
+        status: AgentTask['status'];
+        outputSummary?: string | null;
+        toolInvocationIds?: string[];
+      }): AgentTask {
+        latestTask = {
+          ...(latestTask ?? {
+            id: 'task-stream-cancel',
+            createdAt: new Date().toISOString(),
+            completedAt: null,
+          }),
+          goal: input.goal,
+          sessionId: input.sessionId,
+          providerId: input.providerId,
+          modelId: input.modelId,
+          inputContextSummary: input.inputContextSummary,
+          status: input.status,
+          outputSummary: input.outputSummary ?? null,
+          toolInvocationIds: input.toolInvocationIds ?? [],
+          completedAt: input.status === 'completed' || input.status === 'failed' ? new Date().toISOString() : null,
+        } as AgentTask;
+        return latestTask;
+      },
+    } as unknown as import('../../src/agent/task-repository').AgentTaskRepository;
+
+    const runner = new AgentTaskRunner(registry, repository);
+    const controller = new AbortController();
+    const pendingRun = runner.run({
+      goal: 'Wait for cancellation',
+      sessionId: 'session-1',
+      providerId: 'openai',
+      modelId: 'gpt-4.1-mini',
+      inputContextSummary: 'No additional context',
+      signal: controller.signal,
+    });
+
+    controller.abort(createTaskCancellationError('Task cancelled by user.'));
+
+    await expect(pendingRun).rejects.toThrow('Task cancelled by user.');
+    expect(latestTask?.status).toBe('failed');
+    const payload = JSON.parse(latestTask?.outputSummary ?? '{}') as { outputSummary?: string };
+    expect(payload.outputSummary).toContain('partial draft');
   });
 });

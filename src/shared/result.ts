@@ -511,14 +511,19 @@ export function createPhasedResultBlocks(result: CommandResult<unknown>): {
   if (result.data !== undefined) {
     if (payload) {
       const outputSummary = payload.outputSummary ?? payload.attribution?.modelOutput ?? JSON.stringify(result.data, null, 2);
+      const isCancelledTaskResult = result.code === 'TASK_CANCELLED';
+      const primaryTitle = isCancelledTaskResult ? 'Task Cancelled (Partial Output Saved)' : 'Output Summary';
+      const primaryContent = isCancelledTaskResult
+        ? `The task was cancelled. Any assistant output generated before cancellation has been preserved.\n\n${outputSummary}`
+        : outputSummary;
       const modelOutput = payload.attribution?.modelOutput?.trim();
       const shouldShowModelOutput = Boolean(modelOutput) && modelOutput !== outputSummary.trim();
 
       if (!primaryBlock) {
         primaryBlock = createOutputBlock({
           type: result.ok ? 'task-result' : 'error',
-          title: 'Output Summary',
-          content: outputSummary,
+          title: primaryTitle,
+          content: primaryContent,
           messageTrace: consumeMessageTrace(),
           fileChanges: payload.fileChanges,
         });
