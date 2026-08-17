@@ -282,6 +282,21 @@ export async function runInteractiveCliSession(
   }
 
   try {
+    const submitInputAndRender = async (text: string) => {
+      try {
+        const result = await cli.submitInput(text);
+        availableNextStepActions = result.actions ?? [];
+        write(formatCommandResult(result, { interactiveActionSelection: true }));
+      } catch (error) {
+        if (isTaskCancellationError(error)) {
+          write(formatCommandResult(successResult('TASK_CANCELLED', 'Task cancelled. Partial output was saved when available.')));
+          availableNextStepActions = [];
+          return;
+        }
+        throw error;
+      }
+    };
+
     while (true) {
       const input = await lineReader.readLine(options.prompt ?? INTERACTIVE_PROMPT);
       const trimmedInput = input.trim();
@@ -303,15 +318,11 @@ export async function runInteractiveCliSession(
           continue;
         }
 
-        const result = await cli.submitInput(selectedNextStepAction.prompt);
-        availableNextStepActions = result.actions ?? [];
-        write(formatCommandResult(result, { interactiveActionSelection: true }));
+        await submitInputAndRender(selectedNextStepAction.prompt);
         continue;
       }
 
-      const result = await cli.submitInput(trimmedInput);
-      availableNextStepActions = result.actions ?? [];
-      write(formatCommandResult(result, { interactiveActionSelection: true }));
+      await submitInputAndRender(trimmedInput);
     }
   } finally {
     cli.setToolApprovalHandler(null);
@@ -728,7 +739,42 @@ export function createCliDependencies(
       } : task, nextStepActions);
     } catch (error) {
       if (isTaskCancellationError(error)) {
-        throw error;
+        const persistedTasks = taskRepository.listBySession(sessionId);
+        const latestTask = persistedTasks[persistedTasks.length - 1] ?? null;
+        const latestPayload = extractTaskOutputSummaryPayload(latestTask?.outputSummary);
+        const assistantOutput = extractTaskOutputSummaryText(latestTask?.outputSummary)
+          ?? 'Task cancelled before any assistant output was available.';
+
+        sessionService.addProviderUsage(sessionId, latestPayload?.providerUsage);
+        lastProviderRequestMetrics = latestPayload?.providerRequestMetrics ?? lastProviderRequestMetrics;
+
+        if (assistantOutput.trim()) {
+          sessionService.addAssistantMessage(sessionId, assistantOutput, latestTask?.id ?? null, currentTurnId);
+        }
+
+        const turnMemory = memoryService.createConversationTurnMemory({
+          sessionId,
+          turnNumber: turnIndexer.turnNumber,
+          userInput: normalizedUserInput,
+          assistantOutput,
+          turnId: currentTurnId,
+        });
+        addTaskMemoriesToSession({
+          sessionId,
+          turnMemory,
+          memoryService,
+          sessionService,
+        });
+        pepeSupervisor.flushSession(sessionId).catch(err => {
+            perfLog(`flushSession-error-${sessionId}`, 0, (err as Error).message);
+        });
+
+        return successResult('TASK_CANCELLED', 'Task cancelled. Partial output has been saved.', latestPayload ? {
+          ...latestPayload,
+          outputSummary: assistantOutput,
+        } : {
+          outputSummary: assistantOutput,
+        });
       }
 
       const accumulateLatestTaskProviderUsage = () => {

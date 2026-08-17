@@ -4,6 +4,7 @@ import { renderToolApprovalPrompt, runInteractiveCliSession } from '../../src/cl
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../src/agent/task-runner';
 import { extractTaskOutputSummaryPayload, successResult } from '../../src/shared/result';
 import type { IpcInputEnvelope } from '../../src/shared/schema';
+import { createTaskCancellationError } from '../../src/shared/task-cancellation';
 
 describe('interactive cli session', () => {
   it('keeps the terminal session open and routes input until exit', async () => {
@@ -292,6 +293,83 @@ describe('interactive cli session', () => {
     expect(prompt).toContain('- old');
     expect(prompt).toContain('+ new');
     expect(prompt).toContain('Approve? (o=Allow once / a=Allow ALL / n=Deny)');
+  });
+
+  it('keeps interactive loop alive after a task cancellation', async () => {
+    const writes: string[] = [];
+    const inputs = ['first task', 'second task', '/exit'];
+    const handledInputs: string[] = [];
+    let index = 0;
+
+    const cli: CliDependencies = {
+      dispatcher: {} as never,
+      channelService: { start: async () => {}, dispose: () => {} } as never,
+      createSessionForChannel: async () => 'session-id' as never,
+      async submitInput(input: string | IpcInputEnvelope) {
+        const normalizedInput = typeof input === 'string' ? input : input.inputText;
+        handledInputs.push(normalizedInput);
+        if (normalizedInput === 'first task') {
+          throw createTaskCancellationError('Task cancelled by user.');
+        }
+        return successResult('HANDLED', `Handled ${normalizedInput}`);
+      },
+      async getRuntimeStatus() {
+        return {
+          providerId: null,
+          providerName: null,
+          agentProfileId: null,
+          agentProfileName: null,
+          agentInstanceId: null,
+          modelId: null,
+          modelName: null,
+          activeSessionId: null,
+          contextCount: {
+            estimatedTokens: 0,
+            contextWindowLimit: null,
+            utilizationRatio: null,
+            messageCount: 0,
+            selectedPromptCount: 0,
+            selectedMemoryCount: 0,
+            derivedMemoryCount: 0,
+          },
+          modelMessageCount: 0,
+          modelMessageCharCount: 0,
+          selectedPromptCount: 0,
+          selectedMemoryCount: 0,
+          backgroundSummaryStatus: {
+            state: 'idle',
+            activeSummarySessionId: null,
+            lastSummaryAt: null,
+            lastSummaryMemoryId: null,
+          },
+        };
+      },
+      listAgentProfiles() { return []; },
+      startAgentSession() { throw new Error('not implemented for interactive test'); },
+      listAgentSessions() { return []; },
+      getSession() { return null; },
+      listSessionMemories() { return []; },
+      selectSession() { throw new Error('not implemented for interactive test'); },
+      setProgressReporter() {},
+      setToolApprovalHandler() {},
+      setToolApprovalBatchHandler() {},
+      setFileReviewHandler() {},
+      getTaskRunner() { return {} as never; },
+      getContextResolver() { return {} as never; },
+      databaseClose() {},
+    };
+
+    await runInteractiveCliSession(cli, {
+      isInteractive: true,
+      readLine: async () => inputs[index++] ?? '/exit',
+      write: (text) => {
+        writes.push(text);
+      },
+    });
+
+    expect(handledInputs).toEqual(['first task', 'second task']);
+    expect(writes.join('')).toContain('[TASK_CANCELLED] Task cancelled. Partial output was saved when available.');
+    expect(writes.join('')).toContain('[HANDLED] Handled second task');
   });
 
   it('passes tri-state approval decisions through the interactive handler', async () => {
