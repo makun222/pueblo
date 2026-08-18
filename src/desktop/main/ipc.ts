@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { dialog, ipcMain, BrowserWindow } from 'electron';
+import { app, dialog, ipcMain, BrowserWindow } from 'electron';
 import { createRuntimeCoordinator, RuntimeMessage } from '../../app/runtime';
 import type { ToolApprovalDecision, ToolApprovalRequest, RunAgentTaskInput } from '../../agent/task-runner';
 import type { RunRoundFn } from '../../agent/loop-runner';
@@ -40,6 +40,14 @@ import { createFeishuChannelAdapter } from '../../channel/channels/feishu/feishu
 import type { ChannelConfig } from '../../channel/channel-types';
 import { loadChannelsConfig } from '../../channel/channel-config';
 import { registerChannelIpcHandlers } from '../../channel/channel-ipc';
+import {
+  deleteInstantNote,
+  readInstantNotes,
+  resolveInstantNotesStoragePath,
+  saveInstantNote,
+  type InstantNoteDraft,
+  type InstantNoteRecord,
+} from '../shared/instant-notes';
 
 const TOOL_APPROVAL_STATE_CHANNEL = 'tool-approval-state';
 const TALK_STATE_CHANNEL = 'talk-state';
@@ -60,6 +68,13 @@ const DESKTOP_IPC_CHANNELS = [
   'get-session',
   'list-session-memories',
   'select-session',
+  'notes:list',
+  'notes:save',
+  'notes:update',
+  'notes:delete',
+  'notes:queue-next-turn',
+  'notes:queue-subagent',
+  'notes:queue-new-agent',
   'select-input-files',
   'submit-input',
 ] as const;
@@ -106,6 +121,8 @@ interface CliProviderConfigurationApi {
 export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: DesktopLoopJobManager, appWindow?: AppWindow, mcpClientManager?: McpClientManager): () => void {
   const config = loadAppConfig();
   const cli = createCliDependencies(config, { startNewSession: true, deferAgentSelection: true, mcpClientManager });
+  const instantNotesStoragePath = resolveInstantNotesStoragePath(app.getPath('userData'));
+  const queuedNextTurnNotes: InstantNoteRecord[] = [];
 
   // Wire callModel for pre-flight goal validation
   const callModel: CallModelFn = async (modelId: string, prompt: string) => {
@@ -193,6 +210,39 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     config,
     submitInput: cli.submitInput,
   });
+
+  const flushQueuedNextTurnNotes = async (): Promise<void> => {
+    while (queuedNextTurnNotes.length > 0 && activeSubmitControllers.size === 0) {
+      const nextNote = queuedNextTurnNotes.shift();
+      if (!nextNote) {
+        break;
+      }
+
+      const status = await resolveRuntimeStatus(cli);
+      const session = nextNote.sessionId ? cli.getSession(nextNote.sessionId) : (status.activeSessionId ? cli.getSession(status.activeSessionId) : null);
+      const envelope: IpcInputEnvelope = {
+        requestId: `instant-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        windowId: String(mainWindow.id),
+        sessionId: nextNote.sessionId ?? status.activeSessionId ?? null,
+        inputText: nextNote.content,
+        attachments: [],
+        submittedAt: new Date().toISOString(),
+      };
+
+      if (session && session.messageHistory.length > 0) {
+        const latestTurnIds = Array.from(new Set(
+          session.messageHistory
+            .map((message) => message.turnId)
+            .filter((turnId): turnId is string => typeof turnId === 'string' && turnId.length > 0),
+        )).slice(-20);
+        if (latestTurnIds.length > 0) {
+          envelope.requestId = `instant-note-${latestTurnIds[latestTurnIds.length - 1]}-${Math.random().toString(36).slice(2, 8)}`;
+        }
+      }
+
+      await executeInput(envelope);
+    }
+  };
 
   // ── External channel integration (feishu long-connection, etc.) ──
   const channelRegistry = createChannelRegistry();
@@ -439,6 +489,42 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
 
   ipcMain.handle('select-session', async (_event, sessionId: string) => cli.selectSession(sessionId));
 
+  ipcMain.handle('notes:list', async () => readInstantNotes(instantNotesStoragePath));
+
+  ipcMain.handle('notes:save', async (_event, draft: InstantNoteDraft) => {
+    const runtimeStatus = await resolveRuntimeStatus(cli);
+    const session = runtimeStatus.activeSessionId ? cli.getSession(runtimeStatus.activeSessionId) : null;
+    return saveInstantNote(instantNotesStoragePath, draft, runtimeStatus, session);
+  });
+
+  ipcMain.handle('notes:update', async (_event, payload: { id: string; content: string }) => {
+    const runtimeStatus = await resolveRuntimeStatus(cli);
+    const session = runtimeStatus.activeSessionId ? cli.getSession(runtimeStatus.activeSessionId) : null;
+    return saveInstantNote(instantNotesStoragePath, { ...payload, id: payload.id }, runtimeStatus, session);
+  });
+
+  ipcMain.handle('notes:delete', async (_event, noteId: string) => {
+    await deleteInstantNote(instantNotesStoragePath, noteId);
+  });
+
+  ipcMain.handle('notes:queue-next-turn', async (_event, note: InstantNoteRecord) => {
+    queuedNextTurnNotes.push(note);
+    if (activeSubmitControllers.size === 0) {
+      await flushQueuedNextTurnNotes();
+    }
+    return { queued: true, message: '已加入下一轮对话队列' };
+  });
+
+  ipcMain.handle('notes:queue-subagent', async (_event, _note: InstantNoteRecord) => ({
+    queued: false,
+    message: '子 agent 入口已预留，暂未实现。',
+  }));
+
+  ipcMain.handle('notes:queue-new-agent', async (_event, _note: InstantNoteRecord) => ({
+    queued: false,
+    message: '新 agent 入口已预留，暂未实现。',
+  }));
+
   ipcMain.handle('select-input-files', async (_event, sessionId: string | null) => {
     const selection = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
@@ -582,6 +668,9 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
       throw error;
     } finally {
       activeSubmitControllers.delete(submitController);
+      if (activeSubmitControllers.size === 0) {
+        await flushQueuedNextTurnNotes();
+      }
     }
   });
 

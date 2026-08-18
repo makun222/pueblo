@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'src/desktop/renderer/index.html'),
         mcpManager: path.resolve(__dirname, 'src/desktop/renderer/mcp-manager.html'),
+        notes: path.resolve(__dirname, 'src/desktop/renderer/notes.html'),
       },
     },
   },

@@ -17,9 +17,9 @@ export class AppWindow {
   private monitorWindow: MonitorWindow | null = null;
   private closedCallbacks: Array<() => void> = [];
 
-  constructor(onOpenMcp?: () => void, onOpenClock?: () => void) {
+  constructor(onOpenMcp?: () => void, onOpenClock?: () => void, onOpenInstantNotes?: () => void) {
     this.browserWindow = createWindow();
-    installDesktopApplicationMenu(this.browserWindow, onOpenMcp, onOpenClock);
+    installDesktopApplicationMenu(this.browserWindow, onOpenMcp, onOpenClock, onOpenInstantNotes);
 
     this.browserWindow.on('closed', () => {
       for (const cb of this.closedCallbacks) {

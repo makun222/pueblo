@@ -7,8 +7,9 @@ export function installDesktopApplicationMenu(
   mainWindow: BrowserWindow,
   onOpenMcp?: () => void,
   onOpenClock?: () => void,
+  onOpenInstantNotes?: () => void,
 ): void {
-  const template = buildDesktopMenuTemplate(mainWindow, onOpenMcp, onOpenClock);
+  const template = buildDesktopMenuTemplate(mainWindow, onOpenMcp, onOpenClock, onOpenInstantNotes);
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -16,6 +17,7 @@ function buildDesktopMenuTemplate(
   mainWindow: BrowserWindow,
   onOpenMcp?: () => void,
   onOpenClock?: () => void,
+  onOpenInstantNotes?: () => void,
 ): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = [];
 
@@ -100,6 +102,15 @@ function buildDesktopMenuTemplate(
           click: () => {
             if (onOpenClock) {
               onOpenClock();
+            }
+          },
+        },
+        {
+          label: 'Instant Notes',
+          accelerator: 'CmdOrCtrl+Shift+U',
+          click: () => {
+            if (onOpenInstantNotes) {
+              onOpenInstantNotes();
             }
           },
         },

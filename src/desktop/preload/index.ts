@@ -14,6 +14,7 @@ import type {
   DesktopToolApprovalResponse,
   DesktopToolApprovalState,
 } from '../shared/ipc-contract';
+import type { InstantNoteDraft, InstantNoteRecord } from '../shared/instant-notes';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session } from '../../shared/schema';
 import type { McpConnectionState, McpServerConfig } from '../../mcp/mcp-types';
 
@@ -75,6 +76,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOutput: (callback: (event: any, data: any) => void) => ipcRenderer.on('output', callback),
   removeAllListeners: (event: string) => ipcRenderer.removeAllListeners(event),
+  notesList: (): Promise<InstantNoteRecord[]> => ipcRenderer.invoke('notes:list'),
+  notesSave: (draft: InstantNoteDraft): Promise<InstantNoteRecord> => ipcRenderer.invoke('notes:save', draft),
+  notesUpdate: (id: string, draft: InstantNoteDraft): Promise<InstantNoteRecord> => ipcRenderer.invoke('notes:update', { id, ...draft }),
+  notesDelete: (noteId: string): Promise<void> => ipcRenderer.invoke('notes:delete', noteId),
+  notesQueueNextTurn: (note: InstantNoteRecord): Promise<{ queued: boolean; message: string }> => ipcRenderer.invoke('notes:queue-next-turn', note),
+  notesQueueSubagent: (note: InstantNoteRecord): Promise<{ queued: boolean; message: string }> => ipcRenderer.invoke('notes:queue-subagent', note),
+  notesQueueNewAgent: (note: InstantNoteRecord): Promise<{ queued: boolean; message: string }> => ipcRenderer.invoke('notes:queue-new-agent', note),
 
   // ── MCP (Model Context Protocol) ─────────────
   mcpListServers: (): Promise<McpServerConfig[]> =>

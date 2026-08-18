@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>即时贴</title>
+    <style>
+      :root {
+        --bg: #111827;
+        --panel: rgba(17, 24, 39, 0.92);
+        --panel-2: rgba(31, 41, 55, 0.9);
+        --border: rgba(148, 163, 184, 0.25);
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --accent: #60a5fa;
+        --danger: #f87171;
+        --warning: #fbbf24;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.8);
+        color: var(--text);
+        font-family: "Segoe UI", sans-serif;
+      }
+
+      body {
+        display: flex;
+        justify-content: center;
+        padding: 12px;
+      }
+
+      .notes-window {
+        width: 440px;
+        min-height: 520px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.5);
+        backdrop-filter: blur(10px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.7);
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .chip {
+        background: rgba(96, 165, 250, 0.15);
+        border: 1px solid rgba(96, 165, 250, 0.4);
+        color: #bfdbfe;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 11px;
+      }
+
+      .composer {
+        padding: 12px 12px 8px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 110px;
+        max-height: 200px;
+        resize: vertical;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.5);
+        color: var(--text);
+        padding: 12px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .meta {
+        min-height: 18px;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      button {
+        appearance: none;
+        border: none;
+        border-radius: 10px;
+        padding: 8px 12px;
+        cursor: pointer;
+        color: var(--text);
+        font-weight: 600;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+
+      button:hover { transform: translateY(-1px); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .primary { background: linear-gradient(135deg, #2563eb, #3b82f6); }
+      .secondary { background: rgba(148, 163, 184, 0.18); }
+      .danger { background: rgba(248, 113, 113, 0.18); color: #fecaca; }
+      .ghost { background: rgba(59, 130, 246, 0.12); color: #bfdbfe; }
+
+      .list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 12px 12px;
+      }
+
+      .note-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .note-item {
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 10px 8px;
+      }
+
+      .note-item.selected {
+        border-color: rgba(96, 165, 250, 0.7);
+        box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.5);
+      }
+
+      .note-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+
+      .note-text {
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.5;
+        font-size: 14px;
+        margin: 0;
+      }
+
+      .note-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .session-tag {
+        background: rgba(34, 197, 94, 0.12);
+        border: 1px solid rgba(34, 197, 94, 0.4);
+        border-radius: 999px;
+        padding: 2px 6px;
+        color: #bbf7d0;
+      }
+
+      .turn-tag {
+        background: rgba(251, 191, 36, 0.12);
+        border: 1px solid rgba(251, 191, 36, 0.4);
+        border-radius: 999px;
+        padding: 2px 6px;
+        color: #fef3c7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .small {
+        padding: 6px 8px;
+        font-size: 12px;
+      }
+
+      .status {
+        min-height: 18px;
+        color: #bfdbfe;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+
+      @media (max-width: 520px) {
+        .notes-window { width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="notes-window">
+      <div class="header">
+        <h1>即时贴</h1>
+        <span class="chip">Ctrl+Shift+U</span>
+      </div>
+
+      <div class="composer">
+        <textarea id="note-text" maxlength="2000" placeholder="记录一个想法、下一步任务或待办项…"></textarea>
+        <div id="current-session-meta" class="meta">当前会话：未连接</div>
+        <div class="toolbar">
+          <button id="save-note" class="primary">保存</button>
+          <button id="new-note" class="secondary">新建</button>
+        </div>
+        <div id="status" class="status" aria-live="polite"></div>
+      </div>
+
+      <div class="list">
+        <ul id="note-list" class="note-list"></ul>
+      </div>
+    </div>
+
+    <script>
+      const MAX_NOTE_LENGTH = 2000;
+      let selectedNoteId = null;
+      let currentSessionMeta = null;
+
+      function getElectronApi() {
+        return window.electronAPI ?? null;
+      }
+
+      function setStatus(message, isError = false) {
+        const statusNode = document.getElementById('status');
+        statusNode.textContent = message || '';
+        statusNode.style.color = isError ? '#fecaca' : '#bfdbfe';
+      }
+
+      function getTextarea() {
+        return document.getElementById('note-text');
+      }
+
+      function formatSessionMeta(note) {
+        if (!note) {
+          return '当前会话：未连接';
+        }
+
+        const parts = [];
+        if (note.sessionTitle) parts.push(note.sessionTitle);
+        else if (note.sessionId) parts.push(note.sessionId.slice(0, 8));
+        else parts.push('未命名会话');
+
+        if (note.agentProfileName) parts.push(note.agentProfileName);
+        if (note.modelName) parts.push(note.modelName);
+
+        return '当前会话：' + parts.join(' / ');
+      }
+
+      function renderNote(item) {
+        const note = item;
+        const article = document.createElement('li');
+        article.className = 'note-item' + (selectedNoteId === note.id ? ' selected' : '');
+        article.dataset.id = note.id;
+
+        const meta = document.createElement('div');
+        meta.className = 'note-meta';
+        const sessionText = document.createElement('span');
+        sessionText.textContent = note.sessionTitle || note.sessionId || '未命名会话';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'danger small';
+        deleteBtn.textContent = '删除';
+        deleteBtn.addEventListener('click', async (event) => {
+          event.stopPropagation();
+          const api = getElectronApi();
+          if (!api) {
+            setStatus('环境未就绪，无法删除', true);
+            return;
+          }
+          await api.notesDelete(note.id);
+          if (selectedNoteId === note.id) {
+            selectedNoteId = null;
+            getTextarea().value = '';
+          }
+          await loadNotes();
+          setStatus('已删除即时贴');
+        });
+        meta.appendChild(sessionText);
+        meta.appendChild(deleteBtn);
+
+        const content = document.createElement('p');
+        content.className = 'note-text';
+        content.textContent = note.content;
+
+        const details = document.createElement('div');
+        details.className = 'note-details';
+        if (note.sessionId) {
+          const sessionTag = document.createElement('span');
+          sessionTag.className = 'session-tag';
+          sessionTag.textContent = 'Session ' + note.sessionId.slice(0, 8);
+          details.appendChild(sessionTag);
+        }
+        if (Array.isArray(note.turnIds) && note.turnIds.length > 0) {
+          const turnTag = document.createElement('span');
+          turnTag.className = 'turn-tag';
+          turnTag.textContent = 'Turns ' + note.turnIds.slice(0, 3).join(', ');
+          details.appendChild(turnTag);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        const nextTurnBtn = document.createElement('button');
+        nextTurnBtn.className = 'ghost small';
+        nextTurnBtn.textContent = '下一轮对话执行';
+        nextTurnBtn.addEventListener('click', async () => {
+          const api = getElectronApi();
+          if (!api) {
+            setStatus('环境未就绪，无法加入下一轮', true);
+            return;
+          }
+          const result = await api.notesQueueNextTurn(note);
+          setStatus(result.message || '已加入下一轮执行队列');
+        });
+
+        const subagentBtn = document.createElement('button');
+        subagentBtn.className = 'secondary small';
+        subagentBtn.textContent = '启动子agent执行';
+        subagentBtn.disabled = true;
+        subagentBtn.title = '预留接口，暂未实现';
+
+        const newAgentBtn = document.createElement('button');
+        newAgentBtn.className = 'secondary small';
+        newAgentBtn.textContent = '启动新agent执行';
+        newAgentBtn.disabled = true;
+        newAgentBtn.title = '预留接口，暂未实现';
+
+        actions.appendChild(nextTurnBtn);
+        actions.appendChild(subagentBtn);
+        actions.appendChild(newAgentBtn);
+
+        article.addEventListener('click', () => {
+          selectedNoteId = note.id;
+          getTextarea().value = note.content;
+          getTextarea().focus();
+          document.querySelectorAll('.note-item').forEach((el) => {
+            el.classList.toggle('selected', el.dataset.id === note.id);
+          });
+        });
+
+        article.appendChild(meta);
+        article.appendChild(content);
+        article.appendChild(details);
+        article.appendChild(actions);
+        return article;
+      }
+
+      function renderList(notes = []) {
+        const list = document.getElementById('note-list');
+        list.innerHTML = '';
+        for (const note of notes) {
+          list.appendChild(renderNote(note));
+        }
+      }
+
+      async function loadNotes() {
+        const api = getElectronApi();
+        if (!api) {
+          renderList([]);
+          document.getElementById('current-session-meta').textContent = '当前会话：未连接';
+          return;
+        }
+
+        const notes = await api.notesList();
+        if (selectedNoteId && !notes.some((note) => note.id === selectedNoteId)) {
+          selectedNoteId = null;
+        }
+        renderList(notes);
+        const sessionMeta = currentSessionMeta ?? '当前会话：未连接';
+        document.getElementById('current-session-meta').textContent = sessionMeta;
+      }
+
+      async function saveCurrentNote() {
+        const api = getElectronApi();
+        const value = getTextarea().value.trim();
+        if (!value) {
+          setStatus('请输入即时贴内容', true);
+          return;
+        }
+        if (value.length > MAX_NOTE_LENGTH) {
+          setStatus(`内容不能超过 ${MAX_NOTE_LENGTH} 字符`, true);
+          return;
+        }
+        if (!api) {
+          setStatus('环境未就绪，无法保存', true);
+          return;
+        }
+
+        try {
+          if (selectedNoteId) {
+            const note = await api.notesUpdate(selectedNoteId, { content: value });
+            setStatus('已更新即时贴：' + note.id.slice(0, 8));
+          } else {
+            const note = await api.notesSave({ content: value });
+            setStatus('已保存即时贴：' + note.id.slice(0, 8));
+          }
+          selectedNoteId = null;
+          getTextarea().value = '';
+          await loadNotes();
+        } catch (error) {
+          setStatus(error && error.message ? error.message : '保存失败', true);
+        }
+      }
+
+      document.getElementById('save-note').addEventListener('click', saveCurrentNote);
+      document.getElementById('new-note').addEventListener('click', () => {
+        selectedNoteId = null;
+        getTextarea().value = '';
+        setStatus('已准备新建随笔');
+      });
+
+      async function refreshContext() {
+        const api = getElectronApi();
+        if (!api) {
+          document.getElementById('current-session-meta').textContent = '当前会话：未连接';
+          return;
+        }
+
+        try {
+          const status = await api.getRuntimeStatus();
+          currentSessionMeta = status.activeSessionId
+            ? `当前会话：${status.agentProfileName || 'Agent'} / ${status.modelName || 'Model'} / ${status.activeSessionId}`
+            : '当前会话：未连接';
+          document.getElementById('current-session-meta').textContent = currentSessionMeta;
+        } catch {
+          document.getElementById('current-session-meta').textContent = '当前会话：未连接';
+        }
+      }
+
+      window.addEventListener('DOMContentLoaded', async () => {
+        await refreshContext();
+        await loadNotes();
+      });
+
+      setInterval(() => {
+        void refreshContext();
+      }, 3000);
+    </script>
+  </body>
+</html>

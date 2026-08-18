@@ -1,10 +1,11 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain } from 'electron';
 import { createOutputBlock } from '../../shared/result';
 import type { DesktopRuntimeStatus } from '../shared/ipc-contract';
 import { setupIpcHandlers } from './ipc';
 import { AppWindow } from './app-window';
 import { createMcpManagerWindow } from './mcp-manager-window';
 import { openClockWindow } from './clock-window';
+import { toggleInstantNotesWindow } from './instant-notes-window';
 import type { LoopConfig } from '../../agent/loop-runner.js';
 import { DesktopLoopJobManager } from './loop-job-manager';
 import { McpClientManager } from '../../mcp/mcp-client';
@@ -33,7 +34,11 @@ async function createMainWindow(): Promise<void> {
     openClockWindow();
   };
 
-  appWindow = new AppWindow(onOpenMcp, onOpenClock);
+  const onOpenInstantNotes = (): void => {
+    toggleInstantNotesWindow();
+  };
+
+  appWindow = new AppWindow(onOpenMcp, onOpenClock, onOpenInstantNotes);
   mainWindow = appWindow.browserWindow;
   appWindow.onClosed(() => {
     disposeDesktopRuntime?.();
@@ -252,7 +257,17 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
   ipcMain.handle('submit-input', failWithStartupError);
 }
 
-app.whenReady().then(createMainWindow);
+app.whenReady().then(() => {
+  try {
+    globalShortcut.register('CommandOrControl+Shift+U', () => {
+      toggleInstantNotesWindow();
+    });
+  } catch (error) {
+    appLogger.warn('[Desktop] Failed to register Ctrl+Shift+U shortcut:', error);
+  }
+
+  void createMainWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -261,6 +276,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  globalShortcut.unregisterAll();
   disposeDesktopRuntime?.();
   disposeDesktopRuntime = null;
   Logger.cleanupAll();
