@@ -32,8 +32,9 @@ const SERVER_INFO = {
 
 // ─── 转发到智谱 REST web_search（paas/v4，已验证可用）────────────────
 const ENGINE_BY_TOOL = {
-  webSearchSogou: 'search_sogou',
-  webSearchQuark: 'search_quark',
+  // 官方枚举（docs.bigmodel.cn API 参考）：search_std / search_pro / search_pro_sogou / search_pro_quark
+  webSearchSogou: 'search_pro_sogou',
+  webSearchQuark: 'search_pro_quark',
   webSearchPro: 'search_pro',
   webSearchStd: 'search_std',
 };

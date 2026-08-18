@@ -384,4 +384,18 @@ describe('Result Block Rendering', () => {
 
     expect(blocks[0]?.actions).toEqual([]);
   });
+
+  it('labels cancelled task summaries with preserved partial-output messaging', () => {
+    const result = successResult('TASK_CANCELLED', 'Task cancelled. Partial output has been saved.', {
+      outputSummary: JSON.stringify({
+        outputSummary: 'Partial assistant draft',
+      }),
+    });
+
+    const blocks = createResultBlocks(result);
+
+    expect(blocks[0]?.title).toBe('Task Cancelled (Partial Output Saved)');
+    expect(blocks[0]?.content).toContain('The task was cancelled.');
+    expect(blocks[0]?.content).toContain('Partial assistant draft');
+  });
 });
