@@ -596,8 +596,30 @@ export function parseProviderToolArgs<TToolName extends ProviderToolName>(
       return providerReadToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'edit':
       return providerEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
-    case 'write':
-      return providerWriteToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
+    case 'write': {
+      const directResult = providerWriteToolArgsSchema.safeParse(rawArgs);
+      if (directResult.success) {
+        return directResult.data as ProviderToolArgsByName<TToolName>;
+      }
+
+      const legacyContentResult = providerLegacyWriteToolArgsSchema.safeParse(rawArgs);
+      if (legacyContentResult.success) {
+        return {
+          path: legacyContentResult.data.path,
+          text: legacyContentResult.data.content,
+        } as ProviderToolArgsByName<TToolName>;
+      }
+
+      const legacyTextResult = providerLegacyWriteTextToolArgsSchema.safeParse(rawArgs);
+      if (legacyTextResult.success) {
+        return {
+          path: legacyTextResult.data.path,
+          text: legacyTextResult.data.text,
+        } as ProviderToolArgsByName<TToolName>;
+      }
+
+      throw directResult.error;
+    }
     case 'undo_edit':
       return providerUndoEditToolArgsSchema.parse(rawArgs) as ProviderToolArgsByName<TToolName>;
     case 'memo_recall':

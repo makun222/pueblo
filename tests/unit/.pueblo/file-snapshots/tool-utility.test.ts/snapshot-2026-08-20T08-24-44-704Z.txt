@@ -1,0 +1,185 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { createEditTool } from '../../src/tools/edit-tool';
+import { createReadTool } from '../../src/tools/read-tool';
+import { createWriteTool } from '../../src/tools/write-tool';
+import { parseProviderToolArgs } from '../../src/providers/provider-adapter';
+
+// ============================================================
+// 工具实用性回归测试：针对大模型调用内置工具时的三类故障
+// 1) read：大文件/分块读取时输出被截断或压缩
+// 2) write：content 中含 </parameter></invoke></tool_calls> 等 XML 标签时解析/落盘异常
+// 3) edit：替换失败（正则元字符、多行、歧义、内容不存在等场景）
+// ============================================================
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function makeTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+describe('read工具：大文件读取与截断边界', () => {
+  it('无范围整读时输出行数上限为200（summary仍报告完整行数），大文件需分块读取', async () => {
+    const cwd = makeTempDir('pueblo-read-big-');
+    const lines = Array.from({ length: 300 }, (_, i) => `line-${i + 1}`);
+    fs.writeFileSync(path.join(cwd, 'big.txt'), lines.join('\n'));
+
+    const readTool = createReadTool();
+    const result = await readTool({ cwd, path: 'big.txt' });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.output).toHaveLength(200);
+    expect(result.output[0]).toBe('1: line-1');
+    expect(result.output[199]).toBe('200: line-200');
+  });
+
+  it('分块读取1-150与151-300后拼接，与整读结果完全一致（无遗漏/无重复）', async () => {
+    const cwd = makeTempDir('pueblo-read-chunk-');
+    const lines = Array.from({ length: 300 }, (_, i) => `chunk-line-${i + 1}`);
+    fs.writeFileSync(path.join(cwd, 'big.txt'), lines.join('\n'));
+
+    const readTool = createReadTool();
+    const first = await readTool({ cwd, path: 'big.txt', startLine: 1, endLine: 150 });
+    const second = await readTool({ cwd, path: 'big.txt', startLine: 151, endLine: 300 });
+
+    expect(first.status).toBe('succeeded');
+    expect(second.status).toBe('succeeded');
+    expect([...first.output, ...second.output]).toEqual(
+      Array.from({ length: 300 }, (_, i) => `${i + 1}:chunk-line-${i + 1}`),
+    );
+  });
+
+  it('单行超长内容不被工具截断，原样返回', async () => {
+    const cwd = makeTempDir('pueblo-read-long-');
+    const longLine = 'x'.repeat(20000);
+    fs.writeFileSync(path.join(cwd, 'long.txt'), longLine);
+
+    const readTool = createReadTool();
+    const result = await readTool({ cwd, path: 'long.txt' });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.output).toHaveLength(1);
+    expect(result.output[0]).toBe(`1:${longLine}`);
+  });
+
+  it('parseProviderToolArgs正确解析read的分块参数（startLine/endLine）', () => {
+    const args = { path: 'a.txt', startLine: 1, endLine: 200 };
+    expect(parseProviderToolArgs('read', args)).toEqual(args);
+  });
+});
+
+describe('write工具：含XML标签内容的解析与落盘', () => {
+  const xmlJunk = '</parameter>\n</invoke>\n</tool_calls>';
+
+  it('parseProviderToolArgs将content中的</parameter>等标签视为字面量，不做结构化解析', () => {
+    const args = { path: 'out.md', content: `# 文档\n${xmlJunk}\n结尾` };
+    expect(parseProviderToolArgs('write', args)).toEqual(args);
+  });
+
+  it('写入含</parameter></invoke></tool_calls>的内容时原样落盘，不泄漏到工具输出', async () => {
+    const cwd = makeTempDir('pueblo-write-xml-');
+    const content = `title\n${xmlJunk}\nfooter`;
+
+    const writeTool = createWriteTool();
+    const result = await writeTool({ cwd, path: 'out.md', content });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.readFileSync(path.join(cwd, 'out.md'), 'utf8')).toBe(content);
+    expect(result.summary).not.toContain('</parameter>');
+  });
+
+  it('写入嵌套路径时自动创建父目录', async () => {
+    const cwd = makeTempDir('pueblo-write-nested-');
+
+    const writeTool = createWriteTool();
+    const result = await writeTool({ cwd, path: 'docs/nested/out.md', content: 'hello' });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.existsSync(path.join(cwd, 'docs/nested/out.md'))).toBe(true);
+  });
+
+  it('重复写入覆盖已有文件', async () => {
+    const cwd = makeTempDir('pueblo-write-overwrite-');
+    fs.writeFileSync(path.join(cwd, 'out.md'), 'old');
+
+    const writeTool = createWriteTool();
+    const result = await writeTool({ cwd, path: 'out.md', content: 'new' });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.readFileSync(path.join(cwd, 'out.md'), 'utf8')).toBe('new');
+  });
+});
+
+describe('edit工具：多种替换场景', () => {
+  it('oldText含正则元字符时按字面量替换', async () => {
+    const cwd = makeTempDir('pueblo-edit-regex-');
+    fs.writeFileSync(path.join(cwd, 'sample.txt'), 'foo a.b[0] bar\n');
+
+    const editTool = createEditTool();
+    const result = await editTool({ cwd, path: 'sample.txt', oldText: 'a.b[0]', newText: 'REPLACED' });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.readFileSync(path.join(cwd, 'sample.txt'), 'utf8')).toBe('foo REPLACED bar\n');
+  });
+
+  it('oldText跨多行时替换成功', async () => {
+    const cwd = makeTempDir('pueblo-edit-multiline-');
+    fs.writeFileSync(path.join(cwd, 'sample.txt'), 'alpha\nbeta\ngamma\n');
+
+    const editTool = createEditTool();
+    const result = await editTool({ cwd, path: 'sample.txt', oldText: 'alpha\nbeta', newText: 'ALPHA-BETA' });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.readFileSync(path.join(cwd, 'sample.txt'), 'utf8')).toBe('ALPHA-BETA\ngamma\n');
+  });
+
+  it('oldText含</parameter>等XML风格文本时按字面量匹配', async () => {
+    const cwd = makeTempDir('pueblo-edit-xml-');
+    fs.writeFileSync(path.join(cwd, 'sample.txt'), 'before </parameter>\n</invoke> after\n');
+
+    const editTool = createEditTool();
+    const result = await editTool({
+      cwd,
+      path: 'sample.txt',
+      oldText: '</parameter>\n</invoke>',
+      newText: '<clean>',
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.readFileSync(path.join(cwd, 'sample.txt'), 'utf8')).toBe('before <clean> after\n');
+  });
+
+  it('oldText不存在时失败且文件保持不变', async () => {
+    const cwd = makeTempDir('pueblo-edit-missing-');
+    fs.writeFileSync(path.join(cwd, 'sample.txt'), 'alpha\nbeta\n');
+
+    const editTool = createEditTool();
+    const result = await editTool({ cwd, path: 'sample.txt', oldText: 'not-there', newText: 'X' });
+
+    expect(result.status).toBe('failed');
+    expect(fs.readFileSync(path.join(cwd, 'sample.txt'), 'utf8')).toBe('alpha\nbeta\n');
+  });
+
+  it('oldText出现两次时可通过startLine/endLine限定范围消除歧义', async () => {
+    const cwd = makeTempDir('pueblo-edit-range-');
+    fs.writeFileSync(path.join(cwd, 'sample.txt'), 'alpha\nbeta\nalpha\ndelta\n');
+
+    const editTool = createEditTool();
+    const result = await editTool({ cwd, path: 'sample.txt', oldText: 'alpha', newText: 'X', startLine: 3, endLine: 3 });
+
+    expect(result.status).toBe('succeeded');
+    expect(fs.readFileSync(path.join(cwd, 'sample.txt'), 'utf8')).toBe('alpha\nbeta\nX\ndelta\n');
+  });
+});

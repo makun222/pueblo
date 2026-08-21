@@ -351,47 +351,62 @@ export class DeepSeekAdapter implements ProviderAdapter {
       compactionStage: 'none',
     });
 
-    for (const stage of DEEPSEEK_COMPACTION_STAGES) {
-      const compacted = compactDeepSeekPromptMessages(originalPromptMessages, stage);
-      if (compacted.compactedToolMessages === 0) {
-        continue;
-      }
+    // Fix B：最新 1 条 tool 消息默认豁免压缩（直接透传）；仅当豁免后仍超限
+    // （请求体 ≥ 2× 阈值）时降级压缩——预览条数减半而非清零。
+    const tryCompactionPass = (options: DeepSeekPromptCompactionOptions): DeepSeekRequestLogContext | null => {
+      for (const stage of DEEPSEEK_COMPACTION_STAGES) {
+        const compacted = compactDeepSeekPromptMessages(originalPromptMessages, stage, options);
+        if (compacted.compactedToolMessages === 0) {
+          continue;
+        }
 
-      const requestPayload = buildDeepSeekRequestPayload(context, streamingEnabled, compacted.messages);
-      const requestBody = JSON.stringify(requestPayload);
-      const requestLogContext = createDeepSeekRequestLogContext({
-        promptMessages: compacted.messages,
-        requestPayload,
-        requestBody,
-        availableToolCount: context.availableTools.length,
-        originalBodyBytes,
-        compactedToolMessages: compacted.compactedToolMessages,
-        compactionStage: stage.name,
-      });
-
-      if (requestLogContext.requestMetrics.bodyBytes <= bestAttempt.requestMetrics.bodyBytes) {
-        bestAttempt = requestLogContext;
-      }
-
-      if (requestLogContext.requestMetrics.bodyBytes <= DEEPSEEK_MAX_REQUEST_BODY_BYTES) {
-        this.responseLogger.log({
-          providerId: 'deepseek',
-          category: 'request-compacted',
-          message: `DeepSeek request body exceeded the local limit and was compacted (${originalBodyBytes} bytes -> ${requestLogContext.requestMetrics.bodyBytes} bytes)`,
-          requestUrl,
-          modelId: context.modelId,
-          requestBody: requestLogContext.requestBody,
-          requestPayload: requestLogContext.requestPayload,
-          promptMessages: requestLogContext.promptMessages,
-          requestMetrics: requestLogContext.requestMetrics,
-          details: {
-            limitBytes: DEEPSEEK_MAX_REQUEST_BODY_BYTES,
-            originalBodyBytes,
-            savedBytes: Math.max(0, originalBodyBytes - requestLogContext.requestMetrics.bodyBytes),
-          },
+        const requestPayload = buildDeepSeekRequestPayload(context, streamingEnabled, compacted.messages);
+        const requestBody = JSON.stringify(requestPayload);
+        const requestLogContext = createDeepSeekRequestLogContext({
+          promptMessages: compacted.messages,
+          requestPayload,
+          requestBody,
+          availableToolCount: context.availableTools.length,
+          originalBodyBytes,
+          compactedToolMessages: compacted.compactedToolMessages,
+          compactionStage: stage.name,
         });
-        return requestLogContext;
+
+        if (requestLogContext.requestMetrics.bodyBytes <= bestAttempt.requestMetrics.bodyBytes) {
+          bestAttempt = requestLogContext;
+        }
+
+        if (requestLogContext.requestMetrics.bodyBytes <= DEEPSEEK_MAX_REQUEST_BODY_BYTES) {
+          this.responseLogger.log({
+            providerId: 'deepseek',
+            category: 'request-compacted',
+            message: `DeepSeek request body exceeded the local limit and was compacted (${originalBodyBytes} bytes -> ${requestLogContext.requestMetrics.bodyBytes} bytes)`,
+            requestUrl,
+            modelId: context.modelId,
+            requestBody: requestLogContext.requestBody,
+            requestPayload: requestLogContext.requestPayload,
+            promptMessages: requestLogContext.promptMessages,
+            requestMetrics: requestLogContext.requestMetrics,
+            details: {
+              limitBytes: DEEPSEEK_MAX_REQUEST_BODY_BYTES,
+              originalBodyBytes,
+              savedBytes: Math.max(0, originalBodyBytes - requestLogContext.requestMetrics.bodyBytes),
+            },
+          });
+          return requestLogContext;
+        }
       }
+      return null;
+    };
+
+    const exemptLatestAttempt = tryCompactionPass({ skipLatestToolMessage: true });
+    if (exemptLatestAttempt) {
+      return exemptLatestAttempt;
+    }
+
+    const degradedAttempt = tryCompactionPass({ previewScale: 0.5 });
+    if (degradedAttempt) {
+      return degradedAttempt;
     }
 
     this.responseLogger.log({
@@ -677,19 +692,37 @@ function clonePromptMessages(messages: ProviderMessage[]): ProviderMessage[] {
   }));
 }
 
+interface DeepSeekPromptCompactionOptions {
+  /** 最新 1 条 tool 消息豁免压缩、直接透传。 */
+  readonly skipLatestToolMessage?: boolean;
+  /** 预览条数缩放系数（降级档位）：0.5 表示预览数减半而非清零。 */
+  readonly previewScale?: number;
+}
+
 function compactDeepSeekPromptMessages(
   messages: ProviderMessage[],
   stage: DeepSeekCompactionStage,
+  options: DeepSeekPromptCompactionOptions = {},
 ): { readonly messages: ProviderMessage[]; readonly compactedToolMessages: number } {
   let compactedToolMessages = 0;
 
+  let latestToolMessageIndex = -1;
+  if (options.skipLatestToolMessage) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'tool') {
+        latestToolMessageIndex = i;
+        break;
+      }
+    }
+  }
+
   return {
-    messages: messages.map((message) => {
-      if (message.role !== 'tool') {
+    messages: messages.map((message, index) => {
+      if (message.role !== 'tool' || index === latestToolMessageIndex) {
         return clonePromptMessages([message])[0] as ProviderMessage;
       }
 
-      const compactedContent = compactDeepSeekToolMessageContent(message, stage);
+      const compactedContent = compactDeepSeekToolMessageContent(message, stage, options.previewScale);
       if (compactedContent === message.content) {
         return clonePromptMessages([message])[0] as ProviderMessage;
       }
@@ -704,13 +737,19 @@ function compactDeepSeekPromptMessages(
   };
 }
 
-function compactDeepSeekToolMessageContent(message: ProviderMessage, stage: DeepSeekCompactionStage): string {
+function compactDeepSeekToolMessageContent(
+  message: ProviderMessage,
+  stage: DeepSeekCompactionStage,
+  previewScale = 1,
+): string {
   const parsed = parseDeepSeekSerializedToolMessage(message.content);
   if (!parsed) {
     return message.content;
   }
 
-  const previewLimit = message.toolName === 'read' ? stage.readPreviewItems : stage.defaultPreviewItems;
+  const basePreviewLimit = message.toolName === 'read' ? stage.readPreviewItems : stage.defaultPreviewItems;
+  // 降级档位：预览条数按比例缩放（减半而非清零）；summary-only（0 条）保持 0。
+  const previewLimit = basePreviewLimit > 0 ? Math.max(1, Math.floor(basePreviewLimit * previewScale)) : 0;
   const preview = previewLimit > 0
     ? parsed.output.slice(0, previewLimit).map((entry) => truncateDeepSeekPreviewText(entry, stage.previewItemMaxChars))
     : [];

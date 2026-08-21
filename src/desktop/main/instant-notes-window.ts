@@ -62,6 +62,7 @@ export function openInstantNotesWindow(): void {
     minWidth: 360,
     minHeight: 420,
     frame: true,
+    autoHideMenuBar: true,
     resizable: true,
     skipTaskbar: true,
     alwaysOnTop: true,
