@@ -3,10 +3,11 @@ import { WorkflowRegistry } from '../../src/workflow/workflow-registry';
 import { WorkflowRouter } from '../../src/workflow/workflow-router';
 import { PUEBLO_PLAN_WORKFLOW_TYPE } from '../../src/workflow/pueblo-plan/pueblo-plan-workflow';
 import { createTestAppConfig } from '../helpers/test-config';
+import type { AppConfig } from '../../src/shared/config';
 
 describe('workflow router', () => {
-  function createRouter() {
-    const config = createTestAppConfig();
+  function createRouter(overrides: Partial<AppConfig['workflow']> = {}, deps: { hasWorkflowCommand?: () => boolean } = {}) {
+    const config = createTestAppConfig({ workflow: overrides });
     const registry = new WorkflowRegistry([
       {
         type: PUEBLO_PLAN_WORKFLOW_TYPE,
@@ -14,7 +15,7 @@ describe('workflow router', () => {
       },
     ]);
 
-    return new WorkflowRouter(config, registry);
+    return new WorkflowRouter(config, registry, { hasWorkflowCommand: () => true, ...deps });
   }
 
   it('routes explicit /workflow input to pueblo-plan handoff', () => {
@@ -32,23 +33,45 @@ describe('workflow router', () => {
     });
   });
 
-  it('routes keyword-matched plain text to workflow handoff', () => {
+  it('does not auto-route keyword plain text when autoRoute is disabled (default)', () => {
     const router = createRouter();
 
     const decision = router.decide({
       input: 'Please create a workflow plan.md for this repository change.',
     });
 
-    expect(decision.kind).toBe('handoff');
-    if (decision.kind === 'handoff') {
-      expect(decision.workflowType).toBe('pueblo-plan');
-      expect(decision.reason).toBe('keyword');
-      expect(decision.normalizedInput).toContain('workflow');
-    }
+    expect(decision).toEqual({ kind: 'pass-through', reason: 'none' });
   });
 
-  it('routes over-budget work to workflow handoff', () => {
+  it('auto-routes keyword plain text only when autoRoute is enabled and keyword matches at sentence start', () => {
+    const router = createRouter({
+      autoRoute: { enabled: true, routeKeywords: ['start workflow'] },
+    });
+
+    const matched = router.decide({ input: 'start workflow onboarding docs' });
+    expect(matched.kind).toBe('handoff');
+    if (matched.kind === 'handoff') {
+      expect(matched.reason).toBe('keyword');
+      expect(matched.workflowType).toBe('pueblo-plan');
+    }
+
+    const incidental = router.decide({ input: 'help me find my workflow folder' });
+    expect(incidental).toEqual({ kind: 'pass-through', reason: 'none' });
+  });
+
+  it('does not auto-route over-budget work when autoRoute is disabled', () => {
     const router = createRouter();
+
+    const decision = router.decide({
+      input: 'Implement the entire migration and UI overhaul.',
+      estimatedSteps: 64,
+    });
+
+    expect(decision).toEqual({ kind: 'pass-through', reason: 'none' });
+  });
+
+  it('auto-routes over-budget work only when autoRoute is enabled', () => {
+    const router = createRouter({ autoRoute: { enabled: true, routeKeywords: [] } });
 
     const decision = router.decide({
       input: 'Implement the entire migration and UI overhaul.',
@@ -71,9 +94,14 @@ describe('workflow router', () => {
       estimatedSteps: 8,
     });
 
-    expect(decision).toEqual({
-      kind: 'pass-through',
-      reason: 'none',
-    });
+    expect(decision).toEqual({ kind: 'pass-through', reason: 'none' });
+  });
+
+  it('returns deferred when the /workflow command is not registered', () => {
+    const router = createRouter({}, { hasWorkflowCommand: () => false });
+
+    const decision = router.decide({ input: '/workflow do something' });
+
+    expect(decision.kind).toBe('deferred');
   });
 });

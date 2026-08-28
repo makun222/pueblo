@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { workflowContinuationActionSchema } from './schema';
 
 const DEFAULT_GITHUB_COPILOT_API_URL = 'https://api.githubcopilot.com/chat/completions';
 const DEFAULT_GITHUB_COPILOT_EXCHANGE_URL = 'https://api.github.com/copilot_internal/v2/token';
@@ -102,13 +103,29 @@ const pepeSchema = z.object({
   memoryBasePath: z.string().min(1).default(path.join('.pueblo','memory')),
 });
 
+const workflowContinuationSchema = z.object({
+  defaultAction: workflowContinuationActionSchema.default('ask'),
+});
+
+const workflowAutoRouteSchema = z.object({
+  enabled: z.boolean().default(false),
+  routeKeywords: z.array(z.string().min(1)).default([]),
+});
+
 const workflowSchema = z.object({
   enabled: z.boolean().default(true),
   defaultWorkflowType: z.string().min(1).default('pueblo-plan'),
   runtimeDirectory: z.string().min(1).default('.plans'),
   deliverableFilePattern: z.string().min(1).default('{slug}.plan.md'),
   maxDirectTaskSteps: z.number().int().positive().default(30),
-  routeKeywords: z.array(z.string().min(1)).default(['plan.md', '.plan.md', 'workflow']),
+  routeKeywords: z.array(z.string().min(1)).default([]),
+  autoRoute: workflowAutoRouteSchema.default({ enabled: false, routeKeywords: [] }),
+  roundTimeoutMs: z.number().int().positive().default(15 * 60 * 1000),
+  blockedTimeoutMs: z.number().int().positive().default(5 * 60 * 1000),
+  pauseTimeoutMs: z.number().int().positive().default(10 * 60 * 1000),
+  emptyOutputStrikeLimit: z.number().int().positive().default(2),
+  archiveOnFailure: z.boolean().default(true),
+  continuation: workflowContinuationSchema.default({ defaultAction: 'ask' }),
 });
 
 export const DEFAULT_MEMORY_WEIGHT_POLICY = {
@@ -243,7 +260,19 @@ const appConfigSchema = z.object({
     runtimeDirectory: '.plans',
     deliverableFilePattern: '{slug}.plan.md',
     maxDirectTaskSteps: 30,
-    routeKeywords: ['plan.md', '.plan.md', 'workflow'],
+    routeKeywords: [],
+    autoRoute: {
+      enabled: false,
+      routeKeywords: [],
+    },
+    roundTimeoutMs: 15 * 60 * 1000,
+    blockedTimeoutMs: 5 * 60 * 1000,
+    pauseTimeoutMs: 10 * 60 * 1000,
+    emptyOutputStrikeLimit: 2,
+    archiveOnFailure: true,
+    continuation: {
+      defaultAction: 'ask',
+    },
   }),
   githubCopilot: githubCopilotSchema.default({
     apiUrl: DEFAULT_GITHUB_COPILOT_API_URL,

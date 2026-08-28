@@ -17,6 +17,10 @@ export class CommandDispatcher {
     this.handlers.set(commandName, handler);
   }
 
+  hasCommand(commandName: string): boolean {
+    return this.handlers.has(commandName);
+  }
+
   listCommands(): string[] {
     return [...this.handlers.keys()].sort((left, right) => left.localeCompare(right));
   }

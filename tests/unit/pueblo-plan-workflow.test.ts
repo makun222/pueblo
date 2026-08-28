@@ -35,6 +35,25 @@ describe('pueblo plan workflow', () => {
     expect(result.plan.tasks.find((task) => task.id === 'task-11')?.status).toBe('in-progress');
     expect(result.plan.tasks.find((task) => task.id === 'task-12')?.status).toBe('in-progress');
   });
+
+  it('fails instead of falling back to planning when no next round can be planned but tasks remain pending', () => {
+    const plan: PuebloPlanDocument = {
+      ...createPlan({ leafTaskCount: 2, activeTaskIds: ['task-root'] }),
+      tasks: [
+        { id: 'task-root', title: 'Root task', parentId: null, status: 'in-progress' },
+        { id: 'task-1', title: 'Task 1', parentId: 'task-root', status: 'in-progress' },
+        { id: 'task-2', title: 'Task 2', parentId: 'task-root', status: 'in-progress' },
+      ],
+      rounds: [
+        { roundNumber: 1, taskIds: ['task-root'], status: 'active', summary: null },
+      ],
+    };
+
+    const result = advancePuebloPlanAfterRound(plan, 'Round one complete.');
+
+    expect(result.nextRound).toBeNull();
+    expect(result.plan.status).toBe('failed');
+  });
 });
 
 function createPlan(args: { readonly leafTaskCount: number; readonly activeTaskIds: string[] }): PuebloPlanDocument {

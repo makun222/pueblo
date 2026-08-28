@@ -95,7 +95,19 @@ export function createTestAppConfig(overrides: TestAppConfigOverrides = {}): App
       runtimeDirectory: overrides.workflow?.runtimeDirectory ?? path.join(process.cwd(), '.plans'),
       deliverableFilePattern: overrides.workflow?.deliverableFilePattern ?? '{slug}.plan.md',
       maxDirectTaskSteps: overrides.workflow?.maxDirectTaskSteps ?? 30,
-      routeKeywords: overrides.workflow?.routeKeywords ?? ['plan.md', '.plan.md', 'workflow'],
+      routeKeywords: overrides.workflow?.routeKeywords ?? [],
+      autoRoute: {
+        enabled: overrides.workflow?.autoRoute?.enabled ?? false,
+        routeKeywords: overrides.workflow?.autoRoute?.routeKeywords ?? [],
+      },
+      roundTimeoutMs: overrides.workflow?.roundTimeoutMs ?? 15 * 60 * 1000,
+      blockedTimeoutMs: overrides.workflow?.blockedTimeoutMs ?? 5 * 60 * 1000,
+      pauseTimeoutMs: overrides.workflow?.pauseTimeoutMs ?? 10 * 60 * 1000,
+      emptyOutputStrikeLimit: overrides.workflow?.emptyOutputStrikeLimit ?? 2,
+      archiveOnFailure: overrides.workflow?.archiveOnFailure ?? true,
+      continuation: {
+        defaultAction: overrides.workflow?.continuation?.defaultAction ?? 'ask',
+      },
     },
     githubCopilot: {
       apiUrl: overrides.githubCopilot?.apiUrl ?? 'https://api.githubcopilot.com/chat/completions',

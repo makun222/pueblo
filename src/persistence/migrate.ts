@@ -547,6 +547,26 @@ const foundationalMigrations = [
       `,
     ],
   },
+  {
+    id: '014_workflow_fsm_watchdog',
+    statements: [
+      `
+      ALTER TABLE workflow_instances ADD COLUMN empty_output_strikes INTEGER NOT NULL DEFAULT 0
+      `,
+      `
+      ALTER TABLE workflow_instances ADD COLUMN round_started_at TEXT
+      `,
+      `
+      ALTER TABLE workflow_instances ADD COLUMN blocked_at TEXT
+      `,
+      `
+      ALTER TABLE workflow_instances ADD COLUMN paused_at TEXT
+      `,
+      'CREATE INDEX IF NOT EXISTS idx_workflow_instances_status_round_started ON workflow_instances(status, round_started_at)',
+      'CREATE INDEX IF NOT EXISTS idx_workflow_instances_status_blocked ON workflow_instances(status, blocked_at)',
+      'CREATE INDEX IF NOT EXISTS idx_workflow_instances_status_paused ON workflow_instances(status, paused_at)',
+    ],
+  },
 ];
 
 export interface MigrationResult {

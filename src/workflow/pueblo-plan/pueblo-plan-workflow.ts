@@ -151,5 +151,5 @@ function resolveWorkflowCompletionStatus(tasks: PuebloPlanTask[]): PuebloPlanDoc
 		return 'completed';
 	}
 
-	return 'planning';
+	return 'failed';
 }

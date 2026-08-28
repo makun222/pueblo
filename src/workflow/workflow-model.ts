@@ -14,6 +14,10 @@ export interface CreateWorkflowInstanceInput {
   readonly activePlanMemoryId?: string | null;
   readonly activeTodoMemoryId?: string | null;
   readonly activeRoundNumber?: number | null;
+  readonly emptyOutputStrikes?: number;
+  readonly roundStartedAt?: string | null;
+  readonly blockedAt?: string | null;
+  readonly pausedAt?: string | null;
 }
 
 export function createWorkflowInstanceModel(input: CreateWorkflowInstanceInput): WorkflowInstance {
@@ -32,6 +36,10 @@ export function createWorkflowInstanceModel(input: CreateWorkflowInstanceInput):
     activePlanMemoryId: input.activePlanMemoryId ?? null,
     activeTodoMemoryId: input.activeTodoMemoryId ?? null,
     activeRoundNumber: input.activeRoundNumber ?? null,
+    emptyOutputStrikes: input.emptyOutputStrikes ?? 0,
+    roundStartedAt: input.roundStartedAt ?? null,
+    blockedAt: input.blockedAt ?? null,
+    pausedAt: input.pausedAt ?? null,
     createdAt: now,
     updatedAt: now,
     completedAt: null,

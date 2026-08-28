@@ -20,7 +20,7 @@ describe('glob tool', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-glob-tool-truncated-'));
     tempDirs.push(tempDir);
 
-    for (let index = 0; index < 260; index += 1) {
+    for (let index = 0; index < 600; index += 1) {
       fs.writeFileSync(path.join(tempDir, `file-${String(index).padStart(3, '0')}.ts`), 'export {};', 'utf8');
     }
 
@@ -31,7 +31,7 @@ describe('glob tool', () => {
     });
 
     expect(result.status).toBe('succeeded');
-    expect(result.summary).toBe('Matched 200 path(s)');
-    expect(result.output).toHaveLength(200);
+    expect(result.summary).toBe('Matched 500 of 500+ path(s)');
+    expect(result.output).toHaveLength(500);
   });
 });

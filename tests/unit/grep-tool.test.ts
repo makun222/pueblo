@@ -71,7 +71,7 @@ describe('grep tool', () => {
     });
 
     expect(result.status).toBe('succeeded');
-    expect(result.summary).toMatch(/^Matched \d+ of 200 line\(s\)$/);
+    expect(result.summary).toMatch(/^Matched \d+ of 260 line\(s\)$/);
     expect(result.output.length).toBeGreaterThan(0);
     expect(result.output.length).toBeLessThan(200);
   });

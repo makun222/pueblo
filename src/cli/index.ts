@@ -122,9 +122,12 @@ import { WorkflowRegistry } from '../workflow/workflow-registry';
 import { WorkflowRepository } from '../workflow/workflow-repository';
 import { WorkflowRouter } from '../workflow/workflow-router';
 import { WorkflowService } from '../workflow/workflow-service';
+import { WorkflowSupervisor } from '../workflow/workflow-supervisor';
+import { resolveContinuation, type ContinuationDecision } from '../workflow/workflow-continuation-policy';
 import type { DesktopProviderStatuses, DesktopRuntimeStatus } from '../desktop/shared/ipc-contract';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session, WorkflowInstance, WorkflowType } from '../shared/schema';
 import { isTaskCancellationError } from '../shared/task-cancellation';
+import { registerSubAgentTools } from '../agent/subagent';
 import { createRuntimeCoordinator } from '../app/runtime';
 import { ChannelService } from '../channel/channel-service';
 import { createChannelRegistry } from '../channel/channel-registry-factory';
@@ -484,8 +487,17 @@ export function createCliDependencies(
     registry: workflowRegistry,
     planStore: workflowPlanStore,
     exporter: workflowExporter,
+    getConfig: () => currentConfig,
   });
-  const workflowRouter = new WorkflowRouter(currentConfig, workflowRegistry);
+  const workflowRouter = new WorkflowRouter(currentConfig, workflowRegistry, {
+    hasWorkflowCommand: () => dispatcher.hasCommand('/workflow'),
+  });
+  const createWorkflowSupervisor = (resolvedConfig: AppConfig) => new WorkflowSupervisor({
+    config: resolvedConfig,
+    workflowService,
+  });
+  let workflowSupervisor = createWorkflowSupervisor(currentConfig);
+  workflowSupervisor.start();
   const sessionRepository = new SessionRepository({ connection: database.connection });
   const taskRunner = new AgentTaskRunner(providerRegistry, taskRepository, toolService, sessionRepository, {
     requestToolApproval: async (request) => toolApprovalHandler?.(request) ?? 'deny',
@@ -515,6 +527,34 @@ export function createCliDependencies(
       });
     },
   });
+
+  // Register sub-agent tools (spawn_subagent / check_subagent) so the main
+  // agent's LLM loop can delegate background work to child CamelAgents.
+  // Provider / model / session are resolved lazily at spawn time to follow the
+  // current runtime selection (mirrors runTask's resolution semantics).
+  const resolveSubAgentProviderId = (): string | null =>
+    selectionState.providerId ?? currentConfig.defaultProviderId;
+  const resolveSubAgentModelId = (): string | null => {
+    const explicitModelId = selectionState.modelId;
+    if (explicitModelId) return explicitModelId;
+    const provider = currentConfig.providers.find(p => p.providerId === resolveSubAgentProviderId());
+    return provider?.defaultModelId ?? null;
+  };
+  const requireSelection = (label: string, value: string | null | undefined): string => {
+    if (!value) {
+      throw new Error(
+        `No ${label} selected. Use /model to choose a provider and model before spawning subagents.`,
+      );
+    }
+    return value;
+  };
+  registerSubAgentTools(toolService, {
+    sessionId: () => selectionState.sessionId ?? currentConfig.defaultSessionId ?? 'default',
+    providerId: () => requireSelection('provider', resolveSubAgentProviderId()),
+    modelId: () => requireSelection('model', resolveSubAgentModelId()),
+    executeTurnFn: taskRunner.executeTurn.bind(taskRunner),
+  });
+
   const sessionService = new SessionService(sessionRepository, memoryService);
   const turnIndexers = new Map<string, TurnIndexer>();
   const createPepeSupervisor = (resolvedConfig: AppConfig) => new PepeSupervisor({
@@ -551,6 +591,9 @@ export function createCliDependencies(
     pepeSupervisor.stopAll();
     pepeSupervisor = createPepeSupervisor(nextConfig);
     contextResolver = createContextResolver(nextConfig);
+    workflowSupervisor.stop();
+    workflowSupervisor = createWorkflowSupervisor(nextConfig);
+    workflowSupervisor.start();
   }
 
   const runTask = async (
@@ -707,8 +750,6 @@ export function createCliDependencies(
         sessionService.addAssistantMessage(sessionId, assistantOutput, task.id, currentTurnId);
       }
 
-      const workflowProgress = advanceWorkflowAfterTaskCompletion(sessionId, assistantOutput ?? null);
-
       const turnMemory = memoryService.createConversationTurnMemory({
         sessionId,
         turnNumber: turnIndexer.turnNumber,
@@ -722,21 +763,20 @@ export function createCliDependencies(
         memoryService,
         sessionService,
       });
-      //const _flushId = perfStart(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`);
       pepeSupervisor.flushSession(sessionId).catch(err => {
           perfLog(`flushSession-error-${sessionId}`, 0, (err as Error).message);
       });
-      //perfEnd(`[cli:runTask] pepeSupervisor.flushSession sessionId=${sessionId}`, _flushId);
-      //perfEnd(`[cli:runTask] post-processing sessionId=${sessionId}`, _postId);
 
-      if (SHOULD_LOG_TASK_OUTPUT_DEBUG) {
-        perfLog('DEBUG-before-successResult', 0,
-          JSON.stringify({ nextStepActions, hasActions: !!nextStepActions, length: nextStepActions?.length }));
+      if (assistantOutput) {
+        const workflowProgress = advanceWorkflowAfterTaskCompletion(sessionId, assistantOutput ?? null);
+        return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
+          ...task,
+          workflow: workflowProgress,
+        } : task, nextStepActions);
       }
-      return successResult('TASK_COMPLETED', 'Agent task completed', workflowProgress ? {
-        ...task,
-        workflow: workflowProgress,
-      } : task, nextStepActions);
+
+      workflowSupervisor.observeTaskOutcome(sessionId, { kind: 'success', hasAssistantOutput: false });
+      return successResult('TASK_COMPLETED', 'Agent task completed (no assistant output recorded)', task, nextStepActions);
     } catch (error) {
       if (isTaskCancellationError(error)) {
         const persistedTasks = taskRepository.listBySession(sessionId);
@@ -769,6 +809,8 @@ export function createCliDependencies(
             perfLog(`flushSession-error-${sessionId}`, 0, (err as Error).message);
         });
 
+        workflowSupervisor.observeTaskOutcome(sessionId, { kind: 'cancelled', reason: 'Task cancelled by user.' });
+
         return successResult('TASK_CANCELLED', 'Task cancelled. Partial output has been saved.', latestPayload ? {
           ...latestPayload,
           outputSummary: assistantOutput,
@@ -788,10 +830,10 @@ export function createCliDependencies(
 
       if (error instanceof ProviderError) {
         const latestPayload = accumulateLatestTaskProviderUsage();
-        const activeWorkflow = sessionId ? workflowService.getActiveWorkflowForSession(sessionId) : null;
-        if (activeWorkflow) {
-          workflowService.markWorkflowFailed(activeWorkflow.id, error.message);
-        }
+        workflowSupervisor.observeTaskOutcome(sessionId, {
+          kind: 'failed',
+          reason: error.message,
+        });
         sessionService.addAssistantMessage(sessionId, `Task failed: ${error.message}`, currentTurnId);
         const turnMemory = memoryService.createConversationTurnMemory({
           sessionId,
@@ -816,10 +858,10 @@ export function createCliDependencies(
         ]);
       }
 
-      const activeWorkflow = sessionId ? workflowService.getActiveWorkflowForSession(sessionId) : null;
-      if (activeWorkflow) {
-        workflowService.markWorkflowFailed(activeWorkflow.id, error instanceof Error ? error.message : String(error));
-      }
+      workflowSupervisor.observeTaskOutcome(sessionId, {
+        kind: 'failed',
+        reason: error instanceof Error ? error.message : String(error),
+      });
 
       accumulateLatestTaskProviderUsage();
 
@@ -950,7 +992,7 @@ export function createCliDependencies(
   };
 
   const isActiveWorkflowStatus = (status: WorkflowInstance['status']) => {
-    return ['assessing', 'planning', 'round-active', 'round-review', 'blocked'].includes(status);
+    return ['idle', 'drafting', 'assessing', 'planning', 'round-active', 'round-review'].includes(status);
   };
 
   const clearSelectedWorkflowMemories = (sessionId: string, memories: MemoryRecord[]) => {
@@ -1168,6 +1210,60 @@ export function createCliDependencies(
     });
   };
 
+  const pauseActiveWorkflow = (reason?: string | null) => {
+    const sessionId = getActiveWorkflowSessionId();
+    if (!sessionId) {
+      return buildNoActiveWorkflowResult();
+    }
+
+    const workflowState = resolveActiveWorkflowState(sessionId);
+    if (!workflowState.workflow) {
+      return buildNoActiveWorkflowResult(workflowState.staleWorkflowMemoryIds);
+    }
+
+    const workflow = workflowState.workflow;
+    const transition = workflowService.pauseWorkflow(workflow.id);
+    if (!transition) {
+      return failureResult('WORKFLOW_PAUSE_FAILED', 'The active workflow could not be paused.', [
+        'Retry /workflow-pause or inspect the runtime plan state.',
+      ]);
+    }
+
+    return successResult('WORKFLOW_PAUSED', 'Workflow paused. New input runs as independent tasks until you resume.', {
+      workflowId: transition.workflow.id,
+      workflowType: transition.workflow.type,
+      status: transition.workflow.status,
+      goal: transition.workflow.goal,
+      reason: reason?.trim() || 'Paused by user.',
+    });
+  };
+
+  const gcWorkflows = () => {
+    const directories = workflowPlanStore.listWorkflowDirectories();
+    const knownWorkflowIds = new Set(workflowRepository.list().map((workflow) => workflow.id));
+    const removedOrphanedDirs: string[] = [];
+    const orphanedRecords = workflowRepository.list()
+      .filter((workflow) => !directories.some((entry) => entry.workflowId === workflow.id));
+
+    for (const entry of directories) {
+      if (knownWorkflowIds.has(entry.workflowId)) {
+        continue;
+      }
+      if (workflowPlanStore.removeWorkflowDirectory(entry.workflowId)) {
+        removedOrphanedDirs.push(entry.workflowId);
+      }
+    }
+
+    const swept = workflowService.runWatchdogSweep();
+
+    return successResult('WORKFLOW_GC', 'Workflow garbage collection complete', {
+      orphanedDirectoriesRemoved: removedOrphanedDirs,
+      orphanedDirectoryCount: removedOrphanedDirs.length,
+      orphanedRecordCount: orphanedRecords.length,
+      watchdogSweptCount: swept.length,
+    });
+  };
+
   const mergeWorkflowResult = (
     result: import('../shared/result').CommandResult<unknown>,
     workflowStartData: {
@@ -1281,16 +1377,43 @@ export function createCliDependencies(
     dispatcher,
     runTaskFromText: (text, attachments, skillId, sessionId) => runTask(text, 'Plain-text task execution', undefined, attachments ?? [], skillId, sessionId),
     routeTextInput: async (text, attachments) => {
-      if (getActiveWorkflow()) {
-        return continueActiveWorkflow(text, 'Plain-text active workflow continuation', attachments ?? []);
+      const activeWorkflow = getActiveWorkflow();
+      if (!activeWorkflow) {
+        const decision = workflowRouter.decide({ input: text });
+        if (decision.kind === 'handoff') {
+          return startWorkflow(decision.normalizedInput, decision.workflowType, decision.reason, attachments ?? []);
+        }
+        if (decision.kind === 'deferred') {
+          return failureResult('WORKFLOW_COMMAND_DEFERRED', 'The /workflow command is not currently available.', [
+            'Use /help to inspect available commands.',
+          ]);
+        }
+        if (decision.kind === 'reject') {
+          return failureResult('WORKFLOW_REJECTED', decision.message, []);
+        }
+        return null;
       }
 
-      const decision = workflowRouter.decide({ input: text });
-      if (decision.kind === 'handoff') {
-        return startWorkflow(decision.normalizedInput, decision.workflowType, decision.reason, attachments ?? []);
+      const policy = resolveContinuation({
+        workflow: activeWorkflow,
+        input: text,
+        defaultAction: currentConfig.workflow.continuation.defaultAction,
+      });
+
+      if (policy.decision === 'abandon') {
+        return cancelActiveWorkflow('User abandoned the active workflow.');
       }
 
-      return null;
+      if (policy.decision === 'interrupt-and-run') {
+        if (!policy.normalizedInput) {
+          return failureResult('INTERRUPT_EMPTY', 'No task was provided after the interrupt prefix.', [
+            'Usage: !<task description> or /workflow-pause <task description>',
+          ]);
+        }
+        return runTask(policy.normalizedInput, 'Interrupted workflow task', undefined, attachments ?? []);
+      }
+
+      return continueActiveWorkflow(policy.normalizedInput, 'Plain-text active workflow continuation', attachments ?? []);
     },
   });
 
@@ -1428,7 +1551,6 @@ export function createCliDependencies(
     sessionService,
     getCurrentSessionId: () => selectionState.sessionId,
   }));
-  /*
   dispatcher.register('/workflow', createWorkflowStartCommand({
     startWorkflow,
     defaultWorkflowType: PUEBLO_PLAN_WORKFLOW_TYPE,
@@ -1436,8 +1558,9 @@ export function createCliDependencies(
   dispatcher.register('/workflow-status', () => getActiveWorkflowStatus());
   dispatcher.register('/workflow-continue', (args) => continueActiveWorkflow(args.join(' ').trim() || null, 'Manual workflow continuation'));
   dispatcher.register('/workflow-cancel', (args) => cancelActiveWorkflow(args.join(' ').trim() || null));
+  dispatcher.register('/workflow-pause', (args) => pauseActiveWorkflow(args.join(' ').trim() || null));
   dispatcher.register('/workflow-clear-stale', (args) => clearStaleWorkflowMemories(args.join(' ').trim() || null));
-  */
+  dispatcher.register('/workflow-gc', () => gcWorkflows());
   dispatcher.register('/loop', createLoopCommand({
     taskRunner,
     contextResolver,
@@ -1754,6 +1877,7 @@ export function createCliDependencies(
     databaseClose(): void {
       channelService.dispose();
       pepeSupervisor.stopAll();
+      workflowSupervisor.stop();
       database.close();
     },
   };

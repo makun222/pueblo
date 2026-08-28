@@ -33,7 +33,7 @@ export class SubAgentService {
     goal: string,
     options?: { maxSteps?: number; budgetLimit?: number },
   ): Promise<string> {
-    if (this.agents.size >= this.maxConcurrent) {
+    if (this.activeCount >= this.maxConcurrent) {
       throw new Error(
         `Max concurrent subagents (${this.maxConcurrent}) reached. Cannot spawn more.`,
       );
@@ -49,7 +49,7 @@ export class SubAgentService {
     };
 
     const controller = new AbortController();
-    const subSessionId = `${this.deps.sessionId}::sub::${taskId}`;
+    const subSessionId = `${this.deps.sessionId()}::sub::${taskId}`;
 
     const callbacks = [
       {
@@ -71,8 +71,8 @@ export class SubAgentService {
     const input: CamelAgentInput = {
       goal,
       sessionId: subSessionId,
-      providerId: this.deps.providerId,
-      modelId: this.deps.modelId,
+      providerId: this.deps.providerId(),
+      modelId: this.deps.modelId(),
       signal: controller.signal,
       callbacks,
       maxSteps: options?.maxSteps ?? 50,

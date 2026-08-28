@@ -117,7 +117,7 @@ class StepBudgetPromptObservingProviderAdapter implements ProviderAdapter {
     return {
       type: 'final',
       outputSummary: [
-        `Budget prompt observed: ${budgetMessage?.content.includes('每轮交互有 48 步的硬性模型调用限制。') ? 'yes' : 'no'}`,
+        `Budget prompt observed: ${budgetMessage?.content.includes('每轮交互有 64 步的硬性模型调用限制。') ? 'yes' : 'no'}`,
         `Multi-turn prompt observed: ${budgetMessage?.content.includes('划分为多个子任务') ? 'yes' : 'no'}`,
         `Early handoff prompt observed: ${budgetMessage?.content.includes('留到后续轮次继续') ? 'yes' : 'no'}`,
       ].join('\n'),

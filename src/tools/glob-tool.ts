@@ -4,8 +4,8 @@ import path from 'node:path';
 import type { RendererFileChange } from '../shared/schema';
 import minimatch from 'minimatch';
 
-const MAX_GLOB_RESULTS = 200;
-const MAX_GLOB_OUTPUT_CHARS = 12000;
+const MAX_GLOB_RESULTS = 500;
+const MAX_GLOB_OUTPUT_CHARS = 40000;
 
 export interface GlobToolRequest {
   readonly pattern: string;
@@ -18,6 +18,9 @@ export interface ToolExecutionResult {
   readonly summary: string;
   readonly output: string[];
   readonly fileChanges?: RendererFileChange[];
+  readonly totalLines?: number;
+  readonly hasMore?: boolean;
+  readonly nextStartLine?: number;
 }
 
 export function createGlobTool() {
@@ -28,6 +31,7 @@ export function createGlobTool() {
       let totalChars = 0;
 
       let shouldStop = false;
+      let hitLimit = false;
 
       const visit = (dirPath: string): void => {
         if (shouldStop) {
@@ -56,6 +60,7 @@ export function createGlobTool() {
             }
 
             if (totalMatches >= MAX_GLOB_RESULTS) {
+              hitLimit = true;
               shouldStop = true;
               return;
             }
@@ -76,9 +81,11 @@ export function createGlobTool() {
         toolName: 'glob',
         status: totalMatches > 0 ? 'succeeded' : 'empty',
         summary: totalMatches > 0
-          ? truncated
-            ? `Matched ${output.length} of ${totalMatches} path(s)`
-            : `Matched ${totalMatches} path(s)`
+          ? hitLimit
+            ? `Matched ${output.length} of ${totalMatches}+ path(s)`
+            : truncated
+              ? `Matched ${output.length} of ${totalMatches} path(s)`
+              : `Matched ${totalMatches} path(s)`
           : 'No paths matched',
         output,
       };

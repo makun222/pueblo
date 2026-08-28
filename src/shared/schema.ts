@@ -354,6 +354,7 @@ export const agentTaskSchema = z.object({
 export const workflowTypeSchema = z.enum(['pueblo-plan']);
 export const workflowStatusSchema = z.enum([
   'idle',
+  'drafting',
   'assessing',
   'planning',
   'round-active',
@@ -363,6 +364,8 @@ export const workflowStatusSchema = z.enum([
   'failed',
   'cancelled',
 ]);
+
+export const workflowContinuationActionSchema = z.enum(['ask', 'continue', 'pause']);
 
 export const runtimePlanMetadataSchema = z.object({
   runtimePlanPath: z.string().min(1),
@@ -397,6 +400,10 @@ export const workflowInstanceSchema = z.object({
   activePlanMemoryId: z.string().min(1).nullable(),
   activeTodoMemoryId: z.string().min(1).nullable(),
   activeRoundNumber: z.number().int().nonnegative().nullable(),
+  emptyOutputStrikes: z.number().int().nonnegative().default(0),
+  roundStartedAt: z.string().datetime().nullable().default(null),
+  blockedAt: z.string().datetime().nullable().default(null),
+  pausedAt: z.string().datetime().nullable().default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
@@ -720,6 +727,7 @@ export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentTask = z.infer<typeof agentTaskSchema>;
 export type WorkflowType = z.infer<typeof workflowTypeSchema>;
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
+export type WorkflowContinuationAction = z.infer<typeof workflowContinuationActionSchema>;
 export type RuntimePlanMetadata = z.infer<typeof runtimePlanMetadataSchema>;
 export type WorkflowContext = z.infer<typeof workflowContextSchema>;
 export type WorkflowInstance = z.infer<typeof workflowInstanceSchema>;

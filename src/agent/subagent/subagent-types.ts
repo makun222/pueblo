@@ -28,12 +28,12 @@ export interface CheckSubAgentArgs {
 }
 
 export interface SubAgentToolDeps {
-  /** Current session ID */
-  sessionId: string;
-  /** Provider ID (e.g. 'anthropic') */
-  providerId: string;
-  /** Model ID (e.g. 'claude-3-haiku-20240307') */
-  modelId: string;
+  /** Lazily resolves the current parent session ID (resolved at spawn time). */
+  sessionId: () => string;
+  /** Lazily resolves the provider ID (resolved at spawn time, e.g. 'anthropic'). */
+  providerId: () => string;
+  /** Lazily resolves the model ID (resolved at spawn time, e.g. 'claude-3-haiku-20240307'). */
+  modelId: () => string;
   /** ExecuteTurnFn to pass to spawned CamelAgents */
   executeTurnFn: any;
   /** Callback for parent-level status updates (optional) */

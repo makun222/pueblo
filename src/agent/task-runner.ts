@@ -32,6 +32,19 @@ import type { TaskContext } from './task-context';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isTaskCancellationError, throwIfTaskCancelled } from '../shared/task-cancellation';
+import {
+  getDefaultMaxAgentSteps,
+  getIntentLoopLimit,
+  getLatestAssistantReferenceBoost,
+  getPerToolPreviewChars,
+  getPerToolRawChars,
+  getPromptToolResultBudgetChars,
+  getRepeatedToolLoopLimit,
+  getStepBudgetFinalizationBuffer,
+  getTierCHintEnabled,
+  getToolResultSummaryCharLimit,
+  isLegacyCompactMode,
+} from './task-runner-config';
 
 export interface RunAgentTaskInput {
   readonly goal: string;
@@ -95,12 +108,6 @@ export type ToolApprovalHandler = (request: ToolApprovalRequest) => Promise<Tool
 
 export type ToolApprovalBatchHandler = (requests: readonly ToolApprovalRequest[]) => Promise<readonly ToolApprovalDecision[]>;
 
-const TOOL_RESULT_SUMMARY_CHAR_LIMIT = 640;
-const DEFAULT_MAX_AGENT_STEPS = 48;
-const DEFAULT_TOOL_PREVIEW_ITEM_LIMIT = 12;
-const READ_TOOL_PREVIEW_ITEM_LIMIT = 24;
-const REPEATED_TOOL_LOOP_LIMIT = 6;
-const STEP_BUDGET_FINALIZATION_BUFFER = 6;
 const CLARIFICATION_FALLBACK_PROMPT = [
   '你已经花费了很多推理步骤，但仍未能得出可靠的最终答案。',
   '你需要跟用户进行需求澄清：首先承认当前目标过于宽泛或模糊，无法可靠地完成。',
@@ -417,6 +424,9 @@ export class AgentTaskRunner {
     const messages = [...args.executionMessages];
     let previousToolLoopFingerprint: string | null = null;
     let repeatedToolLoopCount = 0;
+    let previousIntentFingerprint: string | null = null;
+    let repeatedIntentCount = 0;
+    let intentPromptInjected = false;
 
     // Manual isAllowALL command: "set isAllowALL='true'" or "set isAllowALL='false'"
     {
@@ -649,7 +659,27 @@ export class AgentTaskRunner {
         repeatedToolLoopCount = 1;
       }
 
-      if (repeatedToolLoopCount >= REPEATED_TOOL_LOOP_LIMIT) {
+      // Intent-based loop detection: same tool + same normalized intent
+      // (e.g. reading the same file at different line ranges) counts as a
+      // repeat even though the strict fingerprint differs.
+      const currentIntentFingerprint = createIntentFingerprint(requestedToolCalls);
+      if (currentIntentFingerprint === previousIntentFingerprint) {
+        repeatedIntentCount += 1;
+      } else {
+        previousIntentFingerprint = currentIntentFingerprint;
+        repeatedIntentCount = 1;
+        intentPromptInjected = false;
+      }
+
+      if (repeatedIntentCount >= getIntentLoopLimit() && !intentPromptInjected) {
+        intentPromptInjected = true;
+        messages.push({
+          role: 'system',
+          content: INTENT_LOOP_SYSTEM_PROMPT,
+        });
+      }
+
+      if (repeatedToolLoopCount >= getRepeatedToolLoopLimit()) {
         throwIfTaskCancelled(args.signal, 'Task cancelled during repeated tool loop handling.');
         const clarificationResult = await this.createClarificationFallbackResult({
           adapter: args.adapter,
@@ -1638,7 +1668,11 @@ function sumProviderUsageNumber(left: number | undefined, right: number | undefi
   return (left ?? 0) + (right ?? 0);
 }
 
-function createToolLoopFingerprint(
+/**
+ * Strict fingerprint: identical toolName + args + output. Used to detect
+ * true "repeater" loops where the model re-issues the exact same request.
+ */
+export function createToolLoopFingerprint(
   toolCalls: readonly ProviderToolCall[],
   toolExecutions: Array<Awaited<ReturnType<AgentTaskRunner['executeToolCall']>>>,
 ): string {
@@ -1654,6 +1688,45 @@ function createToolLoopFingerprint(
     })),
   });
 }
+
+/**
+ * Intent fingerprint: normalizes tool arguments so "same intent, different
+ * line range" loops (e.g. reading the same file at different offsets) are
+ * detected. For `read` the startLine/endLine are dropped; for `grep`/`glob`
+ * only the pattern+include is kept; for `exec`/`shell_exec` only the first
+ * command token is used.
+ */
+export function createIntentFingerprint(toolCalls: readonly ProviderToolCall[]): string {
+  return JSON.stringify({
+    intents: toolCalls.map((toolCall) => normalizeToolCallIntent(toolCall)),
+  });
+}
+
+function normalizeToolCallIntent(toolCall: ProviderToolCall): { toolName: string; key: string } {
+  switch (toolCall.toolName) {
+    case 'read':
+    case 'edit':
+    case 'write':
+    case 'undo_edit':
+      return { toolName: toolCall.toolName, key: normalizeReferenceToken(toolCall.args.path) };
+    case 'grep':
+      return {
+        toolName: toolCall.toolName,
+        key: `${normalizeReferenceToken(toolCall.args.pattern)}:${toolCall.args.include ?? ''}`,
+      };
+    case 'glob':
+      return { toolName: toolCall.toolName, key: normalizeReferenceToken(toolCall.args.pattern) };
+    case 'exec':
+    case 'shell_exec': {
+      const firstToken = splitExecCommand(toolCall.args.command)[0] ?? '';
+      return { toolName: toolCall.toolName, key: normalizeReferenceToken(firstToken) };
+    }
+    default:
+      return { toolName: toolCall.toolName as string, key: '' };
+  }
+}
+
+const INTENT_LOOP_SYSTEM_PROMPT = '你已经对相同的文件或目标反复调用同一工具，但未取得进展。请直接基于已读到的内容作答，或改用 grep 精确定位，不要继续重复读取相同范围。';
 
 function createLocalClarificationFallback(reason: string): string {
   return [
@@ -1690,7 +1763,7 @@ function createLocalStepBudgetHandoff(reason: string, stepTrace: readonly AgentS
 }
 
 function createStepBudgetExecutionMessage(maxSteps: number): string {
-  const finalizationThreshold = Math.max(1, maxSteps - STEP_BUDGET_FINALIZATION_BUFFER);
+  const finalizationThreshold = Math.max(1, maxSteps - getStepBudgetFinalizationBuffer());
   return [
     '执行预算政策：',
     `- 每轮交互有 ${maxSteps} 步的硬性模型调用限制。`,
@@ -1818,12 +1891,26 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Set([
   'grep',
   'rev-parse',
 ]);
-/*
-function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[] {
-  let firstTrailingToolIndex = messages.length;
-  while (firstTrailingToolIndex > 0 && messages[firstTrailingToolIndex - 1]?.role === 'tool') {
-    firstTrailingToolIndex -= 1;
+/**
+ * Compose the message list shown to the model for a single step.
+ *
+ * Tier A (the trailing tool messages produced by the most recent step) is
+ * kept verbatim so the model always sees its latest tool results. Every
+ * earlier tool message is compacted through a character-budgeted tiered
+ * strategy (`budgetedPrepareToolMessages`) instead of being flattened to a
+ * one-line summary, which previously caused the model to re-read the same
+ * files repeatedly. Set `PUEBLO_COMPACT_MODE=legacy` to restore the old
+ * one-line behaviour.
+ */
+export function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[] {
+  if (isLegacyCompactMode()) {
+    return prepareLegacyCompactMessages(messages);
   }
+  return budgetedPrepareToolMessages(messages);
+}
+
+function prepareLegacyCompactMessages(messages: ProviderMessage[]): ProviderMessage[] {
+  const firstTrailingToolIndex = resolveFirstTrailingToolIndex(messages);
 
   return messages.map((message, index) => {
     if (message.role !== 'tool' || index >= firstTrailingToolIndex) {
@@ -1832,15 +1919,91 @@ function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[]
 
     return {
       ...message,
-      content: compactSerializedToolMessage(message),
+      content: compactToLegacy(message),
     };
   });
 }
-*/
-function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[] {
+
+/**
+ * Find the index of the first message in the trailing `role=tool` run. All
+ * tool messages at or after this index form Tier A and are kept verbatim.
+ */
+function resolveFirstTrailingToolIndex(messages: readonly ProviderMessage[]): number {
   let firstTrailingToolIndex = messages.length;
   while (firstTrailingToolIndex > 0 && messages[firstTrailingToolIndex - 1]?.role === 'tool') {
     firstTrailingToolIndex -= 1;
+  }
+  return firstTrailingToolIndex;
+}
+
+interface ToolMessageWithIndex {
+  readonly message: ProviderMessage;
+  readonly index: number;
+}
+
+/**
+ * Tiered, budget-aware replacement for the legacy "compact everything older
+ * than the trailing tool run" behaviour.
+ *
+ * 1. Determine Tier A (trailing tool run) — kept verbatim.
+ * 2. Collect every earlier tool message, newest first.
+ * 3. Boost messages whose tool result references the same path/pattern as the
+ *    latest assistant tool request (`LATEST_ASSISTANT_REFERENCE_BOOST`).
+ * 4. Walk newest→oldest, accumulating Tier B preview characters against
+ *    `PROMPT_TOOL_RESULT_BUDGET_CHARS`. Messages that fit become Tier B;
+ *    everything beyond the budget becomes Tier C.
+ */
+function budgetedPrepareToolMessages(messages: ProviderMessage[]): ProviderMessage[] {
+  const firstTrailingToolIndex = resolveFirstTrailingToolIndex(messages);
+
+  const olderToolMessages: ToolMessageWithIndex[] = [];
+  for (let index = 0; index < firstTrailingToolIndex; index += 1) {
+    const message = messages[index];
+    if (message?.role === 'tool') {
+      olderToolMessages.push({ message, index });
+    }
+  }
+
+  if (olderToolMessages.length === 0) {
+    return messages.slice();
+  }
+
+  // Boost keys derived from the most recent assistant tool request.
+  const boostKeys = getLatestAssistantReferenceBoost()
+    ? collectLatestAssistantReferenceKeys(messages)
+    : new Set<string>();
+
+  // Walk newest → oldest. Tier B budget is shared across all older messages.
+  const tierAssignments = new Map<number, 'B' | 'C'>();
+  const budgetChars = getPromptToolResultBudgetChars();
+  const previewChars = getPerToolPreviewChars();
+  let remainingBudget = budgetChars;
+
+  for (let cursor = olderToolMessages.length - 1; cursor >= 0; cursor -= 1) {
+    const entry = olderToolMessages[cursor];
+    if (!entry) {
+      continue;
+    }
+
+    const parsed = parseSerializedToolContent(entry.message.content);
+    const entryPreviewChars = parsed
+      ? estimateTierBPreviewChars(parsed)
+      : entry.message.content.length;
+
+    const boosted = parsed !== null && matchesBoostKeys(parsed, entry.message, boostKeys);
+    if (boosted && remainingBudget < previewChars) {
+      // Guarantee boosted messages at least one Tier B slot by reclaiming
+      // budget from the oldest non-boosted Tier B assignments if needed.
+      reclaimBudgetForBoost(tierAssignments, olderToolMessages, remainingBudget, entryPreviewChars);
+      remainingBudget = Math.max(remainingBudget, previewChars);
+    }
+
+    if (remainingBudget >= entryPreviewChars) {
+      tierAssignments.set(entry.index, 'B');
+      remainingBudget -= entryPreviewChars;
+    } else {
+      tierAssignments.set(entry.index, 'C');
+    }
   }
 
   return messages.map((message, index) => {
@@ -1848,19 +2011,296 @@ function prepareMessagesForModel(messages: ProviderMessage[]): ProviderMessage[]
       return message;
     }
 
-    return {
-      ...message,
-      content: compactSerializedToolMessage(message),
-    };
+    const tier = tierAssignments.get(index);
+    const parsed = parseSerializedToolContent(message.content);
+    if (!parsed) {
+      return message;
+    }
+
+    if (tier === 'B') {
+      return { ...message, content: compactToTierB(parsed) };
+    }
+
+    return { ...message, content: compactToTierC(parsed, message.toolName) };
   });
 }
 
-function serializeToolResultForModel(output: ToolExecutionResult): string {
+function reclaimBudgetForBoost(
+  assignments: Map<number, 'B' | 'C'>,
+  olderToolMessages: readonly ToolMessageWithIndex[],
+  remainingBudget: number,
+  _requiredChars: number,
+): void {
+  const previewChars = getPerToolPreviewChars();
+  const shortfall = previewChars - remainingBudget;
+  if (shortfall <= 0) {
+    return;
+  }
+
+  let reclaimed = 0;
+  for (let cursor = 0; cursor < olderToolMessages.length && reclaimed < shortfall; cursor += 1) {
+    const entry = olderToolMessages[cursor];
+    if (!entry) {
+      continue;
+    }
+    const current = assignments.get(entry.index);
+    if (current !== 'B') {
+      continue;
+    }
+    const parsed = parseSerializedToolContent(entry.message.content);
+    const freed = parsed ? estimateTierBPreviewChars(parsed) : entry.message.content.length;
+    assignments.set(entry.index, 'C');
+    reclaimed += freed;
+  }
+}
+
+/**
+ * Keys extracted from the most recent assistant tool request. Historical tool
+ * messages referencing the same path/pattern/command are boosted into Tier B
+ * so the model can re-use them instead of re-reading the same file.
+ */
+function collectLatestAssistantReferenceKeys(messages: readonly ProviderMessage[]): Set<string> {
+  const keys = new Set<string>();
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'assistant') {
+      continue;
+    }
+
+    const toolCalls = collectAssistantToolCalls(message);
+    for (const toolCall of toolCalls) {
+      for (const key of extractReferenceKeys(toolCall)) {
+        keys.add(key);
+      }
+    }
+    break;
+  }
+  return keys;
+}
+
+function collectAssistantToolCalls(message: ProviderMessage): ProviderToolCall[] {
+  if (Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
+    return [...message.toolCalls];
+  }
+  if (message.toolName && message.toolArgs) {
+    return [{ toolCallId: message.toolCallId ?? 'inline', toolName: message.toolName, args: message.toolArgs } as ProviderToolCall];
+  }
+  return [];
+}
+
+function extractReferenceKeys(toolCall: ProviderToolCall): string[] {
+  switch (toolCall.toolName) {
+    case 'read':
+    case 'edit':
+    case 'write':
+    case 'undo_edit':
+      return [normalizeReferenceToken(toolCall.args.path)];
+    case 'grep':
+    case 'glob':
+      return [normalizeReferenceToken(toolCall.args.pattern)];
+    case 'exec':
+    case 'shell_exec':
+      return [normalizeReferenceToken(splitExecCommand(toolCall.args.command)[0] ?? '')];
+    default:
+      return [];
+  }
+}
+
+function normalizeReferenceToken(value: string): string {
+  return value.trim().replace(/\\/g, '/').toLowerCase();
+}
+
+function matchesBoostKeys(
+  parsed: { status: string; summary: string; output: string[] },
+  message: ProviderMessage,
+  boostKeys: Set<string>,
+): boolean {
+  if (boostKeys.size === 0) {
+    return false;
+  }
+
+  for (const key of boostKeys) {
+    if (key && (parsed.summary.toLowerCase().includes(key) || parsed.output.some((line) => line.toLowerCase().includes(key)))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Estimate the character cost of a Tier B preview for a parsed tool result.
+ * The actual Tier B output is `head + tail + omitted marker`, so this uses
+ * the same head/tail slice lengths.
+ */
+function estimateTierBPreviewChars(parsed: { status: string; summary: string; output: string[] }): number {
+  const slices = sliceOutputForPreview(parsed.output, getPerToolPreviewChars());
+  const body = slices.join('\n');
+  const summary = truncateToolSummaryForModel(parsed.summary);
+  // JSON envelope overhead is small and stable; approximate with a constant.
+  return body.length + summary.length + 80;
+}
+
+function sliceOutputForPreview(output: readonly string[], budgetChars: number): string[] {
+  if (output.length === 0) {
+    return [];
+  }
+
+  let headChars = 0;
+  let headCount = 0;
+  for (let index = 0; index < output.length; index += 1) {
+    const line = output[index] ?? '';
+    if (headChars + line.length > budgetChars / 2 && headCount > 0) {
+      break;
+    }
+    headChars += line.length;
+    headCount += 1;
+  }
+
+  if (headCount >= output.length) {
+    return output.slice(0, headCount);
+  }
+
+  const tailBudget = budgetChars - headChars;
+  let tailChars = 0;
+  let tailCount = 0;
+  for (let index = output.length - 1; index >= headCount; index -= 1) {
+    const line = output[index] ?? '';
+    if (tailChars + line.length > tailBudget && tailCount > 0) {
+      break;
+    }
+    tailChars += line.length;
+    tailCount += 1;
+  }
+
+  const head = output.slice(0, headCount);
+  const tail = output.slice(output.length - tailCount);
+  const omitted = output.length - headCount - tailCount;
+  if (omitted > 0) {
+    return [...head, `... [omitted ${omitted} line(s)] ...`, ...tail];
+  }
+  return [...head, ...tail];
+}
+
+/**
+ * Tier B compaction: keeps a bounded preview (head + tail) of the output so
+ * the model can still reference previously read content without re-reading.
+ */
+export function compactToTierB(parsed: { status: string; summary: string; output: string[] }): string {
+  const preview = sliceOutputForPreview(parsed.output, getPerToolPreviewChars());
+  return JSON.stringify({
+    status: parsed.status,
+    summary: truncateToolSummaryForModel(parsed.summary),
+    outputPreview: preview.join('\n'),
+    outputCount: parsed.output.length,
+    outputTruncated: preview.length < parsed.output.length,
+    compression: 'tier-b',
+  });
+}
+
+/**
+ * Tier C compaction: structured minimal summary so the model knows a previous
+ * tool call happened and can re-invoke it with narrower arguments if needed.
+ */
+export function compactToTierC(parsed: { status: string; summary: string; output: string[] }, toolName: string | undefined): string {
+  const hint = getTierCHintEnabled() ? buildTierCHint(toolName) : undefined;
+  const payload: Record<string, unknown> = {
+    status: parsed.status,
+    summary: truncateToolSummaryForModel(parsed.summary),
+    outputCount: parsed.output.length,
+    compacted: 'tier-c',
+  };
+  if (hint) {
+    payload.hint = hint;
+  }
+  return JSON.stringify(payload);
+}
+
+function buildTierCHint(toolName: string | undefined): string | undefined {
+  switch (toolName) {
+    case 'read':
+      return '再次调用 read 并附带 startLine/endLine 可拿到原文';
+    case 'grep':
+      return '再次调用 grep 并附带更窄的 include 可拿到完整命中';
+    case 'glob':
+      return '再次调用 glob 可拿到完整路径列表';
+    case 'exec':
+    case 'shell_exec':
+      return '再次调用 exec/shell_exec 可拿到完整命令输出';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Legacy compaction used when `PUEBLO_COMPACT_MODE=legacy`. Preserves the
+ * previous one-line `执行结果已压缩：<summary>` behaviour for rollbacks.
+ */
+function compactToLegacy(message: ProviderMessage): string {
+  const parsed = parseSerializedToolContent(message.content);
+  if (!parsed) {
+    return message.content;
+  }
+  return '执行结果已压缩：' + truncateToolSummaryForModel(parsed.summary);
+}
+
+export function serializeToolResultForModel(output: ToolExecutionResult): string {
   return JSON.stringify({
     status: output.status,
     summary: truncateToolSummaryForModel(output.summary),
-    output: output.output,
+    output: truncateOutputForSerialization(output.output, getPerToolRawChars()),
   });
+}
+
+/**
+ * Cap the serialized `output` array so a single long `shell_exec` result
+ * cannot consume the entire Tier A budget. Keeps the JSON array shape intact
+ * by emitting head items + an omitted marker + tail items.
+ */
+export function truncateOutputForSerialization(output: readonly string[], maxChars: number): string[] {
+  if (output.length === 0) {
+    return [];
+  }
+
+  let totalChars = 0;
+  for (const line of output) {
+    totalChars += line.length;
+  }
+
+  if (totalChars <= maxChars) {
+    return [...output];
+  }
+
+  const headBudget = Math.floor(maxChars * 0.6);
+  const tailBudget = maxChars - headBudget;
+
+  const head: string[] = [];
+  let headChars = 0;
+  for (let index = 0; index < output.length; index += 1) {
+    const line = output[index] ?? '';
+    if (headChars + line.length > headBudget && head.length > 0) {
+      break;
+    }
+    head.push(line);
+    headChars += line.length;
+  }
+
+  const tail: string[] = [];
+  let tailChars = 0;
+  for (let index = output.length - 1; index >= head.length; index -= 1) {
+    const line = output[index] ?? '';
+    if (tailChars + line.length > tailBudget && tail.length > 0) {
+      break;
+    }
+    tail.unshift(line);
+    tailChars += line.length;
+  }
+
+  const omitted = output.length - head.length - tail.length;
+  if (omitted > 0) {
+    return [...head, `... [omitted ${omitted} item(s), ${totalChars - headChars - tailChars} chars] ...`, ...tail];
+  }
+  return [...head, ...tail];
 }
 
 function formatProgressToolCall(toolCall: ProviderToolCall): string {
@@ -1930,29 +2370,7 @@ function aggregateFileChanges(
   return [...mergedChanges.values()];
 }
 
-function compactSerializedToolMessage(message: ProviderMessage): string {
-  const parsed = parseSerializedToolContent(message.content);
-  if (!parsed) {
-    return message.content;
-  }
-
-  const previewLimit = message.toolName === 'read' ? READ_TOOL_PREVIEW_ITEM_LIMIT : DEFAULT_TOOL_PREVIEW_ITEM_LIMIT;
-  const preview = parsed.output.slice(0, previewLimit);
-
-  return '执行结果已压缩：'+truncateToolSummaryForModel(parsed.summary);
-  /*JSON.stringify({
-    status: parsed.status,
-    summary: truncateToolSummaryForModel(parsed.summary),
-    outputPreview: '执行结果已压缩：' + preview.join('\n'),
-   // outputCount: parsed.output.length,
-    //outputTruncated: preview.length < parsed.output.length,
-   // compression: 'older-tool-result-compacted',
-   // guidance: 'Older tool result was compacted to reduce prompt size. Re-run the tool with narrower arguments if exact full output is needed again.',
-  });
-   */
-}
-
-function parseSerializedToolContent(content: string): { status: string; summary: string; output: string[] } | null {
+export function parseSerializedToolContent(content: string): { status: string; summary: string; output: string[] } | null {
   try {
     const parsed = JSON.parse(content) as {
       status?: unknown;
@@ -1978,16 +2396,17 @@ function parseSerializedToolContent(content: string): { status: string; summary:
 
 
 function truncateToolSummaryForModel(summary: string): string {
-  if (summary.length <= TOOL_RESULT_SUMMARY_CHAR_LIMIT) {
+  const charLimit = getToolResultSummaryCharLimit();
+  if (summary.length <= charLimit) {
     return summary;
   }
 
-  return `${summary.slice(0, TOOL_RESULT_SUMMARY_CHAR_LIMIT - 3)}...`;
+  return `${summary.slice(0, charLimit - 3)}...`;
 }
 
 function resolveAgentTaskStepLimit(maxSteps?: number): number {
   if (typeof maxSteps !== 'number' || !Number.isFinite(maxSteps)) {
-    return DEFAULT_MAX_AGENT_STEPS;
+    return getDefaultMaxAgentSteps();
   }
 
   return Math.max(1, Math.floor(maxSteps));

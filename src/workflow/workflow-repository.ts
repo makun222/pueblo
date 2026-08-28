@@ -15,6 +15,10 @@ interface WorkflowInstanceRow {
   active_plan_memory_id: string | null;
   active_todo_memory_id: string | null;
   active_round_number: number | null;
+  empty_output_strikes: number;
+  round_started_at: string | null;
+  blocked_at: string | null;
+  paused_at: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -98,7 +102,7 @@ export class WorkflowRepository extends RepositoryBase implements WorkflowStore 
       SELECT *
         FROM workflow_instances
        WHERE session_id = ?
-         AND status IN ('assessing', 'planning', 'round-active', 'round-review', 'blocked')
+         AND status IN ('drafting', 'assessing', 'planning', 'round-active', 'round-review')
        ORDER BY updated_at DESC
        LIMIT 1
       `,
@@ -126,6 +130,10 @@ export class WorkflowRepository extends RepositoryBase implements WorkflowStore 
                active_plan_memory_id = @active_plan_memory_id,
                active_todo_memory_id = @active_todo_memory_id,
                active_round_number = @active_round_number,
+               empty_output_strikes = @empty_output_strikes,
+               round_started_at = @round_started_at,
+               blocked_at = @blocked_at,
+               paused_at = @paused_at,
                created_at = @created_at,
                updated_at = @updated_at,
                completed_at = @completed_at,
@@ -142,11 +150,13 @@ export class WorkflowRepository extends RepositoryBase implements WorkflowStore 
           id, type, status, session_id, agent_instance_id, goal,
           target_directory, runtime_plan_path, deliverable_plan_path,
           active_plan_memory_id, active_todo_memory_id, active_round_number,
+          empty_output_strikes, round_started_at, blocked_at, paused_at,
           created_at, updated_at, completed_at, failed_at, cancelled_at
         ) VALUES (
           @id, @type, @status, @session_id, @agent_instance_id, @goal,
           @target_directory, @runtime_plan_path, @deliverable_plan_path,
           @active_plan_memory_id, @active_todo_memory_id, @active_round_number,
+          @empty_output_strikes, @round_started_at, @blocked_at, @paused_at,
           @created_at, @updated_at, @completed_at, @failed_at, @cancelled_at
         )
         `,
@@ -171,6 +181,10 @@ export class WorkflowRepository extends RepositoryBase implements WorkflowStore 
       activePlanMemoryId: row.active_plan_memory_id,
       activeTodoMemoryId: row.active_todo_memory_id,
       activeRoundNumber: row.active_round_number,
+      emptyOutputStrikes: row.empty_output_strikes ?? 0,
+      roundStartedAt: row.round_started_at ?? null,
+      blockedAt: row.blocked_at ?? null,
+      pausedAt: row.paused_at ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       completedAt: row.completed_at,
@@ -193,6 +207,10 @@ export class WorkflowRepository extends RepositoryBase implements WorkflowStore 
       active_plan_memory_id: workflow.activePlanMemoryId,
       active_todo_memory_id: workflow.activeTodoMemoryId,
       active_round_number: workflow.activeRoundNumber,
+      empty_output_strikes: workflow.emptyOutputStrikes ?? 0,
+      round_started_at: workflow.roundStartedAt ?? null,
+      blocked_at: workflow.blockedAt ?? null,
+      paused_at: workflow.pausedAt ?? null,
       created_at: workflow.createdAt,
       updated_at: workflow.updatedAt,
       completed_at: workflow.completedAt,
@@ -202,6 +220,6 @@ export class WorkflowRepository extends RepositoryBase implements WorkflowStore 
   }
 }
 
-function isWorkflowActive(status: WorkflowInstance['status']): boolean {
-  return ['assessing', 'planning', 'round-active', 'round-review', 'blocked'].includes(status);
+export function isWorkflowActive(status: WorkflowInstance['status']): boolean {
+  return ['drafting', 'assessing', 'planning', 'round-active', 'round-review'].includes(status);
 }

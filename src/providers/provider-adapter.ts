@@ -46,6 +46,7 @@ export const providerReadToolArgsSchema = z.object({
   path: z.string().trim().min(1),
   startLine: z.coerce.number().int().positive().optional(),
   endLine: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().optional(),
 }).superRefine((value, context) => {
   if (value.startLine !== undefined && value.endLine !== undefined) {
     const startLine = value.startLine;
@@ -303,6 +304,10 @@ export const providerReadToolInputSchema: ProviderToolInputSchema = {
     endLine: {
       type: 'integer',
       description: 'Optional 1-based ending line to read. When provided without startLine, reads from line 1 through this line.',
+    },
+    limit: {
+      type: 'integer',
+      description: 'Optional maximum number of lines to return in a single call. When omitted, the tool default is used. Use this to request more or fewer lines than the default.',
     },
   },
   required: ['path'],

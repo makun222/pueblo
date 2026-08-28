@@ -63,7 +63,7 @@ describeIfNodeSqlite('workflow repository', () => {
 		}
 	});
 
-	it('returns the most recent active workflow while ignoring terminal states', () => {
+	it('returns the most recent active workflow while ignoring terminal and blocked states', () => {
 		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-workflow-repository-'));
 		tempDirs.push(tempDir);
 		const database = createSqliteDatabase({ dbPath: path.join(tempDir, 'pueblo.db') });
@@ -106,11 +106,27 @@ describeIfNodeSqlite('workflow repository', () => {
 				failedAt: '2026-05-10T12:05:00.000Z',
 			});
 
+			repository.save({
+				...repository.create({
+					id: 'workflow-round-active',
+					type: 'pueblo-plan',
+					status: 'round-active',
+					sessionId: 'session-2',
+					goal: 'Running workflow',
+					runtimePlanPath: path.join(tempDir, '.plans', 'workflow-round-active', 'running-workflow.plan.md'),
+					activeRoundNumber: 3,
+				}),
+				updatedAt: '2026-05-10T12:10:00.000Z',
+			});
+
 			const active = repository.getActiveBySession('session-2');
 
 			expect(active).not.toBeNull();
-			expect(active?.id).toBe('workflow-blocked');
-			expect(active?.status).toBe('blocked');
+			expect(active?.id).toBe('workflow-round-active');
+			expect(active?.status).toBe('round-active');
+
+			const blockedSessionActive = repository.getActiveBySession('session-2-blocked');
+			expect(blockedSessionActive).toBeNull();
 		} finally {
 			database.close();
 		}

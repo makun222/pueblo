@@ -82,6 +82,7 @@ describeIfNodeSqlite('workflow handoff integration', () => {
       pepe: { enabled: false },
       workflow: {
         runtimeDirectory: path.join(tempDir, '.plans'),
+        autoRoute: { enabled: true, routeKeywords: ['workflow'] },
       },
       providers: [{ providerId: 'openai', defaultModelId: 'gpt-4.1-mini', enabled: true, credentialSource: 'env' }],
     });

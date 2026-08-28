@@ -61,4 +61,72 @@ describe('workflow plan store', () => {
 		expect(slugifyGoal('!!!')).toBe('workflow');
 		expect(slugifyGoal('意 识 的 回 声')).toBe('workflow');
 	});
+
+	it('disposeWorkflow archives a failed workflow when archiveOnFailure is enabled', () => {
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-workflow-plan-store-'));
+		tempDirs.push(tempDir);
+		const config = createTestAppConfig({
+			workflow: {
+				runtimeDirectory: path.join(tempDir, '.plans'),
+				archiveOnFailure: true,
+			},
+		});
+		const planStore = new WorkflowPlanStore(config);
+		const workflowDir = planStore.resolveWorkflowDirectoryPath('11111111-1111-1111-1111-111111111111');
+		planStore.writePlan(path.join(workflowDir, 'goal.plan.md'), '# Plan');
+
+		planStore.disposeWorkflow('11111111-1111-1111-1111-111111111111', 'failed');
+
+		expect(fs.existsSync(workflowDir)).toBe(false);
+		expect(fs.existsSync(path.join(tempDir, '.plans', '_archive', '11111111-1111-1111-1111-111111111111'))).toBe(true);
+	});
+
+	it('disposeWorkflow deletes a cancelled workflow when archiveOnFailure is disabled', () => {
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-workflow-plan-store-'));
+		tempDirs.push(tempDir);
+		const config = createTestAppConfig({
+			workflow: {
+				runtimeDirectory: path.join(tempDir, '.plans'),
+				archiveOnFailure: false,
+			},
+		});
+		const planStore = new WorkflowPlanStore(config);
+		const workflowDir = planStore.resolveWorkflowDirectoryPath('22222222-2222-2222-2222-222222222222');
+		planStore.writePlan(path.join(workflowDir, 'goal.plan.md'), '# Plan');
+
+		planStore.disposeWorkflow('22222222-2222-2222-2222-222222222222', 'cancelled');
+
+		expect(fs.existsSync(workflowDir)).toBe(false);
+	});
+
+	it('disposeWorkflow keeps the directory for completed workflows', () => {
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-workflow-plan-store-'));
+		tempDirs.push(tempDir);
+		const config = createTestAppConfig({
+			workflow: { runtimeDirectory: path.join(tempDir, '.plans') },
+		});
+		const planStore = new WorkflowPlanStore(config);
+		const workflowDir = planStore.resolveWorkflowDirectoryPath('33333333-3333-3333-3333-333333333333');
+		planStore.writePlan(path.join(workflowDir, 'goal.plan.md'), '# Plan');
+
+		planStore.disposeWorkflow('33333333-3333-3333-3333-333333333333', 'completed');
+
+		expect(fs.existsSync(workflowDir)).toBe(true);
+	});
+
+	it('listWorkflowDirectories returns only uuid-shaped directories', () => {
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-workflow-plan-store-'));
+		tempDirs.push(tempDir);
+		const config = createTestAppConfig({
+			workflow: { runtimeDirectory: path.join(tempDir, '.plans') },
+		});
+		const planStore = new WorkflowPlanStore(config);
+		planStore.writePlan(path.join(tempDir, '.plans', '44444444-4444-4444-4444-444444444444', 'goal.plan.md'), '# Plan');
+		fs.mkdirSync(path.join(tempDir, '.plans', '_archive'), { recursive: true });
+		fs.mkdirSync(path.join(tempDir, '.plans', 'not-a-uuid'), { recursive: true });
+
+		const listings = planStore.listWorkflowDirectories();
+
+		expect(listings.map((entry) => entry.workflowId)).toEqual(['44444444-4444-4444-4444-444444444444']);
+	});
 });

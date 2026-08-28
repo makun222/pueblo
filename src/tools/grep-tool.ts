@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const MAX_GREP_RESULTS = 200;
-const MAX_GREP_OUTPUT_CHARS = 12000;
+const MAX_GREP_RESULTS = 500;
+const MAX_GREP_OUTPUT_CHARS = 40000;
 
 export interface GrepToolRequest {
   readonly pattern: string;
@@ -11,6 +11,7 @@ export interface GrepToolRequest {
 }
 
 import type { ToolExecutionResult } from './glob-tool';
+import { checkFileReadable } from './file-guard';
 import minimatch from 'minimatch';
 
 function matchesInclude(filePath: string, include?: string): boolean {
@@ -30,6 +31,7 @@ export function createGrepTool() {
       const regex = new RegExp(request.pattern, 'i');
 
       let shouldStop = false;
+      let hitLimit = false;
 
       const visit = (dirPath: string): void => {
         if (shouldStop) {
@@ -54,6 +56,11 @@ export function createGrepTool() {
             continue;
           }
 
+          const guard = checkFileReadable(fullPath);
+          if (!guard.ok) {
+            continue;
+          }
+
           const content = fs.readFileSync(fullPath, 'utf8');
           const relativePath = path.relative(request.cwd, fullPath);
           const lines = content.split(/\r?\n/);
@@ -67,15 +74,16 @@ export function createGrepTool() {
 
             totalMatches += 1;
 
-            if (totalMatches >= MAX_GREP_RESULTS) {
-              shouldStop = true;
-              return;
-            }
-
             const matchedLine = `${relativePath}:${index + 1}: ${line}`;
             if (totalChars + matchedLine.length <= MAX_GREP_OUTPUT_CHARS || output.length === 0) {
               output.push(matchedLine);
               totalChars += matchedLine.length;
+            }
+
+            if (totalMatches >= MAX_GREP_RESULTS) {
+              hitLimit = true;
+              shouldStop = true;
+              return;
             }
           }
         }
@@ -89,9 +97,11 @@ export function createGrepTool() {
         toolName: 'grep',
         status: totalMatches > 0 ? 'succeeded' : 'empty',
         summary: totalMatches > 0
-          ? truncated
-            ? `Matched ${output.length} of ${totalMatches} line(s)`
-            : `Matched ${totalMatches} line(s)`
+          ? hitLimit
+            ? `Matched ${output.length} of ${totalMatches}+ line(s)`
+            : truncated
+              ? `Matched ${output.length} of ${totalMatches} line(s)`
+              : `Matched ${totalMatches} line(s)`
           : 'No content matched',
         output,
       };
