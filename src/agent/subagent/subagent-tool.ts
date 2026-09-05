@@ -14,8 +14,14 @@ export function createSubAgentTool(service: SubAgentService): CustomToolProvider
         {
           name: 'spawn_subagent',
           description:
-            'Create a new sub-agent that works on a given goal in the background. ' +
-            'Returns immediately with a taskId. Use check_subagent to poll for results.',
+            'Spawn an independent sub-agent to run a self-contained goal in the background, ' +
+            'returning immediately with a taskId while you continue other work in parallel. ' +
+            'PREFER this when the task can be split into independent, long-running, or ' +
+            'parallelizable pieces (e.g. research N topics, write tests for separate modules, ' +
+            'read/analyze multiple unrelated files). AVOID when subtasks are strictly ' +
+            'sequential or need shared in-progress context. The sub-agent runs in its own ' +
+            'isolated context, so the goal must be self-contained (include all needed ' +
+            'context/constraints). After spawning, keep working and poll via check_subagent.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -26,7 +32,7 @@ export function createSubAgentTool(service: SubAgentService): CustomToolProvider
               options: {
                 type: 'object',
                 properties: {
-                  budget: {
+                  budgetLimit: {
                     type: 'number',
                     description: 'Optional budget limit for the sub-agent',
                   },
@@ -69,7 +75,7 @@ export function createSubAgentTool(service: SubAgentService): CustomToolProvider
           case 'spawn_subagent': {
             const { goal, options } = args as {
               goal: string;
-              options?: { budget?: number; maxSteps?: number };
+              options?: { budgetLimit?: number; maxSteps?: number };
             };
 
             if (typeof goal !== 'string' || goal.trim().length === 0) {
@@ -81,10 +87,15 @@ export function createSubAgentTool(service: SubAgentService): CustomToolProvider
             }
 
             const taskId = await service.spawn(goal, options ?? {});
+            const queued = service.check(taskId)?.status === 'pending';
+            const position = queued ? service.queuePosition(taskId) : null;
+            const summary = queued
+              ? `Sub-agent queued${position != null ? ` (position ${position})` : ''} with taskId: ${taskId}`
+              : `Sub-agent spawned (running) with taskId: ${taskId}`;
             return {
               status: 'succeeded' as const,
               output: [JSON.stringify({ taskId })],
-              summary: `Sub-agent spawned with taskId: ${taskId}`,
+              summary,
             };
           }
 

@@ -201,21 +201,29 @@ describe('SubAgentService — 取消与异常', () => {
 });
 
 describe('SubAgentService — 并发上限与槽位释放', () => {
-  it('超过 maxConcurrent 时 spawn 被拒绝且不阻塞已运行任务', async () => {
+  it('超过 maxConcurrent 时 spawn 被排队（pending）而非拒绝，槽释放后自动启动', async () => {
     const { fn } = makeExecuteTurnFn({ abortable: true, delayMs: 60_000 });
     const service = new SubAgentService(makeDeps(fn), 2);
 
     const id1 = await service.spawn('a');
     const id2 = await service.spawn('b');
-    await expect(service.spawn('c')).rejects.toThrow(/Max concurrent subagents \(2\) reached/);
+    const id3 = await service.spawn('c');
 
-    // 已运行的两个任务不受影响
+    // 已运行的两个任务不受影响；第三个被排队而非抛错
     expect(service.check(id1)?.status).toBe('running');
     expect(service.check(id2)?.status).toBe('running');
+    expect(service.check(id3)?.status).toBe('pending');
+    expect(service.queuePosition(id3)).toBe(1);
     expect(service.activeCount).toBe(2);
 
+    // 取消一个运行中任务后，槽位释放，pending 任务自动转为 running
     service.cancel(id1);
+    await waitFor(() => service.check(id3)?.status === 'running');
+    expect(service.check(id1)?.status).toBe('failed');
+    expect(service.activeCount).toBe(2);
+
     service.cancel(id2);
+    service.cancel(id3);
     await waitFor(() => service.activeCount === 0);
   });
 

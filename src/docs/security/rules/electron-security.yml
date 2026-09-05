@@ -1,0 +1,51 @@
+# Pueblo 自定义规则 ① — Electron 安全清单
+# 依据: Electron Security Checklist / OWASP MASVS-L1
+rules:
+  - id: electron-webpreferences-no-sandbox
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      webPreferences 未显式设置 sandbox: true。按 Electron 安全清单应开启
+      sandbox（渲染进程失去 Node 能力），否则渲染层一旦 XSS 即可直达本机。
+    patterns:
+      - pattern: 'webPreferences: { ... }'
+      - pattern-not: |
+          webPreferences: {
+            ...,
+            sandbox: true,
+            ...
+          }
+      - pattern-not: |
+          webPreferences: {
+            sandbox: true,
+            ...
+          }
+
+  - id: electron-contextisolation-false
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      contextIsolation: false 使预加载脚本与页面共享上下文，页面脚本可篡改
+      预加载暴露的 API。应保持 contextIsolation: true（默认）。
+    pattern: 'contextIsolation: false'
+
+  - id: electron-nodeintegration-true
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      nodeIntegration: true 直接向渲染进程开放 Node.js 能力，等价于任意
+      渲染层代码 RCE，必须关闭。
+    pattern: 'nodeIntegration: true'
+
+  - id: electron-loadurl-http-dev-server
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      loadURL 指向 http://localhost:<port>。开发模式下本机任意进程可抢占该
+      端口并加载恶意页面（端口劫持/DNS rebinding）。应绑定 127.0.0.1 并
+      校验窗口 origin；生产构建必须改为 file:// 加载。
+    patterns:
+      - pattern: $W.loadURL($URL)
+      - metavariable-regex:
+          metavariable: $URL
+          regex: (?i)http://(localhost|127\.0\.0\.1)

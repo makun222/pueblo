@@ -5,7 +5,7 @@ import type { ExecuteTurnFn } from '../../camel/camel-types';
 
 // ============================================================================
 // SubAgentService 并行性能测试
-// 覆盖: 并行 vs 串行加速比、满并发吞吐、批次复用、超并发拒绝率、混合负载
+// 覆盖: 并行 vs 串行加速比、满并发吞吐、批次复用、超并发排队、混合负载
 // 断言策略: 全部使用相对比较（并行耗时 < 串行耗时 × 系数），避免脆弱的绝对阈值
 // ============================================================================
 
@@ -129,12 +129,13 @@ describe('SubAgentService 并行性能 — 吞吐与槽位复用', () => {
     }
   });
 
-  it('超并发拒绝率: maxConcurrent=5 时同时 spawn 50 个, 恰好 5 成功、45 拒绝', async () => {
+  it('超并发排队: maxConcurrent=5、maxPending=10 时同时 spawn 50 个, 恰好 5 运行、10 排队、35 拒绝', async () => {
     const DELAY = 20;
     const MAX = 5;
+    const MAX_PENDING = 10;
     const TOTAL = 50;
     const { fn } = makeDelayedExecuteTurn(DELAY);
-    const service = new SubAgentService(makeDeps(fn), MAX);
+    const service = new SubAgentService(makeDeps(fn), MAX, MAX_PENDING);
 
     const results = await Promise.allSettled(
       Array.from({ length: TOTAL }, (_, i) => service.spawn(`r${i}`)),
@@ -142,17 +143,31 @@ describe('SubAgentService 并行性能 — 吞吐与槽位复用', () => {
     const ok = results.filter(r => r.status === 'fulfilled');
     const rejected = results.filter(r => r.status === 'rejected');
 
-    expect(ok.length).toBe(MAX);
-    expect(rejected.length).toBe(TOTAL - MAX);
+    // 新语义: 5 个立即运行, 10 个进入 pending 队列, 其余 35 个超过排队长上限被拒绝
+    expect(ok.length).toBe(MAX + MAX_PENDING);
+    expect(rejected.length).toBe(TOTAL - ok.length);
     for (const r of rejected) {
       expect((r as PromiseRejectedResult).reason?.message).toContain(
-        `Max concurrent subagents (${MAX}) reached`,
+        `Max pending subagents (${MAX_PENDING}) reached`,
       );
     }
 
-    // 等待成功的 5 个任务收尾, 避免悬挂定时器
-    const ids = ok.map(r => (r as PromiseFulfilledResult<string>).value);
-    await waitAllFinal(service, ids);
+    // 前 5 个为 running, 接着 10 个为 pending 且队列位置依次为 1..10
+    const okIds = ok.map(r => (r as PromiseFulfilledResult<string>).value);
+    const runningIds = okIds.filter(id => service.check(id)?.status === 'running');
+    const pendingIds = okIds.filter(id => service.check(id)?.status === 'pending');
+    expect(runningIds.length).toBe(MAX);
+    expect(pendingIds.length).toBe(MAX_PENDING);
+    for (let i = 0; i < pendingIds.length; i++) {
+      expect(service.queuePosition(pendingIds[i])).toBe(i + 1);
+    }
+
+    // 槽位释放后排队任务自动全部执行完, 且无悬挂任务
+    await waitAllFinal(service, okIds);
+    expect(service.activeCount).toBe(0);
+    for (const id of okIds) {
+      expect(service.check(id)?.status).toBe('completed');
+    }
   });
 });
 

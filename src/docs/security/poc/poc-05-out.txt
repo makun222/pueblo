@@ -1,0 +1,168 @@
+========================================================================
+PoC-05 — spawn(shell:true) cmd 元字符注入矩阵（win32 + v24.13.0）
+复刻目标：src/mcp/mcp-connection.ts:64-84（shell: process.platform === 'win32'）
+========================================================================
+node: D:\Program Files\nodejs\node.exe
+
+## 1. shell:true — 各元字符注入探测（command = node.exe，args 内嵌 payload）
+
+### AMP  &   命令分隔符
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### AMP2  &&  命令串联
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### PIPE  |   管道
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### PIPE2  ||  或
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### CARET  ^   转义符（cmd 层）
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### GT  >   重定向
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### LT  <   重定向输入
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### PERCENT  %CD%  变量扩展（探测）
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### BANG  !CD!  延迟扩展（探测）
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### QUOTE  " 引号闭合
+  exitCode   : 0
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### SEMI  ;   分隔符（cmd 下非元字符）
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+### PAREN  ( ) 批处理括号
+  exitCode   : 1
+  stderr     : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  marker     : no
+
+## 1b. shell:true + 无空格命令路径（node.exe 复制到临时目录）
+
+  无空格副本: C:\Users\ADMINI~1\AppData\Local\Temp\poc05-probe\node.exe
+
+  对照组(无元字符): exitCode=1 stdout=
+
+### AMP  &   命令分隔符
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE&echo PWNED> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |              
+  marker     : no
+
+### AMP2  &&  命令串联
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE&&echo PWNED> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |             
+  marker     : no
+
+### PIPE  |   管道
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE|echo PWNED> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |              
+  marker     : no
+
+### PIPE2  ||  或
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE||echo PWNED> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |             
+  marker     : no
+
+### CARET  ^   转义符（cmd 层）
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE^&echo PWNED> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |             
+  marker     : no
+
+### GT  >   重定向
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |                         
+  marker     : no
+
+### LT  <   重定向输入
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE< D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |                         
+  marker     : no
+
+### PERCENT  %CD%  变量扩展（探测）
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(echo SAFED:\WorkSpace\pueblo\pueblo\src> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-mar
+  marker     : no
+
+### BANG  !CD!  延迟扩展（探测）
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(echo SAFE!CD!> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |                
+  marker     : no
+
+### QUOTE  " 引号闭合
+  exitCode   : 0
+  stderr     : [eval]:1 | process.stdout.write(SAFE" |                      ^^^^ | Expected ',', got 'string literal (, ")' |  | SyntaxError: missing ) aft
+  marker     : no
+
+### SEMI  ;   分隔符（cmd 下非元字符）
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE;echo PWNED> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |              
+  marker     : no
+
+### PAREN  ( ) 批处理括号
+  exitCode   : 1
+  stderr     : [eval]:1 | process.stdout.write(SAFE(echo PWNED)> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-05-marker.txt) |             
+  marker     : no
+
+## 2. 对照 — shell:false（同一 payload 集合，确认差异来自 shell:true）
+
+### AMP  shell:false 对照
+  exitCode   : 0
+  stderr     : 
+  marker     : no
+
+### PIPE2  shell:false 对照
+  exitCode   : 0
+  stderr     : 
+  marker     : no
+
+### PERCENT  shell:false 对照
+  exitCode   : 0
+  stderr     : 
+  marker     : no
+
+## 3. 汇总判定
+
+- 无空格路径下可直接注入（marker 写入）: 无
+- 无空格路径下变量扩展生效: PERCENT（%CD% 在引号内被 cmd 预展开，stderr 可见；!CD! 延迟扩展默认关闭不生效）
+
+结论口径：
+  存在可注入/可扩展字符 → shell:true 在当前版本下仍是放大面，F-06 修复项（移除 shell:true）优先级不变。
+
+  Node v24 官方 DEP0190 弃用警告原文：Passing args to a child process with shell option true can lead to
+  security vulnerabilities, as the arguments are not escaped, only concatenated.
+## 4. 专项：含空格命令路径 + shell:true 的引用行为
+
+  command = node.exe（路径含空格），无任何元字符：
+  exitCode: 1
+  stdout  : 
+  stderr  : 'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ��� | ���������ļ���
+  判定: 异常 — 命令路径未被正确引用（cmd 解析拆分），与 PoC-01 A1 stderr 现象一致

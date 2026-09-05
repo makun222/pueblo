@@ -4,31 +4,40 @@ build/
 coverage/
 dist-electron/
 release/
-*.log
 .env*
 .DS_Store
 Thumbs.db
-*.tmp
 *.swp
 .vscode/
 .idea/
 *.tsbuildinfo
 .kilo/
 .kilocode
-.pueblo/*.json
-.pueblo/*.db
-.pueblo/*.db-wal
-.pueblo/*.db-shm
-.pueblo/file-snapshots
-.pueblo/shadow-edits
-.pueblo/attachments
+# --- runtime app state (.pueblo at any depth, e.g. src/.pueblo) ---
+.pueblo/
+
+# --- logs / temp files ---
+logs/
+.logs/
+*.log
+*.tmp
+*.bak
+
+# --- agent runtime workspaces (launcher-created at repo root only) ---
+/agent-*/
+
+# --- browser automation artifacts (playwright-mcp) ---
+.playwright-mcp/
+
+# --- legacy seed-template runtime copy ---
+.amber/agent-template/
+Skills-*/
+
+# --- ad-hoc CLI test leftovers ---
+amber-cli-test-*/
+__pycache__/
+*.pyc
+
+# --- planning scratch ---
 .plans/
 .specify/
-agent-*/
-logs/
-.pueblo/*.db-wal
-.pueblo/*.db-shm
-*.bak
-.pueblo/pueblo.db
-.playwrite-mcp/
-Skills-*/

@@ -230,6 +230,14 @@ function buildPuebloSystemMessage(taskContext: TaskContext): string | null {
   appendSection(sections, 'Context priority hints', taskContext.puebloProfile.contextPolicy.priorityHints);
   appendSection(sections, 'Context truncation hints', taskContext.puebloProfile.contextPolicy.truncationHints);
 
+  // Delegation strategy: steer the agent to parallelize independent work via subagents
+  sections.push(
+    'Delegation strategy:',
+    '- Prefer spawning a sub-agent (spawn_subagent) for independent, parallelizable, or long-running subtasks, then continue working and poll via check_subagent.',
+    '- Keep subtasks that are strictly sequential or require shared in-progress context inline (do them yourself).',
+    '- Make each sub-agent goal self-contained: include all needed context and constraints.',
+  );
+
   // Inject workflow-aware hints when an active plan is being tracked
   const wf = taskContext.workflowContext;
   if (wf && wf.planSummary) {

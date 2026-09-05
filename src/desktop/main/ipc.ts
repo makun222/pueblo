@@ -85,6 +85,12 @@ interface PendingToolApprovalBatch {
   readonly reject: (error: Error) => void;
 }
 
+interface QueuedToolApproval {
+  readonly requests: readonly ToolApprovalRequest[];
+  readonly resolve: (decisions: readonly ToolApprovalDecision[]) => void;
+  readonly reject: (error: Error) => void;
+}
+
 interface PendingFileReview {
   readonly request: DesktopFileReviewRequest;
   readonly resolve: (decision: 'keep' | 'discard') => void;
@@ -139,6 +145,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
   };
   loopJobManager.setCallModel(callModel);
   let activeToolApprovalBatch: PendingToolApprovalBatch | null = null;
+  const toolApprovalQueue: QueuedToolApproval[] = [];
   let activeFileReview: PendingFileReview | null = null;
   const activeSubmitControllers = new Set<AbortController>();
   let cleanedUp = false;
@@ -157,12 +164,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
     }
   };
 
-  cli.setToolApprovalBatchHandler(async (requests) => new Promise<readonly ToolApprovalDecision[]>((resolve, reject) => {
-    if (activeToolApprovalBatch) {
-      reject(new Error('A tool approval batch is already pending in the sidebar.'));
-      return;
-    }
-
+  const activateToolApprovalBatch = (
+    requests: readonly ToolApprovalRequest[],
+    resolve: (decisions: readonly ToolApprovalDecision[]) => void,
+    reject: (error: Error) => void,
+  ) => {
     const batch = createToolApprovalBatch(requests);
     activeToolApprovalBatch = {
       batch,
@@ -170,15 +176,31 @@ export function setupIpcHandlers(mainWindow: BrowserWindow, loopJobManager: Desk
         activeToolApprovalBatch = null;
         publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
         resolve(decisions);
+        drainApprovalQueue();
       },
       reject: (error) => {
         activeToolApprovalBatch = null;
         publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
         reject(error);
+        drainApprovalQueue();
       },
     };
-
     publishToolApprovalState(resolveToolApprovalState(activeToolApprovalBatch, activeFileReview));
+  };
+
+  const drainApprovalQueue = () => {
+    if (activeToolApprovalBatch) return;
+    const next = toolApprovalQueue.shift();
+    if (!next) return;
+    activateToolApprovalBatch(next.requests, next.resolve, next.reject);
+  };
+
+  cli.setToolApprovalBatchHandler(async (requests) => new Promise<readonly ToolApprovalDecision[]>((resolve, reject) => {
+    if (activeToolApprovalBatch) {
+      toolApprovalQueue.push({ requests, resolve, reject });
+      return;
+    }
+    activateToolApprovalBatch(requests, resolve, reject);
   }));
 
   cli.setToolApprovalHandler(null);

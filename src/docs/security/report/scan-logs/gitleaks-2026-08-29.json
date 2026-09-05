@@ -1,0 +1,23 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 274,
+  "EndLine": 274,
+  "StartColumn": 2,
+  "EndColumn": 21,
+  "Match": "API_KEY=sk-abc123xyz",
+  "Secret": "sk-abc123xyz",
+  "File": "src/desktop/renderer/mcp-manager/index.tsx",
+  "SymlinkFile": "",
+  "Commit": "3000d35627cadf9de16796db76a3ac05d22b67fb",
+  "Link": "https://github.com/makun222/pueblo/blob/3000d35627cadf9de16796db76a3ac05d22b67fb/src/desktop/renderer/mcp-manager/index.tsx#L274",
+  "Entropy": 3.5849626,
+  "Author": "mak",
+  "Email": "makun.op22@gmail.com",
+  "Date": "2026-06-21T15:30:22Z",
+  "Message": "feat:1.MCP特性，仍有问题。Bug:1.turn-indexer引发的上下文问题。",
+  "Tags": [],
+  "Fingerprint": "3000d35627cadf9de16796db76a3ac05d22b67fb:src/desktop/renderer/mcp-manager/index.tsx:generic-api-key:274"
+ }
+]

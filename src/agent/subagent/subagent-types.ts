@@ -2,7 +2,7 @@
  * SubAgent type definitions
  */
 
-export type SubAgentStatus = 'running' | 'completed' | 'failed';
+export type SubAgentStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export interface SubAgentTask {
   readonly taskId: string;

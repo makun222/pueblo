@@ -1,0 +1,29 @@
+# Pueblo 自定义规则 ③ — IPC 边界与杂项
+# 依据: Electron 官方安全清单（IPC） / CWE-79 / CWE-95
+rules:
+  - id: ipc-main-handler-no-schema
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      ipcMain 注册了 handler。渲染进程（可能被 XSS）可通过该通道触达主进程。
+      必须人工确认：handler 入口对 payload 做 schema 校验，且不将 payload
+      直接透传到文件/进程/网络 sink。详见 report/ipc-channels.md 清单。
+    pattern-either:
+      - pattern: ipcMain.handle($CHANNEL, $HANDLER)
+      - pattern: ipcMain.on($CHANNEL, $HANDLER)
+
+  - id: no-eval
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      eval 动态执行代码。任何不可信输入进入 eval 即 RCE。应禁用或改为
+      Function 构造同样危险，建议彻底移除。
+    pattern: eval(...)
+
+  - id: no-dangerously-set-inner-html
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      dangerouslySetInnerHTML 直接注入 HTML，若含不可信内容构成 XSS
+      （CWE-79）。应使用转义渲染。
+    pattern: dangerouslySetInnerHTML={...}

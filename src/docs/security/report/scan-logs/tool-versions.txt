@@ -1,0 +1,7 @@
+# Pueblo 安全扫描工具版本基线（Phase 0 / 2026-08-29 重建）
+基线 commit: b84227d9971dfd77c57551590d651439408afe43
+node: v24.13.0
+npm: 11.6.2
+semgrep: 1.175.0
+gitleaks: 8.30.1
+运行环境: 本地 Windows PowerShell（本轮非隔离环境；此前轮次曾在 Docker 隔离环境运行且工具版本一致；`shell:true` 相关结论为 Windows 平台结果，跨平台需复测）

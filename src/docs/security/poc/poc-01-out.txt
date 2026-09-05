@@ -1,0 +1,32 @@
+========================================================================
+PoC-01 结果汇总（F-06 命令执行 / F-07 env 继承）
+========================================================================
+
+### A1  shell:true（win32 分支，按目标代码复刻）
+  exitCode: 1
+  stdout:   
+  stderr:   'D:\Program' �����ڲ����ⲿ���Ҳ���ǿ����еĳ���
+���������ļ���
+  markerWritten: false
+  判定: 未复现注入（Node v24 shell:true 对 args 做引用转义，& 被字面传递）
+
+### A2  对照 shell:false（建议修复）
+  exitCode: 0
+  stdout:   SAFE&echo PWNED_BY_INJECTION> D:\\WorkSpace\\pueblo\\pueblo\\src\\docs\\security\\poc\\poc-01-injected-marker.txt
+  markerWritten: false
+  判定: OK — 注入字符被当作字面参数，未执行
+
+### A3  command 可控（mcp:add-server 无校验透传）
+  exitCode: 0
+  stdout:   
+  markerWritten: true
+  判定: VULN_CONFIRMED — 任意 command 执行（RCE），不依赖 shell:true
+  说明: 攻击者通过 mcp:add-server 提交 { command: 任意路径, args: [...] } 即达成 RCE；
+        shell:true 仅是额外放大面（含 & 的 args 可能二次注入）。
+
+### B  env 继承（子进程视角）
+  leakedEnvKeys: ["AWS_SECRET_ACCESS_KEY_LEAK_DEMO","PUEBLO_API_KEY_LEAK_DEMO"]
+  判定: VULN_CONFIRMED — MCP 子进程可读取父进程 env 中 2 个密钥类变量（F-07）
+
+复现依据：src/mcp/mcp-connection.ts:64-84（env 构造）与 spawn(shell: win32)
+          src/mcp/mcp-ipc.ts（mcp:add-server 无校验透传）

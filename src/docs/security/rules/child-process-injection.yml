@@ -1,0 +1,49 @@
+# Pueblo 自定义规则 ② — 子进程命令注入
+# 依据: CWE-78 (OS Command Injection) / CWE-88 (Argument Injection)
+rules:
+  - id: child-process-shell-true
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      child_process 调用显式开启 shell: true。任何拼接进命令的参数若来自
+      不可信输入（LLM 输出/MCP 返回/用户文件），即构成命令注入。
+      应改用 execFile/spawn 数组参数并保持 shell 关闭。
+    pattern-either:
+      - pattern: 'exec($CMD, { shell: true, ... })'
+      - pattern: 'execSync($CMD, { shell: true, ... })'
+      - pattern: 'spawn($CMD, $ARGS, { shell: true, ... })'
+      - pattern: 'execFile($CMD, $ARGS, { shell: true, ... })'
+
+  - id: child-process-exec-template
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      使用模板字符串构造 shell 命令。若 $X 来自不可信输入可注入分号/管道等。
+      建议：命令与参数分离（execFile/spawn 数组）。
+    pattern-either:
+      - pattern: exec(`...`)
+      - pattern: execSync(`...`)
+
+  - id: child-process-exec-concat
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      使用字符串拼接构造 shell 命令，存在命令注入风险，需审计拼接来源。
+      建议改用 execFile/spawn 数组参数。
+    pattern-either:
+      - pattern: exec($A + $B)
+      - pattern: execSync($A + $B)
+
+  - id: child-process-spawn-nonliteral
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      spawn/execFile 的第一个参数（可执行文件路径）非常量。若来自不可信
+      输入（如 MCP server 配置），可被替换为任意可执行文件。
+      应使用常量命令 + 白名单校验。
+    pattern-either:
+      - pattern: spawn($CMD, ...)
+      - pattern: execFile($CMD, ...)
+    metavariable-regex:
+      metavariable: $CMD
+      regex: (?!['"`]).*(['"`].*)

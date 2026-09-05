@@ -31,6 +31,7 @@ function createMockService(): SubAgentService {
       },
     ),
     cancel: vi.fn<(taskId: string) => void>().mockReturnValue(undefined),
+    queuePosition: vi.fn<(taskId: string) => number | null>().mockReturnValue(null),
     activeTasks: new Map<string, SubAgentTask>(),
   } as unknown as SubAgentService;
 }
@@ -64,6 +65,20 @@ describe('SubAgentTool', () => {
       expect(checkDef!.inputSchema).toBeDefined();
       expect(checkDef!.executionPolicy).toBe('free');
     });
+
+    it('should expose budgetLimit (not the legacy budget name) in spawn_subagent options schema', () => {
+      const defs = tool.getDefinitions();
+      const spawnDef = defs.find((d) => d.name === 'spawn_subagent');
+      expect(spawnDef).toBeDefined();
+
+      const optionsProps = (
+        spawnDef!.inputSchema as {
+          properties: { options: { properties: Record<string, unknown> } };
+        }
+      ).properties.options.properties;
+      expect(optionsProps.budgetLimit).toBeDefined();
+      expect(optionsProps.budget).toBeUndefined();
+    });
   });
 
   describe('execute() – spawn_subagent', () => {
@@ -77,6 +92,23 @@ describe('SubAgentTool', () => {
 
       // Verify the underlying service was called
       expect(service.spawn).toHaveBeenCalledWith('Write unit tests', {});
+    });
+
+    it('should report queued status and position when spawn lands in the pending queue', async () => {
+      (service.spawn as ReturnType<typeof vi.fn>).mockResolvedValue('task-queued');
+      (service.check as ReturnType<typeof vi.fn>).mockImplementation((taskId: string) =>
+        taskId === 'task-queued'
+          ? { taskId: 'task-queued', status: 'pending' as const, createdAt: 1000 }
+          : null,
+      );
+      (service.queuePosition as ReturnType<typeof vi.fn>).mockReturnValue(2);
+
+      const result = await tool.execute('spawn_subagent', { goal: 'queued-goal' });
+
+      expect(result.status).toBe('succeeded');
+      expect(result.summary).toContain('queued');
+      expect(result.summary).toContain('position 2');
+      expect(result.summary).toContain('task-queued');
     });
 
     it('should fail when goal is missing', async () => {
