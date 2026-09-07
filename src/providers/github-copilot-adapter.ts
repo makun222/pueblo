@@ -108,6 +108,13 @@ export class GitHubCopilotAdapter implements ProviderAdapter {
       throw new ProviderAuthError('github-copilot', 'GitHub Copilot token is missing');
     }
 
+    const hasImageParts = context.messages.some((message) => (message.imageParts?.length ?? 0) > 0);
+    if (hasImageParts) {
+      throw new ProviderError(
+        'GitHub Copilot does not support image input. Remove the attached image(s), or switch to a vision-capable DeepSeek model via /model.',
+      );
+    }
+
     const tokenType = this.options.tokenType ?? 'copilot-access-token';
 
     if (tokenType === 'github-pat') {

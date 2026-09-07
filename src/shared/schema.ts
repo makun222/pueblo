@@ -14,6 +14,8 @@ export const providerModelSchema = z.object({
   name: z.string().min(1),
   contextWindow: z.number().int().positive().optional(),
   supportsTools: z.boolean().default(false),
+  /** 模型是否接受图片输入（image_url 消息部件）。 */
+  supportsVision: z.boolean().default(false),
 });
 
 export const providerProfileSchema = z.object({
@@ -560,7 +562,7 @@ export const rendererExecCommandSchema = z.object({
   result: z.string(),
 });
 
-export const attachmentKindSchema = z.enum(['document', 'spreadsheet']);
+export const attachmentKindSchema = z.enum(['document', 'spreadsheet', 'image']);
 
 export const attachmentSourceSchema = z.object({
   fileName: z.string().min(1),
@@ -570,6 +572,8 @@ export const attachmentSourceSchema = z.object({
 });
 
 export const attachmentAssetSchema = z.object({
+  /** 复制到附件根目录的原始文件副本路径（仅 image 附件填写；document/spreadsheet 不填）。 */
+  filePath: z.string().min(1).optional(),
   jsonPath: z.string().min(1),
   createdAt: z.string().datetime(),
   sizeBytes: z.number().int().nonnegative(),
@@ -648,6 +652,14 @@ export const spreadsheetAttachmentAssetSchema = z.object({
   asset: attachmentAssetSchema,
   summary: attachmentManifestSummarySchema,
   content: spreadsheetAttachmentContentSchema,
+});
+
+export const imageAttachmentAssetSchema = z.object({
+  attachmentId: z.string().min(1),
+  kind: z.literal('image'),
+  source: attachmentSourceSchema,
+  asset: attachmentAssetSchema,
+  summary: attachmentManifestSummarySchema,
 });
 
 export const rendererActionSchema = z.object({
@@ -770,6 +782,7 @@ export type AttachmentManifestSummary = z.infer<typeof attachmentManifestSummary
 export type InputAttachmentManifest = z.infer<typeof inputAttachmentManifestSchema>;
 export type DocumentAttachmentAsset = z.infer<typeof documentAttachmentAssetSchema>;
 export type SpreadsheetAttachmentAsset = z.infer<typeof spreadsheetAttachmentAssetSchema>;
+export type ImageAttachmentAsset = z.infer<typeof imageAttachmentAssetSchema>;
 export type RendererOutputBlock = z.infer<typeof rendererOutputBlockSchema>;
 export type DesktopWindowSession = z.infer<typeof desktopWindowSessionSchema>;
 export type IpcInputEnvelope = z.infer<typeof ipcInputEnvelopeSchema>;

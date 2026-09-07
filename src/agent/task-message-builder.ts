@@ -1,4 +1,5 @@
-import type { ProviderMessage } from '../providers/provider-adapter';
+import { readFileSync } from 'node:fs';
+import type { ProviderImagePart, ProviderMessage } from '../providers/provider-adapter';
 import { buildSkillSystemMessage } from './skill-context';
 import type { TaskContext } from './task-context';
 
@@ -131,7 +132,10 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
     pushSystemMessage(messages, budget, section.content!, section.maxChars);
   }
 
-  messages.push({ role: 'user', content: goal });
+  const imageParts = buildAttachmentImageParts(taskContext);
+  messages.push(
+    imageParts.length > 0 ? { role: 'user', content: goal, imageParts } : { role: 'user', content: goal },
+  );
   return dedupeSafeSystemBlocks(messages);
 }
 
@@ -159,6 +163,29 @@ function buildSessionSummaryMessage(taskContext: TaskContext): string | null {
   return lines.join('\n');
 }
 
+function buildAttachmentImageParts(taskContext: TaskContext): ProviderImagePart[] {
+  const parts: ProviderImagePart[] = [];
+
+  for (const attachment of taskContext.uploadedAttachments) {
+    if (attachment.kind !== 'image') {
+      continue;
+    }
+
+    const filePath = attachment.asset.filePath;
+    if (!filePath) {
+      throw new Error(`Image attachment '${attachment.source.fileName}' is missing asset.filePath`);
+    }
+
+    const buffer = readFileSync(filePath);
+    parts.push({
+      dataUrl: `data:${attachment.source.mimeType};base64,${buffer.toString('base64')}`,
+      mimeType: attachment.source.mimeType,
+    });
+  }
+
+  return parts;
+}
+
 function buildAttachmentContextMessage(taskContext: TaskContext): string | null {
   if (taskContext.uploadedAttachments.length === 0) {
     return null;
@@ -174,6 +201,9 @@ function buildAttachmentContextMessage(taskContext: TaskContext): string | null 
   for (const [index, attachment] of taskContext.uploadedAttachments.slice(0, ATTACHMENT_CONTEXT_LIMIT).entries()) {
     lines.push(`${index + 1}. ${attachment.source.fileName}`);
     lines.push(`   - kind: ${attachment.kind}`);
+    if (attachment.kind === 'image') {
+      lines.push('   - 该图片以 image content part 附加在用户消息中，仅 vision 模型可见（无需也无法用工具读取）。');
+    }
     lines.push(`   - jsonPath: ${attachment.asset.jsonPath}`);
     lines.push(`   - large: ${attachment.summary.isLarge ? 'yes' : 'no'}`);
 

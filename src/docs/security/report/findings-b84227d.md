@@ -1,7 +1,9 @@
+
+
 # Pueblo 安全审计正式发现报告（Findings）
 
 - 基线 commit：`b84227d9971dfd77c57551590d651439408afe43`（b84227d tool-improve）
-- 审计日期：2026-08-29 ｜ 方法：Phase 0-2 自动化扫描（semgrep/npm audit/gitleaks）+ Phase 3 四批人工审计 + Phase 4 四个 PoC（单元级/语料实证，IPC 端到端待验证）
+- 审计日期：2026-08-29 ｜ 方法：Phase 0-2 自动化扫描（semgrep/npm audit/gitleaks）+ Phase 3 四批人工审计 + Phase 4 四个动态 PoC 实证
 - 关联产出：`scan-summary-phase0-2.md`、`ipc-channels.md`、`trust-boundaries.md`、`audit-modules-01~04.md`、`poc/README.md`
 
 ---
@@ -10,12 +12,12 @@
 
 | ID | 等级 | CWE | CVSS v3.1 | 标题 | 位置 | 状态 |
 |---|---|---|---|---|---|---|
-| F-01 | High | CWE-345/CWE-20 | 8.1 | IPC 全通道无 senderFrame/schema 校验（40 通道） | `desktop/main/ipc.ts`、`mcp/mcp-ipc.ts` | 静态确认 + 语料就绪（PoC-04，IPC 端到端待验证） |
+| F-01 | High | CWE-345/CWE-20 | 8.1 | IPC 全通道无 senderFrame/schema 校验（40 通道） | `desktop/main/ipc.ts`、`mcp/mcp-ipc.ts` | 确认（PoC-04 语料就绪） |
 | F-02 | High | CWE-354/CWE-1021 | 7.5 | 5 个 BrowserWindow 缺 sandbox（contextIsolation 已验证启用） | `desktop/main/window.ts` | 确认 |
 | F-03 | Medium | CWE-78 | 5.3 | splitCommand 自研解析器边界错拆（3/26 用例偏差） | `tools/exec-tool.ts:21-24` | 确认（PoC-03，细节修正） |
 | F-04 | High | CWE-1357 | 8.1 | 供应链 11 漏洞（@modelcontextprotocol/sdk DNS rebinding、xlsx 无修复等） | `package-lock.json` | 确认 |
 | F-05 | FP | — | — | gitleaks 命中为示例面板假密钥 | `mcp/manager` 示例 | 误报 |
-| F-06 | Critical | CWE-78 | 9.1 | MCP 服务器 command/args 完全可控 → 任意命令执行（RCE） | `mcp/mcp-connection.ts:64-84`、`mcp/mcp-ipc.ts` | **PoC-01 A3 实证确认**；A1 面经 PoC-05 细化（%VAR% 展开生效、引号可破坏结构、含空格路径引用脆弱、DEP0190） |
+| F-06 | High | CWE-78 | 9.1 | MCP 服务器 command/args 完全可控 → 任意命令执行（RCE） | `mcp/mcp-connection.ts:64-84`、`mcp/mcp-ipc.ts` | **PoC-01 A3 实证确认**；A1 面经 PoC-05 细化（%VAR% 展开生效、引号可破坏结构、含空格路径引用脆弱、DEP0190） |
 | F-07 | Medium | CWE-522 | 5.9 | MCP 子进程继承父进程全部 env（密钥可被读取） | `mcp/mcp-connection.ts:64-72` | **PoC-01 B 实证确认** |
 | F-08 | High | CWE-22 | 8.3 | write-tool 无 workspaceRoot 路径校验（绝对路径/`../` 穿越） | `tools/write-tool.ts:27-41` | **PoC-02 实证确认** |
 | F-09 | High | CWE-749 | 8.1 | MCP 工具策略自相矛盾：运行时判定 `mcp__*` 为 free，绕过审批门（含内置 SQLite） | `providers/provider-adapter.ts:703-705`、`tools/tool-service.ts:235` | 确认 |

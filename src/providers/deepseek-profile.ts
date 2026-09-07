@@ -8,12 +8,21 @@ export const DEEPSEEK_MODELS: readonly ProviderModel[] = [
     id: 'deepseek-v4-flash',
     name: 'DeepSeek V4 Flash',
     supportsTools: true,
+    supportsVision: false,
     contextWindow: DEEPSEEK_CONTEXT_WINDOW,
   },
   {
     id: 'deepseek-v4-pro',
     name: 'DeepSeek V4 Pro',
     supportsTools: true,
+    supportsVision: false,
+    contextWindow: DEEPSEEK_CONTEXT_WINDOW,
+  },
+  {
+    id: 'deepseek-v4-flash-vision-exp',
+    name: 'DeepSeek V4 Flash Vision (Experimental)',
+    supportsTools: true,
+    supportsVision: true,
     contextWindow: DEEPSEEK_CONTEXT_WINDOW,
   },
 ];

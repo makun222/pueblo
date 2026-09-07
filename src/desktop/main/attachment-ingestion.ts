@@ -4,9 +4,11 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import {
   documentAttachmentAssetSchema,
+  imageAttachmentAssetSchema,
   spreadsheetAttachmentAssetSchema,
   type DocumentAttachmentAsset,
   type DocumentAttachmentChunk,
+  type ImageAttachmentAsset,
   type InputAttachmentManifest,
   type SpreadsheetAttachmentAsset,
   type SpreadsheetAttachmentCellValue,
@@ -14,7 +16,8 @@ import {
   type SpreadsheetAttachmentSheet,
 } from '../../shared/schema';
 
-const SUPPORTED_ATTACHMENT_EXTENSIONS = new Set(['.txt', '.docx', '.xls', '.xlsx']);
+const SUPPORTED_ATTACHMENT_EXTENSIONS = new Set(['.txt', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png', '.gif', '.webp']);
+const SUPPORTED_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 const INLINE_JSON_CHAR_LIMIT = 16_000;
 const LARGE_DOCUMENT_CHUNK_LIMIT = 24;
 const LARGE_SPREADSHEET_CELL_LIMIT = 400;
@@ -23,7 +26,7 @@ const DOCUMENT_CHUNK_CHAR_LIMIT = 1_200;
 export const ATTACHMENT_FILE_DIALOG_FILTERS = [
   {
     name: 'Supported files',
-    extensions: ['txt', 'docx', 'xls', 'xlsx'],
+    extensions: ['txt', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
   },
 ];
 
@@ -77,6 +80,50 @@ async function ingestSingleInputFile(args: {
     extension,
     mimeType: resolveMimeType(extension),
   };
+
+  if (SUPPORTED_IMAGE_EXTENSIONS.has(extension)) {
+    const buffer = await fs.readFile(absolutePath);
+    const mimeType = detectImageMimeType(buffer);
+    const imageSource = { ...source, mimeType };
+    const imageCopyPath = path.join(path.dirname(jsonPath), `${attachmentId}${extension}`);
+    await fs.writeFile(imageCopyPath, buffer);
+    const summary = {
+      isLarge: false,
+      chunkCount: null,
+      sheetCount: null,
+      rowCount: null,
+      cellCount: null,
+      previewText: formatImagePreviewText(fileName, mimeType, buffer.byteLength),
+    };
+    const imageAsset: ImageAttachmentAsset = imageAttachmentAssetSchema.parse({
+      attachmentId,
+      kind: 'image',
+      source: imageSource,
+      asset: {
+        ...assetBase,
+        filePath: imageCopyPath,
+        editable: false,
+      },
+      summary,
+    });
+    const payload = JSON.stringify(imageAsset, null, 2);
+    await fs.writeFile(jsonPath, payload, 'utf8');
+    const stat = await fs.stat(jsonPath);
+
+    return {
+      attachmentId,
+      kind: 'image',
+      source: imageSource,
+      asset: {
+        ...assetBase,
+        filePath: imageCopyPath,
+        editable: false,
+        sizeBytes: stat.size,
+      },
+      summary,
+      inlineJsonExcerpt: payload.length <= INLINE_JSON_CHAR_LIMIT ? payload : null,
+    };
+  }
 
   if (extension === '.txt' || extension === '.docx') {
     const text = extension === '.txt'
@@ -301,6 +348,41 @@ function resolveMimeType(extension: string): string {
     default:
       return 'application/octet-stream';
   }
+}
+
+/**
+ * 基于 magic bytes 判定图片真实格式（JPEG/PNG/GIF/WebP）并返回对应 MIME。
+ * 扩展名门禁之外的最后一层防线：内容与声称的图片格式不符时直接抛错，
+ * 拒绝把伪装扩展名的非图片文件送入 vision 请求。
+ */
+function detectImageMimeType(buffer: Buffer): string {
+  const head = buffer.subarray(0, 12);
+
+  if (head.length >= 8 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+    && head[4] === 0x0d && head[5] === 0x0a && head[6] === 0x1a && head[7] === 0x0a) {
+    return 'image/png';
+  }
+
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  if (head.length >= 4 && head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38) {
+    return 'image/gif';
+  }
+
+  if (head.length >= 12 && head.toString('ascii', 0, 4) === 'RIFF' && head.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+
+  throw new Error(
+    'Unsupported image format: content does not match PNG/JPEG/GIF/WebP magic bytes (extension gate passed but file is not a supported image).',
+  );
+}
+
+function formatImagePreviewText(fileName: string, mimeType: string, sizeBytes: number): string {
+  const kib = Math.max(1, Math.round(sizeBytes / 1024));
+  return `image attachment: ${fileName} (${mimeType}, ${kib} KiB, delivered to the vision model as an image part)`;
 }
 
 function resolveWorkspaceAttachmentRoot(workspaceRoot: string): string {

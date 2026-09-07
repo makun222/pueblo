@@ -1,8 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { buildProviderMessages, dedupeSafeSystemBlocks } from '../../src/agent/task-message-builder';
 import { createTaskContext } from '../../src/agent/task-context';
 import { createEmptyPuebloProfile } from '../../src/agent/pueblo-profile';
+import type { InputAttachmentManifest } from '../../src/shared/schema';
 import { createTestAppConfig } from '../helpers/test-config';
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  tempDirs.length = 0;
+});
 
 describe('task message builder', () => {
   it('builds provider messages from pueblo, prompt, and memory context before the current user input', () => {
@@ -480,4 +493,128 @@ describe('task message builder', () => {
       { role: 'user', content: 'Inspect the current failure' },
     ]);
   });
+
+  describe('image attachments', () => {
+    it('appends base64 imageParts to the user message and notes the image in attachment context', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-tmb-img-'));
+      tempDirs.push(dir);
+      const pngPath = path.join(dir, 'photo.png');
+      const pngBytes = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+      fs.writeFileSync(pngPath, pngBytes);
+
+      const messages = buildProviderMessages(
+        createContextWithAttachments([makeImageAttachment(pngPath)]),
+        'What is in this image?',
+      );
+
+      const userMessage = messages.find((message) => message.role === 'user' && message.content === 'What is in this image?');
+      expect(userMessage?.imageParts).toEqual([
+        { dataUrl: `data:image/png;base64,${pngBytes.toString('base64')}`, mimeType: 'image/png' },
+      ]);
+
+      const systemText = messages
+        .filter((message) => message.role === 'system')
+        .map((message) => message.content)
+        .join('\n');
+      expect(systemText).toContain('photo.png');
+      expect(systemText).toContain('该图片以 image content part 附加在用户消息中，仅 vision 模型可见（无需也无法用工具读取）。');
+    });
+
+    it('omits imageParts when no image attachments are uploaded', () => {
+      const messages = buildProviderMessages(createContextWithAttachments([]), 'Plain text only');
+
+      const userMessage = messages.find((message) => message.role === 'user' && message.content === 'Plain text only');
+      expect(userMessage).toBeDefined();
+      expect(Object.prototype.hasOwnProperty.call(userMessage, 'imageParts')).toBe(false);
+    });
+
+    it('omits imageParts when attachments are non-image', () => {
+      const messages = buildProviderMessages(createContextWithAttachments([makeDocumentAttachment()]), 'Handle this doc');
+
+      const userMessage = messages.find((message) => message.role === 'user' && message.content === 'Handle this doc');
+      expect(userMessage).toBeDefined();
+      expect(Object.prototype.hasOwnProperty.call(userMessage, 'imageParts')).toBe(false);
+    });
+
+    it('throws a clear error when an image attachment is missing asset.filePath', () => {
+      const context = createContextWithAttachments([makeImageAttachment(undefined)]);
+
+      expect(() => buildProviderMessages(context, 'Inspect the image')).toThrow(/missing asset\.filePath/);
+    });
+  });
 });
+
+function createContextWithAttachments(attachments: InputAttachmentManifest[]) {
+  return createTaskContext({
+    config: createTestAppConfig(),
+    puebloProfile: createEmptyPuebloProfile(null),
+    contextCount: {
+      estimatedTokens: 0,
+      contextWindowLimit: null,
+      utilizationRatio: null,
+      messageCount: 0,
+      selectedPromptCount: 0,
+      derivedMemoryCount: 0,
+    },
+    uploadedAttachments: attachments,
+  });
+}
+
+function makeImageAttachment(filePath: string | undefined, mimeType = 'image/png'): InputAttachmentManifest {
+  return {
+    attachmentId: 'att-image-1',
+    kind: 'image',
+    source: {
+      fileName: 'photo.png',
+      originalPath: filePath ?? 'C:/photos/photo.png',
+      extension: 'png',
+      mimeType,
+    },
+    asset: {
+      ...(filePath === undefined ? {} : { filePath }),
+      jsonPath: 'attachments/session-1/photo.json',
+      createdAt: new Date().toISOString(),
+      sizeBytes: 8,
+      editable: false,
+      schemaVersion: 1,
+    },
+    summary: {
+      isLarge: false,
+      chunkCount: null,
+      sheetCount: null,
+      rowCount: null,
+      cellCount: null,
+      previewText: null,
+    },
+    inlineJsonExcerpt: null,
+  };
+}
+
+function makeDocumentAttachment(): InputAttachmentManifest {
+  return {
+    attachmentId: 'att-doc-1',
+    kind: 'document',
+    source: {
+      fileName: 'notes.docx',
+      originalPath: 'C:/docs/notes.docx',
+      extension: 'docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    },
+    asset: {
+      jsonPath: 'attachments/session-1/notes.json',
+      createdAt: new Date().toISOString(),
+      sizeBytes: 10,
+      editable: true,
+      schemaVersion: 1,
+    },
+    summary: {
+      isLarge: false,
+      chunkCount: 1,
+      sheetCount: null,
+      rowCount: null,
+      cellCount: null,
+      previewText: 'hello',
+    },
+    inlineJsonExcerpt: null,
+  };
+}

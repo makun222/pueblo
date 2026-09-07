@@ -40,7 +40,7 @@ describe('CamelAgent integration with AgentTaskRunner.executeTurn', () => {
       status: 'active',
       authState: 'missing',
       defaultModelId: 'test-model',
-      models: [{ id: 'test-model', name: 'Test Model', supportsTools: false }],
+      models: [{ id: 'test-model', name: 'Test Model', supportsTools: false, supportsVision: false }],
       capabilities: { codeExecution: false, toolUse: false, streaming: false },
     };
 

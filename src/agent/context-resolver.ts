@@ -881,6 +881,16 @@ function resolvePromptMergeThreshold(
 }
 
 function summarizeAttachmentForContext(attachment: InputAttachmentManifest): string {
+  if (attachment.kind === 'image') {
+    return [
+      `Uploaded attachment: ${attachment.source.fileName}`,
+      'kind=image (delivered to vision-capable models as an image content part; not parsed into text)',
+      `mime=${attachment.source.mimeType}`,
+      attachment.asset.filePath ? `filePath=${attachment.asset.filePath}` : null,
+      attachment.summary.previewText ? `preview=${attachment.summary.previewText}` : null,
+    ].filter((value): value is string => Boolean(value)).join(' | ');
+  }
+
   const metrics = [
     attachment.summary.chunkCount !== null ? `${attachment.summary.chunkCount} chunks` : null,
     attachment.summary.sheetCount !== null ? `${attachment.summary.sheetCount} sheets` : null,

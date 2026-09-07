@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="100%" height="100%">
+  <defs>
+    <!-- Sky Gradient: Orange to Purple -->
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#140a1e" />
+      <stop offset="25%" stop-color="#3d1541" />
+      <stop offset="55%" stop-color="#7a1e43" />
+      <stop offset="80%" stop-color="#c73e3a" />
+      <stop offset="100%" stop-color="#ffa63d" />
+    </linearGradient>
+    
+    <!-- Ocean Gradient: Reflecting the sky -->
+    <linearGradient id="oceanGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffa63d" />
+      <stop offset="10%" stop-color="#c73e3a" />
+      <stop offset="35%" stop-color="#3d1541" />
+      <stop offset="100%" stop-color="#140a1e" />
+    </linearGradient>
+    
+    <!-- Sun Gradient -->
+    <linearGradient id="sunGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff8e7" />
+      <stop offset="40%" stop-color="#ffd700" />
+      <stop offset="100%" stop-color="#ff4d00" />
+    </linearGradient>
+    
+    <!-- Glow Filters -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="20" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    
+    <filter id="waveBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" />
+    </filter>
+    
+    <!-- Vignette Effect -->
+    <radialGradient id="vignette" cx="50%" cy="50%" r="50%">
+      <stop offset="60%" stop-color="#000" stop-opacity="0" />
+      <stop offset="100%" stop-color="#000" stop-opacity="0.65" />
+    </radialGradient>
+    
+    <!-- Cinematic Letterbox Bars -->
+    <clipPath id="cinematicClip">
+      <rect x="0" y="60" width="1200" height="680" />
+    </clipPath>
+  </defs>
+
+  <!-- BACKGROUND: Sky -->
+  <rect width="1200" height="500" fill="url(#skyGrad)" />
+
+  <!-- BACKGROUND: Ocean -->
+  <rect x="0" y="500" width="1200" height="300" fill="url(#oceanGrad)" />
+
+  <!-- SKY DETAILS: Wispy Clouds -->
+  <g fill="#140a1e" opacity="0.35">
+    <path d="M 0 180 Q 150 160 300 200 Q 450 180 600 220 Q 750 200 900 240 Q 1050 220 1200 260 L 1200 320 L 0 320 Z" />
+    <path d="M 0 280 Q 200 250 400 290 Q 600 270 800 310 Q 1000 290 1200 330 L 1200 400 L 0 400 Z" fill="#3d1541" />
+    <path d="M 0 380 Q 250 360 500 400 Q 750 380 1000 420 Q 1100 410 1200 430 L 1200 480 L 0 480 Z" fill="#7a1e43" />
+  </g>
+
+  <!-- SUN GLOW -->
+  <circle cx="600" cy="460" r="260" fill="#ff4d00" opacity="0.12" filter="url(#glow)" />
+  <circle cx="600" cy="460" r="160" fill="#ff8c42" opacity="0.25" filter="url(#glow)" />
+  <circle cx="600" cy="460" r="100" fill="#ffd700" opacity="0.45" filter="url(#glow)" />
+
+  <!-- SUN -->
+  <ellipse cx="600" cy="460" rx="85" ry="32" fill="url(#sunGrad)" filter="url(#glow)" />
+  
+  <!-- Horizon Line Detail -->
+  <line x1="0" y1="500" x2="1200" y2="500" stroke="#ffd700" stroke-width="2" opacity="0.6" filter="url(#softGlow)" />
+
+  <!-- OCEAN REFLECTION: Base Glow -->
+  <rect x="480" y="500" width="240" height="300" fill="#ffd700" opacity="0.15" filter="url(#glow)" />
+
+  <!-- OCEAN SPARKLES: Layer 1 (White/Warm, centered) -->
+  <g fill="#fff7e6" opacity="0.85" filter="url(#waveBlur)">
+    <rect x="520" y="508" width="160" height="2" rx="1" />
+    <rect x="540" y="516" width="120" height="3" rx="1.5" />
+    <rect x="510" y="526" width="180" height="3" rx="1.5" />
+    <rect x="560" y="536" width="80" height="4" rx="2" />
+    <rect x="530" y="548" width="140" height="4" rx="2" />
+    <rect x="500" y="560" width="200" height="5" rx="2.5" />
+    <rect x="550" y="574" width="100" height="5" rx="2.5" />
+    <rect x="480" y="590" width="240" height="6" rx="3" />
+    <rect x="520" y="608" width="160" height="6" rx="3" />
+    <rect x="570" y="624" width="60" height="5" rx="2.5" />
+    <rect x="450" y="642" width="300" height="7" rx="3.5" />
+    <rect x="500" y="662" width="200" height="8" rx="4" />
+    <rect x="550" y="682" width="100" height="8" rx="4" />
+    <rect x="420" y="704" width="360" height="9" rx="4.5" />
+    <rect x="470" y="732" width="260" height="10" rx="5" />
+    <rect x="400" y="764" width="400" height="12" rx="6" />
+  </g>
+
+  <!-- OCEAN SPARKLES: Layer 2 (Gold, extended) -->
+  <g fill="#ffd700" opacity="0.6" filter="url(#softGlow)">
+    <rect x="480" y="512" width="240" height="2" rx="1" />
+    <rect x="510" y="528" width="180" height="3" rx="1.5" />
+    <rect x="550" y="542" width="100" height="4" rx="2" />
+    <rect x="490" y="556" width="220" height="4" rx="2" />
+    <rect x="520" y="572" width="160" height="5" rx="2.5" />
+    <rect x="540" y="586" width="120" height="6" rx="3" />
+    <rect x="460" y="604" width="280" height="6" rx="3" />
+    <rect x="530" y="622" width="140" height="7" rx="3.5" />
+    <rect x="480" y="644" width="240" height="8" rx="4" />
+    <rect x="560" y="668" width="80" height="9" rx="4.5" />
+    <rect x="440" y="694" width="320" height="10" rx="5" />
+    <rect x="510" y="724" width="180" height="11" rx="5.5" />
+    <rect x="380" y="756" width="440" height="12" rx="6" />
+  </g>
+
+  <!-- OCEAN SPARKLES: Layer 3 (Orange, diffuse) -->
+  <g fill="#ff8c42" opacity="0.35" filter="url(#glow)">
+    <rect x="540" y="520" width="120" height="3" rx="1.5" />
+    <rect x="520" y="540" width="160" height="4" rx="2" />
+    <rect x="480" y="564" width="240" height="5" rx="2.5" />
+    <rect x="560" y="592" width="80" height="6" rx="3" />
+    <rect x="500" y="614" width="200" height="7" rx="3.5" />
+    <rect x="450" y="640" width="300" height="8" rx="4" />
+    <rect x="530" y="666" width="140" height="9" rx="4.5" />
+    <rect x="460" y="696" width="280" height="10" rx="5" />
+    <rect x="510" y="730" width="180" height="11" rx="5.5" />
+  </g>
+
+  <!-- FOREGROUND: Silhouetted Birds -->
+  <g fill="#000" opacity="0.75">
+    <!-- Bird 1 -->
+    <path d="M 200 280 Q 210 270 220 280 Q 210 275 200 280 Z" />
+    <!-- Bird 2 -->
+    <path d="M 230 260 Q 240 250 250 260 Q 240 255 230 260 Z" />
+    <!-- Bird 3 -->
+    <path d="M 180 300 Q 190 290 200 300 Q 190 295 180 300 Z" />
+    <!-- Bird 4 -->
+    <path d="M 950 240 Q 960 230 970 240 Q 960 235 950 240 Z" />
+    <!-- Bird 5 -->
+    <path d="M 980 220 Q 990 210 1000 220 Q 990 215 980 220 Z" />
+    <!-- Bird 6 -->
+    <path d="M 920 260 Q 930 250 940 260 Q 930 255 920 260 Z" />
+    <!-- Bird 7 (small, distant) -->
+    <path d="M 250 240 Q 255 235 260 240 Q 255 238 250 240 Z" />
+    <!-- Bird 8 (small, distant) -->
+    <path d="M 270 230 Q 275 225 280 230 Q 275 228 270 230 Z" />
+  </g>
+
+  <!-- CINEMATIC OVERLAYS -->
+  <!-- Letterbox Bars -->
+  <rect x="0" y="0" width="1200" height="60" fill="#000" />
+  <rect x="0" y="740" width="1200" height="60" fill="#000" />
+  
+  <!-- Vignette -->
+  <rect width="1200" height="800" fill="url(#vignette)" />
+  
+  <!-- Subtle Film Grian Overlay (Creates a cinematic texture) -->
+  <filter id="filmGrain">
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+    <feColorMatrix type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 0.05 0" />
+  </filter>
+  <rect width="1200" height="800" style="pointer-events: none;" filter="url(#filmGrain)" />
+</svg>

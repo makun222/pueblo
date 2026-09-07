@@ -70,6 +70,7 @@ export function createConfiguredProviderRegistry(
           id: providerSetting.defaultModelId,
           name: providerSetting.defaultModelId,
           supportsTools: true,
+          supportsVision: false,
         },
       ],
     });
@@ -101,6 +102,7 @@ export function registerGenericProvider(
         id: model.id,
         name: model.name,
         supportsTools: model.supportsTools,
+        supportsVision: false,
         contextWindow: model.contextWindow,
       })),
     }),

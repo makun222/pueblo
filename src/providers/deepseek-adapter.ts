@@ -111,6 +111,11 @@ interface DeepSeekCompactionStage {
 
 const DEEPSEEK_NETWORK_RETRY_LIMIT = 1;
 const DEEPSEEK_MAX_REQUEST_BODY_BYTES = 512_000;
+/**
+ * Vision 请求本地保护阈值（46.1 MiB，按 base64 后字节计），低于 DeepSeek
+ * 官方 48 MiB 请求体上限，避免本地压缩误伤携带 base64 图片的请求。
+ */
+const DEEPSEEK_VISION_MAX_REQUEST_BODY_BYTES = 44 * 1024 * 1024;
 const DEEPSEEK_COMPACTION_GUIDANCE = '该工具执行结果已被压缩。如果需要完整输出，请使用更窄的参数重新运行该工具。';
 const DEEPSEEK_COMPACTION_STAGES: readonly DeepSeekCompactionStage[] = [
   {
@@ -166,6 +171,8 @@ export class DeepSeekAdapter implements ProviderAdapter {
     if (!this.options.apiKey.trim()) {
       throw new ProviderAuthError('deepseek', 'DeepSeek API key is missing');
     }
+
+    assertModelSupportsRequestedImages(context);
 
     const requestUrl = `${this.baseUrl}/chat/completions`;
     const streamingEnabled = Boolean(context.onTextDelta);
@@ -329,7 +336,12 @@ export class DeepSeekAdapter implements ProviderAdapter {
     const originalRequestBody = JSON.stringify(originalRequestPayload);
     const originalBodyBytes = Buffer.byteLength(originalRequestBody, 'utf8');
 
-    if (originalBodyBytes <= DEEPSEEK_MAX_REQUEST_BODY_BYTES) {
+    // Vision 请求携带 base64 图片时请求体远超 512KB：按模型能力选择保护阈值。
+    const maxBodyBytes = context.supportsVision
+      ? DEEPSEEK_VISION_MAX_REQUEST_BODY_BYTES
+      : DEEPSEEK_MAX_REQUEST_BODY_BYTES;
+
+    if (originalBodyBytes <= maxBodyBytes) {
       return createDeepSeekRequestLogContext({
         promptMessages: originalPromptMessages,
         requestPayload: originalRequestPayload,
@@ -376,7 +388,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
           bestAttempt = requestLogContext;
         }
 
-        if (requestLogContext.requestMetrics.bodyBytes <= DEEPSEEK_MAX_REQUEST_BODY_BYTES) {
+        if (requestLogContext.requestMetrics.bodyBytes <= maxBodyBytes) {
           this.responseLogger.log({
             providerId: 'deepseek',
             category: 'request-compacted',
@@ -388,7 +400,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
             promptMessages: requestLogContext.promptMessages,
             requestMetrics: requestLogContext.requestMetrics,
             details: {
-              limitBytes: DEEPSEEK_MAX_REQUEST_BODY_BYTES,
+              limitBytes: maxBodyBytes,
               originalBodyBytes,
               savedBytes: Math.max(0, originalBodyBytes - requestLogContext.requestMetrics.bodyBytes),
             },
@@ -422,7 +434,7 @@ export class DeepSeekAdapter implements ProviderAdapter {
     });
 
     throw new ProviderError(
-      `DeepSeek request body remained too large after local compaction (${bestAttempt.requestMetrics.bodyBytes} bytes > ${DEEPSEEK_MAX_REQUEST_BODY_BYTES} bytes). Narrow the task scope or reduce attached context.`,
+      `DeepSeek request body remained too large after local compaction (${bestAttempt.requestMetrics.bodyBytes} bytes > ${maxBodyBytes} bytes). Narrow the task scope, reduce attached context, or downsample attached images.`,
       { requestMetrics: bestAttempt.requestMetrics },
     );
   }
@@ -689,7 +701,23 @@ function clonePromptMessages(messages: ProviderMessage[]): ProviderMessage[] {
     toolArgs: message.toolArgs,
     toolCalls: message.toolCalls ? [...message.toolCalls] : undefined,
     reasoningContent: message.reasoningContent,
+    imageParts: message.imageParts ? [...message.imageParts] : undefined,
   }));
+}
+
+/**
+ * 防呆：消息携带图片（imageParts）而当前模型不支持视觉输入时，直接拒绝，
+ * 避免把图片塞进纯文本模型触发上游 400。
+ */
+function assertModelSupportsRequestedImages(context: ProviderStepContext): void {
+  const hasImages = context.messages.some((message) => (message.imageParts?.length ?? 0) > 0);
+  if (!hasImages || context.supportsVision) {
+    return;
+  }
+
+  throw new ProviderError(
+    `Model "${context.modelId}" does not support image input. Switch to a vision-capable model (e.g. deepseek-v4-flash-vision-exp) via /model, or remove the attached image(s).`,
+  );
 }
 
 interface DeepSeekPromptCompactionOptions {
@@ -876,6 +904,22 @@ function toDeepSeekMessage(message: ProviderMessage) {
       content: message.content,
       tool_call_id: message.toolCallId,
       name: message.toolName,
+    };
+  }
+
+  if (message.role === 'user' && message.imageParts && message.imageParts.length > 0) {
+    return {
+      role: 'user' as const,
+      content: [
+        { type: 'text' as const, text: message.content },
+        ...message.imageParts.map((part) => ({
+          type: 'image_url' as const,
+          image_url: {
+            url: part.dataUrl,
+            detail: part.detail,
+          },
+        })),
+      ],
     };
   }
 

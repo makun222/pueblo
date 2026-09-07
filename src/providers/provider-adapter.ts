@@ -358,6 +358,19 @@ export const providerWriteToolInputSchema: ProviderToolInputSchema = {
   additionalProperties: false,
 };
 
+/**
+ * 图片输入部件：以 dataURL（base64 内联）或可访问的 http(s) URL 表示一张图片。
+ * 仅 vision 模型（supportsVision=true）的 user 消息允许携带。
+ */
+export interface ProviderImagePart {
+  /** 图片 dataURL（如 `data:image/png;base64,...`）或 http(s) 图片 URL。 */
+  readonly dataUrl: string;
+  /** dataURL 的 MIME 类型（仅内联图片需要；需与文件 magic bytes 一致）。 */
+  readonly mimeType?: string;
+  /** 传给上游 vision 请求的 detail 策略：low=低分辨率 / original=原图。 */
+  readonly detail?: 'low' | 'original';
+}
+
 export interface ProviderMessage {
   readonly role: 'system' | 'user' | 'assistant' | 'tool';
   readonly content: string;
@@ -366,6 +379,8 @@ export interface ProviderMessage {
   readonly toolArgs?: ProviderToolArgs;
   readonly toolCalls?: readonly ProviderToolCall[];
   readonly reasoningContent?: string;
+  /** 图片输入部件（仅 user 消息；需要模型 supportsVision=true）。 */
+  readonly imageParts?: readonly ProviderImagePart[];
 }
 
 export interface ProviderToolDefinition {
@@ -381,6 +396,8 @@ export interface ProviderStepContext {
   readonly availableTools: ProviderToolDefinition[];
   readonly onTextDelta?: (text: string) => void;
   readonly signal?: AbortSignal;
+  /** 当前模型是否支持图片输入；缺省视为不支持（收到图片消息时拒绝）。 */
+  readonly supportsVision?: boolean;
   /** Unique identifier for the agent job (loop job), used to distinguish
    *  concurrent agent runs. Falls back to process PID if not provided. */
   readonly userId?: string;

@@ -217,6 +217,7 @@ export class AgentTaskRunner {
       response = await this.runAgentLoop({
         adapter,
         modelId: input.modelId,
+        supportsVision: this.modelSupportsVision(input.providerId, input.modelId),
         taskId: task.id,
         executionCwd: input.taskContext?.targetDirectory ?? undefined,
         availableTools,
@@ -333,6 +334,7 @@ export class AgentTaskRunner {
       modelId,
       messages: turnMessages,
       availableTools,
+      supportsVision: this.modelSupportsVision(providerId, modelId),
       signal,
     });
 
@@ -376,6 +378,7 @@ export class AgentTaskRunner {
         modelId,
         messages: updatedMessages,
         availableTools,
+        supportsVision: this.modelSupportsVision(providerId, modelId),
         signal,
       });
 
@@ -395,6 +398,18 @@ export class AgentTaskRunner {
     };
   }
 
+  /** 解析 provider 注册模型中该模型是否支持图片输入（缺省不支持）。 */
+  private modelSupportsVision(providerId: string, modelId: string): boolean {
+    try {
+      const profile = this.providerRegistry.getProfile(providerId);
+      const model = profile.models.find((candidate) => candidate.id === modelId);
+      return model?.supportsVision === true;
+    } catch {
+      // Profile 不可解析（如认证缺失）时按不支持处理：收到图片消息会被 adapter 拒绝，属安全缺省。
+      return false;
+    }
+  }
+
   private buildInputSummary(input: RunAgentTaskInput): string {
     return JSON.stringify({
       inputContextSummary: input.inputContextSummary,
@@ -408,6 +423,7 @@ export class AgentTaskRunner {
   private async runAgentLoop(args: {
     readonly adapter: ReturnType<ProviderRegistry['getAdapter']>;
     readonly modelId: string;
+    readonly supportsVision: boolean;
     readonly taskId: string;
     readonly executionCwd?: string;
     readonly availableTools: ReturnType<ToolService['describeTools']>;
@@ -485,6 +501,7 @@ export class AgentTaskRunner {
           modelId: args.modelId,
           messages: stepMessages,
           availableTools: args.availableTools,
+          supportsVision: args.supportsVision,
           signal: args.signal,
           onTextDelta: (text) => {
             streamedStepText += text;
@@ -555,6 +572,7 @@ export class AgentTaskRunner {
         const recoveryResult = await this.createEmptyFinalResponseRecoveryResult({
           adapter: args.adapter,
           modelId: args.modelId,
+          supportsVision: args.supportsVision,
           messages,
           modelMessageTrace: args.modelMessageTrace,
           stepTrace: args.stepTrace,
@@ -684,6 +702,7 @@ export class AgentTaskRunner {
         const clarificationResult = await this.createClarificationFallbackResult({
           adapter: args.adapter,
           modelId: args.modelId,
+          supportsVision: args.supportsVision,
           messages,
           modelMessageTrace: args.modelMessageTrace,
           stepTrace: args.stepTrace,
@@ -706,6 +725,7 @@ export class AgentTaskRunner {
     const handoffResult = await this.createStepBudgetHandoffResult({
       adapter: args.adapter,
       modelId: args.modelId,
+      supportsVision: args.supportsVision,
       messages,
       modelMessageTrace: args.modelMessageTrace,
       stepTrace: args.stepTrace,
@@ -724,6 +744,7 @@ export class AgentTaskRunner {
   private async createEmptyFinalResponseRecoveryResult(args: {
     readonly adapter: ReturnType<ProviderRegistry['getAdapter']>;
     readonly modelId: string;
+    readonly supportsVision: boolean;
     readonly messages: ProviderMessage[];
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly stepTrace: AgentStepTraceEntry[];
@@ -755,6 +776,7 @@ export class AgentTaskRunner {
       modelId: args.modelId,
       messages: stepMessages,
       availableTools: [],
+      supportsVision: args.supportsVision,
       signal: args.signal,
       onTextDelta: (text) => {
         streamedStepText += text;
@@ -792,6 +814,7 @@ export class AgentTaskRunner {
   private async createStepBudgetHandoffResult(args: {
     readonly adapter: ReturnType<ProviderRegistry['getAdapter']>;
     readonly modelId: string;
+    readonly supportsVision: boolean;
     readonly messages: ProviderMessage[];
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly stepTrace: AgentStepTraceEntry[];
@@ -825,6 +848,7 @@ export class AgentTaskRunner {
         modelId: args.modelId,
         messages: stepMessages,
         availableTools: [],
+        supportsVision: args.supportsVision,
         signal: args.signal,
       });
 
@@ -858,6 +882,7 @@ export class AgentTaskRunner {
   private async createClarificationFallbackResult(args: {
     readonly adapter: ReturnType<ProviderRegistry['getAdapter']>;
     readonly modelId: string;
+    readonly supportsVision: boolean;
     readonly messages: ProviderMessage[];
     readonly modelMessageTrace: ModelMessageTraceEntry[];
     readonly stepTrace: AgentStepTraceEntry[];
@@ -891,6 +916,7 @@ export class AgentTaskRunner {
         modelId: args.modelId,
         messages: stepMessages,
         availableTools: [],
+        supportsVision: args.supportsVision,
         signal: args.signal,
       });
 
