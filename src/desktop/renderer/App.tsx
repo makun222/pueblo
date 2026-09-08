@@ -2751,6 +2751,7 @@ function renderProviderConfigPanel(args: {
             <select value={args.deepSeekModelId} onChange={(event) => args.onDeepSeekModelChange(event.target.value)}>
               <option value="deepseek-v4-flash">deepseek-v4-flash</option>
               <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+              <option value="deepseek-v4-flash-vision-exp">deepseek-v4-flash-vision-exp</option>
             </select>
           </label>
           <label className="provider-config-field">

@@ -24,7 +24,7 @@ export function createDeepSeekAuthCommand(dependencies: DeepSeekAuthCommandDepen
 
     if (requestedModelId && !isDeepSeekModelId(requestedModelId)) {
       return failureResult('DEEPSEEK_MODEL_INVALID', `Unsupported DeepSeek model: ${requestedModelId}`, [
-        'Use deepseek-v4-flash or deepseek-v4-pro.',
+        'Use deepseek-v4-flash, deepseek-v4-pro, or deepseek-v4-flash-vision-exp.',
       ]);
     }
 
