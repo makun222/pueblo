@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererAction, RendererExecCommand, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopFileReviewRequest,
+  DesktopAgentTab,
+  DesktopCloseTabResult,
+  DesktopCreateTabInput,
   DesktopGenericProviderConfiguration,
   DesktopMenuAction,
   DesktopProviderConfigurationList,
@@ -166,24 +169,31 @@ declare global {
   interface Window {
     electronAPI: {
       listProviderConfigurations: () => Promise<DesktopProviderConfigurationList>;
+      listDesktopTabs?: () => Promise<DesktopAgentTab[]>;
+      createDesktopTab?: (input?: DesktopCreateTabInput) => Promise<DesktopAgentTab>;
+      updateDesktopTab?: (input: { tabId: string; profileId?: string | null; providerId?: string | null; modelId?: string | null; workspace?: string | null }) => Promise<DesktopAgentTab>;
+      closeDesktopTab?: (tabId: string) => Promise<DesktopCloseTabResult>;
+      onDesktopTabsChanged?: (callback: (tabs: DesktopAgentTab[]) => void) => (() => void);
+      onTabOutput?: (callback: (event: { tabId: string; block: RendererOutputBlock }) => void) => (() => void);
+      onTabToolApprovalState?: (callback: (event: { tabId: string; state: DesktopToolApprovalState }) => void) => (() => void);
       saveGenericProviderConfiguration: (input: DesktopSaveGenericProviderConfigurationInput) => Promise<DesktopGenericProviderConfiguration>;
       removeGenericProviderConfiguration: (providerId: string) => Promise<void>;
-      submitInput: (input: IpcInputEnvelope) => Promise<DesktopSubmitResponse>;
-      cancelActiveSubmit: () => Promise<void>;
-      selectInputFiles: (sessionId: string | null) => Promise<InputAttachmentManifest[]>;
-      getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
-      getToolApprovalState: () => Promise<DesktopToolApprovalState>;
+      submitInput: (input: IpcInputEnvelope | { tabId: string; envelope: IpcInputEnvelope }) => Promise<DesktopSubmitResponse>;
+      cancelActiveSubmit: (tabId?: string) => Promise<void>;
+      selectInputFiles: (input: string | null | { tabId: string; sessionId: string | null }) => Promise<InputAttachmentManifest[]>;
+      getRuntimeStatus: (tabId?: string) => Promise<DesktopRuntimeStatus>;
+      getToolApprovalState: (tabId?: string) => Promise<DesktopToolApprovalState>;
       getTalkState: () => Promise<DesktopTalkState>;
-      respondToolApproval: (response: { batchId: string; decision: 'allow' | 'allow-all' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
-      respondFileReview: (response: { reviewId: string; decision: 'keep' | 'discard' }) => Promise<DesktopToolApprovalState>;
+      respondToolApproval: (response: { tabId?: string | null; batchId: string; decision: 'allow' | 'allow-all' | 'deny'; selectedRequestIds: string[] }) => Promise<DesktopToolApprovalState>;
+      respondFileReview: (response: { tabId?: string | null; reviewId: string; decision: 'keep' | 'discard' }) => Promise<DesktopToolApprovalState>;
       respondTalkRequest: (response: DesktopTalkRequestResponse) => Promise<DesktopTalkState>;
       respondTalkContinuation: (response: DesktopTalkContinuationResponse) => Promise<DesktopTalkState>;
       listAgentProfiles: () => Promise<AgentProfileTemplate[]>;
-      startAgentSession: (profileId: string) => Promise<DesktopRuntimeStatus>;
-      listAgentSessions: (agentInstanceId: string) => Promise<AgentSessionSummary[]>;
-      getSession: (sessionId: string) => Promise<Session | null>;
-      listSessionMemories: (sessionId: string) => Promise<MemoryRecord[]>;
-      selectSession: (sessionId: string) => Promise<DesktopSessionSelectionResponse>;
+      startAgentSession: (input: string | { tabId: string; profileId: string }) => Promise<DesktopRuntimeStatus>;
+      listAgentSessions: (input: string | { tabId: string; agentInstanceId: string }) => Promise<AgentSessionSummary[]>;
+      getSession: (input: string | { tabId: string; sessionId: string }) => Promise<Session | null>;
+      listSessionMemories: (input: string | { tabId: string; sessionId: string }) => Promise<MemoryRecord[]>;
+      selectSession: (input: string | { tabId: string; sessionId: string }) => Promise<DesktopSessionSelectionResponse>;
       onMenuAction: (callback: (action: DesktopMenuAction) => void) => (() => void);
       onToolApprovalState: (callback: (state: DesktopToolApprovalState) => void) => (() => void);
       onTalkState: (callback: (state: DesktopTalkState) => void) => (() => void);
@@ -208,6 +218,10 @@ export function App() {
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [archivedTranscriptGroups, setArchivedTranscriptGroups] = useState<TranscriptGroup[]>([]);
   const [runtimeStatus, setRuntimeStatus] = useState<DesktopRuntimeStatus>(EMPTY_RUNTIME_STATUS);
+  const [desktopTabs, setDesktopTabs] = useState<DesktopAgentTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [isCreatingTab, setIsCreatingTab] = useState(false);
+  const [workspaceDraft, setWorkspaceDraft] = useState('');
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileTemplate[]>([]);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [startingProfileId, setStartingProfileId] = useState<string | null>(null);
@@ -235,6 +249,7 @@ export function App() {
   const [genericProviderEnabled, setGenericProviderEnabled] = useState(true);
   const [genericProviderSetAsDefault, setGenericProviderSetAsDefault] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingTabIds, setSubmittingTabIds] = useState<Set<string>>(new Set());
   const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([]);
   const [activeSessionDetails, setActiveSessionDetails] = useState<Session | null>(null);
   const [selectedSidebarSessionId, setSelectedSidebarSessionId] = useState<string | null>(null);
@@ -269,6 +284,8 @@ export function App() {
   const [answerTimerNowMs, setAnswerTimerNowMs] = useState(() => Date.now());
   const [actionInputHint, setActionInputHint] = useState<string | null>(null);
   const runtimeStatusRef = useRef(runtimeStatus);
+  const activeTabIdRef = useRef<string | null>(null);
+  const submittingTabIdsRef = useRef<Set<string>>(new Set());
   const selectedToolApprovalIdsRef = useRef<string[]>([]);
   const pendingAssistantEntryIdRef = useRef<string | null>(null);
   const pendingAssistantDraftRef = useRef('');
@@ -281,14 +298,33 @@ export function App() {
   const contextBreakdownRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
 
-  const refreshActiveSessionMemories = async (sessionId: string | null) => {
+  const setTabSubmitting = (tabId: string | null, submitting: boolean) => {
+    if (!tabId) {
+      setIsSubmitting(submitting);
+      return;
+    }
+
+    const next = new Set(submittingTabIdsRef.current);
+    if (submitting) {
+      next.add(tabId);
+    } else {
+      next.delete(tabId);
+    }
+    submittingTabIdsRef.current = next;
+    setSubmittingTabIds(next);
+    if (activeTabIdRef.current === tabId) {
+      setIsSubmitting(submitting);
+    }
+  };
+
+  const refreshActiveSessionMemories = async (sessionId: string | null, tabId = activeTabIdRef.current) => {
     if (!sessionId) {
       setActiveSessionMemories([]);
       return;
     }
 
     try {
-      const memories = await window.electronAPI.listSessionMemories(sessionId);
+      const memories = await window.electronAPI.listSessionMemories(tabId ? { tabId, sessionId } : sessionId);
       setActiveSessionMemories(memories);
     } catch {
       setActiveSessionMemories([]);
@@ -296,16 +332,33 @@ export function App() {
   };
 
   useEffect(() => {
-    void window.electronAPI.getRuntimeStatus().then((status) => {
+    const loadTab = (tabId: string | null) => void window.electronAPI.getRuntimeStatus(tabId ?? undefined).then((status) => {
       setRuntimeStatus(status);
-      void refreshAgentSessions(status, { hydrateCurrentSession: true });
-      void refreshActiveSessionMemories(status.activeSessionId);
+      void refreshAgentSessions(status, { hydrateCurrentSession: true }, tabId);
+      void refreshActiveSessionMemories(status.activeSessionId, tabId);
     }).catch(() => {
       setRuntimeStatus(EMPTY_RUNTIME_STATUS);
     });
-    void window.electronAPI.getToolApprovalState().then(setToolApprovalState).catch(() => {
-      setToolApprovalState(EMPTY_TOOL_APPROVAL_STATE);
-    });
+    const loadTabs = async () => {
+      if (!window.electronAPI.listDesktopTabs) {
+        loadTab(null);
+        return;
+      }
+      const tabs = await window.electronAPI.listDesktopTabs();
+      setDesktopTabs(tabs);
+      const tabId = tabs[0]?.id ?? null;
+      activeTabIdRef.current = tabId;
+      setActiveTabId(tabId);
+      loadTab(tabId);
+      void window.electronAPI.getToolApprovalState(tabId ?? undefined).then(setToolApprovalState).catch(() => setToolApprovalState(EMPTY_TOOL_APPROVAL_STATE));
+    };
+    void loadTabs().catch((error) => setStartupError(error instanceof Error ? error.message : 'Failed to load agent tabs.'));
+    const hasTabApprovalEvents = typeof window.electronAPI.onTabToolApprovalState === 'function';
+    if (!hasTabApprovalEvents) {
+      void window.electronAPI.getToolApprovalState().then(setToolApprovalState).catch(() => {
+        setToolApprovalState(EMPTY_TOOL_APPROVAL_STATE);
+      });
+    }
     if (typeof window.electronAPI.getTalkState === 'function') {
       void window.electronAPI.getTalkState().then(setTalkState).catch(() => {
         setTalkState(EMPTY_TALK_STATE);
@@ -314,23 +367,32 @@ export function App() {
     void window.electronAPI.listAgentProfiles().then(setAgentProfiles).catch((error) => {
       setStartupError(error instanceof Error ? error.message : 'Failed to load agent profiles.');
     });
-    const disposeToolApprovalListener = window.electronAPI.onToolApprovalState((state) => {
-      setToolApprovalState(state);
-    });
+    const disposeTabToolApprovalListener = window.electronAPI.onTabToolApprovalState
+      ? window.electronAPI.onTabToolApprovalState(({ tabId, state }) => {
+        if (tabId === activeTabIdRef.current) {
+          setToolApprovalState(state);
+        }
+      })
+      : () => {};
+    const disposeToolApprovalListener = !hasTabApprovalEvents
+      ? window.electronAPI.onToolApprovalState((state) => {
+        setToolApprovalState(state);
+      })
+      : () => {};
     const disposeTalkStateListener = typeof window.electronAPI.onTalkState === 'function'
       ? window.electronAPI.onTalkState((state) => {
         setTalkState(state);
       })
       : () => {};
 
-    window.electronAPI.onOutput((event, data) => {
+    const handleOutput = (data: RendererOutputBlock) => {
       if (data.type === 'system' && data.title === 'Assistant Draft') {
         appendPendingAssistantDraft(data.content);
         return;
       }
 
       if (data.type === 'system' && data.title === 'Agent Activity') {
-        void window.electronAPI.getRuntimeStatus().then(setRuntimeStatus).catch(() => {});
+        void window.electronAPI.getRuntimeStatus(activeTabIdRef.current ?? undefined).then(setRuntimeStatus).catch(() => {});
         updatePendingAssistantProgress(data.content);
         return;
       }
@@ -341,20 +403,32 @@ export function App() {
 
       if (isAnswerBlock(data) && pendingAssistantEntryIdRef.current) {
         streamAssistantResponse(data);
-        setIsSubmitting(false);
+        setTabSubmitting(activeTabIdRef.current, false);
         return;
       }
 
       updateTranscriptEntries((previous) => upsertRendererBlock(previous, data));
-    });
+    };
+    const disposeTabListener = window.electronAPI.onTabOutput
+      ? window.electronAPI.onTabOutput(({ tabId, block }) => {
+        if (tabId === activeTabIdRef.current) handleOutput(block);
+      })
+      : () => {};
+    if (!window.electronAPI.onTabOutput) {
+      window.electronAPI.onOutput((event, data) => handleOutput(data));
+    }
+    const disposeTabsChanged = window.electronAPI.onDesktopTabsChanged?.(setDesktopTabs) ?? (() => {});
 
     return () => {
       if (streamTimerRef.current) {
         clearTimeout(streamTimerRef.current);
         streamTimerRef.current = null;
       }
+      disposeTabToolApprovalListener();
       disposeToolApprovalListener();
       disposeTalkStateListener();
+      disposeTabListener();
+      disposeTabsChanged();
       window.electronAPI.removeAllListeners('output');
     };
   }, []);
@@ -403,6 +477,12 @@ export function App() {
   useEffect(() => {
     runtimeStatusRef.current = runtimeStatus;
   }, [runtimeStatus]);
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+  useEffect(() => {
+    setWorkspaceDraft(runtimeStatus.workspace ?? '');
+  }, [activeTabId, runtimeStatus.workspace]);
 
   useEffect(() => () => {
     if (actionHintTimerRef.current) {
@@ -597,6 +677,7 @@ export function App() {
   const refreshAgentSessions = async (
     nextRuntimeStatus: DesktopRuntimeStatus,
     options: { hydrateCurrentSession?: boolean } = {},
+    tabId = activeTabIdRef.current,
   ) => {
     const agentInstanceId = nextRuntimeStatus.agentInstanceId;
 
@@ -612,7 +693,7 @@ export function App() {
     }
 
     try {
-      const sessions = await window.electronAPI.listAgentSessions(agentInstanceId);
+      const sessions = await window.electronAPI.listAgentSessions(tabId ? { tabId, agentInstanceId } : agentInstanceId);
       setAgentSessions(sessions);
       setSessionPanelError(null);
 
@@ -620,7 +701,7 @@ export function App() {
         const activeSessionSummary = sessions.find((session) => session.id === nextRuntimeStatus.activeSessionId) ?? null;
         setSelectedSidebarSessionId(activeSessionSummary?.id ?? null);
         const activeSession = activeSessionSummary
-          ? await window.electronAPI.getSession(activeSessionSummary.id)
+          ? await window.electronAPI.getSession(tabId ? { tabId, sessionId: activeSessionSummary.id } : activeSessionSummary.id)
           : null;
         hydrateSessionTranscript(activeSession);
       } else if (!sessions.some((session) => session.id === selectedSidebarSessionId)) {
@@ -794,8 +875,10 @@ export function App() {
     options: { recordUserEntry: boolean; attachments?: InputAttachmentManifest[] } = { recordUserEntry: true },
   ) => {
     const trimmedInput = submittedInput.trim();
+    const requestTabId = activeTabIdRef.current;
+    const requestRuntimeStatus = runtimeStatusRef.current;
 
-    if (!trimmedInput || !runtimeStatus.agentProfileId || !runtimeStatus.activeSessionId) {
+    if (!trimmedInput || !requestRuntimeStatus.agentProfileId || !requestRuntimeStatus.activeSessionId) {
       return null;
     }
 
@@ -822,12 +905,13 @@ export function App() {
         }
       }
 
-      setIsSubmitting(true);
-      const response = await window.electronAPI.submitInput(createRendererInputEnvelope({
+      setTabSubmitting(requestTabId, true);
+      const envelope = createRendererInputEnvelope({
         inputText: trimmedInput,
-        sessionId: runtimeStatusRef.current.activeSessionId,
+        sessionId: requestRuntimeStatus.activeSessionId,
         attachments: options.attachments ?? [],
-      }));
+      });
+      const response = await window.electronAPI.submitInput(requestTabId ? { tabId: requestTabId, envelope } : envelope);
       if (assistantEntryId && !response.blocks.some((block) => isAnswerBlock(block))) {
         pendingAssistantEntryIdRef.current = null;
         pendingAssistantDraftRef.current = '';
@@ -835,13 +919,17 @@ export function App() {
         updateTranscriptEntries((previous) => previous.filter((entry) => !('role' in entry) || entry.id !== assistantEntryId));
       }
 
-      const shouldHydrateCurrentSession = response.runtimeStatus.activeSessionId !== runtimeStatusRef.current.activeSessionId;
-      setRuntimeStatus(response.runtimeStatus);
-      if ((options.attachments ?? []).length > 0) {
+      const shouldHydrateCurrentSession = response.runtimeStatus.activeSessionId !== requestRuntimeStatus.activeSessionId;
+      if (requestTabId === activeTabIdRef.current) {
+        setRuntimeStatus(response.runtimeStatus);
+      }
+      if ((options.attachments ?? []).length > 0 && requestTabId === activeTabIdRef.current) {
         setPendingAttachments([]);
       }
-      void refreshAgentSessions(response.runtimeStatus, { hydrateCurrentSession: shouldHydrateCurrentSession });
-      void refreshActiveSessionMemories(response.runtimeStatus.activeSessionId);
+      if (requestTabId === activeTabIdRef.current) {
+        void refreshAgentSessions(response.runtimeStatus, { hydrateCurrentSession: shouldHydrateCurrentSession }, requestTabId);
+        void refreshActiveSessionMemories(response.runtimeStatus.activeSessionId, requestTabId);
+      }
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -907,7 +995,7 @@ export function App() {
 
       return null;
     } finally {
-      setIsSubmitting(false);
+      setTabSubmitting(requestTabId, false);
     }
   };
 
@@ -969,11 +1057,13 @@ export function App() {
     setStartupError(null);
 
     try {
-      const nextRuntimeStatus = await window.electronAPI.startAgentSession(profileId);
+      const nextRuntimeStatus = await window.electronAPI.startAgentSession(
+        activeTabIdRef.current ? { tabId: activeTabIdRef.current, profileId } : profileId,
+      );
       setInput('');
       setRuntimeStatus(nextRuntimeStatus);
-      await refreshAgentSessions(nextRuntimeStatus, { hydrateCurrentSession: true });
-      await refreshActiveSessionMemories(nextRuntimeStatus.activeSessionId);
+      await refreshAgentSessions(nextRuntimeStatus, { hydrateCurrentSession: true }, activeTabIdRef.current);
+      await refreshActiveSessionMemories(nextRuntimeStatus.activeSessionId, activeTabIdRef.current);
       setIsAgentPickerOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start agent session.';
@@ -984,6 +1074,94 @@ export function App() {
     }
   };
 
+  const handleSelectTab = async (tabId: string) => {
+    if (tabId === activeTabIdRef.current) {
+      return;
+    }
+
+    activeTabIdRef.current = tabId;
+    setActiveTabId(tabId);
+    setIsSubmitting(submittingTabIds.has(tabId) || submittingTabIdsRef.current.has(tabId));
+    setInput('');
+    setPendingAttachments([]);
+    setActiveSessionDetails(null);
+    hydrateSessionTranscript(null);
+    setToolApprovalState(EMPTY_TOOL_APPROVAL_STATE);
+    pendingAssistantEntryIdRef.current = null;
+    pendingAssistantDraftRef.current = '';
+    if (streamTimerRef.current) {
+      clearTimeout(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+
+    try {
+      const [status, approvalState] = await Promise.all([
+        window.electronAPI.getRuntimeStatus(tabId),
+        window.electronAPI.getToolApprovalState(tabId),
+      ]);
+      setRuntimeStatus(status);
+      setWorkspaceDraft(status.workspace ?? '');
+      setToolApprovalState(approvalState);
+      await refreshAgentSessions(status, { hydrateCurrentSession: true }, tabId);
+      await refreshActiveSessionMemories(status.activeSessionId, tabId);
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : 'Failed to activate agent tab.');
+    }
+  };
+
+  const handleCreateTab = async () => {
+    if (isCreatingTab || !window.electronAPI.createDesktopTab || desktopTabs.length >= agentProfiles.length) {
+      if (agentProfiles.length > 0 && desktopTabs.length >= agentProfiles.length) {
+        setStartupError('Each agent profile can only be used by one tab. Close a tab before adding another.');
+      }
+      return;
+    }
+
+    setIsCreatingTab(true);
+    try {
+      const tab = await window.electronAPI.createDesktopTab();
+      await handleSelectTab(tab.id);
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : 'Failed to create agent tab.');
+    } finally {
+      setIsCreatingTab(false);
+    }
+  };
+
+  const handleCloseTab = async (tabId: string) => {
+    if (!window.electronAPI.closeDesktopTab) {
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.closeDesktopTab(tabId);
+      setDesktopTabs(result.tabs);
+      if (tabId === activeTabIdRef.current && result.fallbackTabId) {
+        await handleSelectTab(result.fallbackTabId);
+      }
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : 'Failed to close agent tab.');
+    }
+  };
+
+  const handleWorkspaceUpdate = async () => {
+    const workspace = workspaceDraft.trim();
+    if (!activeTabIdRef.current || !workspace || !window.electronAPI.updateDesktopTab) {
+      setWorkspaceDraft(runtimeStatus.workspace ?? '');
+      return;
+    }
+
+    try {
+      const tab = await window.electronAPI.updateDesktopTab({ tabId: activeTabIdRef.current, workspace });
+      setDesktopTabs((tabs) => tabs.map((current) => current.id === tab.id ? tab : current));
+      setRuntimeStatus(tab.runtimeStatus);
+      setWorkspaceDraft(tab.runtimeStatus.workspace ?? '');
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : 'Failed to set workspace.');
+      setWorkspaceDraft(runtimeStatus.workspace ?? '');
+    }
+  };
+
   const handleOpenSessionInspector = async (session: AgentSessionSummary) => {
     setSessionInspectorSession(session);
     setSessionInspectorMemories([]);
@@ -991,7 +1169,9 @@ export function App() {
     setIsSessionInspectorLoading(true);
 
     try {
-      const memories = await window.electronAPI.listSessionMemories(session.id);
+      const memories = await window.electronAPI.listSessionMemories(
+        activeTabIdRef.current ? { tabId: activeTabIdRef.current, sessionId: session.id } : session.id,
+      );
       setSessionInspectorMemories(memories);
     } catch (error) {
       setSessionInspectorError(error instanceof Error ? error.message : 'Failed to load session memories.');
@@ -1017,7 +1197,9 @@ export function App() {
     setSessionInspectorError(null);
 
     try {
-      const response = await window.electronAPI.selectSession(sessionInspectorSession.id);
+      const response = await window.electronAPI.selectSession(
+        activeTabIdRef.current ? { tabId: activeTabIdRef.current, sessionId: sessionInspectorSession.id } : sessionInspectorSession.id,
+      );
       setRuntimeStatus(response.runtimeStatus);
       setSelectedSidebarSessionId(response.session?.id ?? response.runtimeStatus.activeSessionId);
       hydrateSessionTranscript(response.session);
@@ -1358,11 +1540,14 @@ export function App() {
 
     try {
       const nextState = await window.electronAPI.respondToolApproval({
+        ...(activeTabIdRef.current ? { tabId: activeTabIdRef.current } : {}),
         batchId: activeToolApprovalBatch.id,
         decision,
         selectedRequestIds: selectedToolApprovalIdsRef.current,
       });
       setToolApprovalState(nextState);
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : 'Failed to resolve tool approval.');
     } finally {
       setIsResolvingToolApproval(false);
     }
@@ -1377,10 +1562,13 @@ export function App() {
 
     try {
       const nextState = await window.electronAPI.respondFileReview({
+        ...(activeTabIdRef.current ? { tabId: activeTabIdRef.current } : {}),
         reviewId: activeFileReview.id,
         decision,
       });
       setToolApprovalState(nextState);
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : 'Failed to resolve file review.');
     } finally {
       setIsResolvingFileReview(false);
     }
@@ -1539,11 +1727,46 @@ export function App() {
           </button>
         </div>
       </header>
+      {desktopTabs.length > 0 ? (
+        <nav className="agent-tab-bar" aria-label="agent tabs">
+          {desktopTabs.map((tab, index) => (
+            <div key={tab.id} className={`agent-tab ${tab.id === activeTabId ? 'agent-tab-active' : ''}`}>
+              <button type="button" className="agent-tab-select" onClick={() => { void handleSelectTab(tab.id); }}>
+                <span>{tab.runtimeStatus.agentProfileName ?? `Agent ${index + 1}`}</span>
+                {tab.isSubmitting ? <span className="agent-tab-busy">Working</span> : null}
+              </button>
+              <button
+                type="button"
+                className="agent-tab-close"
+                aria-label={`Close ${tab.runtimeStatus.agentProfileName ?? `agent ${index + 1}`} tab`}
+                disabled={desktopTabs.length === 1}
+                onClick={() => { void handleCloseTab(tab.id); }}
+              >
+                x
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="agent-tab-add"
+            aria-label="Add agent tab"
+            title={desktopTabs.length >= agentProfiles.length ? 'All agent profiles are already assigned' : 'Add agent tab'}
+            disabled={isCreatingTab || agentProfiles.length === 0 || desktopTabs.length >= agentProfiles.length}
+            onClick={() => { void handleCreateTab(); }}
+          >
+            +
+          </button>
+        </nav>
+      ) : null}
       <div className="workspace-shell" style={{ ['--workspace-columns' as string]: workspaceColumns }}>
         <section ref={outputPaneRef} className="output-pane" aria-label="output-region">
           {activeTalkConversation ? renderTalkBanner({ conversation: activeTalkConversation }) : null}
           {showAgentPicker ? renderAgentPicker(
             agentProfiles,
+            new Set(desktopTabs
+              .filter((tab) => tab.id !== activeTabId)
+              .map((tab) => tab.runtimeStatus.agentProfileId)
+              .filter((profileId): profileId is string => profileId !== null)),
             startingProfileId,
             startupError,
             handleStartAgentSession,
@@ -1778,7 +2001,11 @@ export function App() {
             >
               {agentProfiles.length === 0 ? <option value="">No agents available</option> : null}
               {agentProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
+                <option
+                  key={profile.id}
+                  value={profile.id}
+                  disabled={desktopTabs.some((tab) => tab.id !== activeTabId && tab.runtimeStatus.agentProfileId === profile.id)}
+                >
                   {profile.name}
                 </option>
               ))}
@@ -1826,10 +2053,23 @@ export function App() {
               ))}
             </select>
           </label>
-          <span className="status-chip" title={runtimeStatus.workspace ?? 'No workspace selected'}>
+          <label className="status-chip status-chip-workspace" title={runtimeStatus.workspace ?? 'No workspace selected'}>
             <span className="status-chip-label">Workspace</span>
-            <span className="status-chip-value">{formatWorkspaceLabel(runtimeStatus.workspace)}</span>
-          </span>
+            <input
+              className="status-chip-workspace-input"
+              aria-label="Workspace path"
+              value={workspaceDraft}
+              placeholder="Set workspace path"
+              onChange={(event) => setWorkspaceDraft(event.target.value)}
+              onBlur={() => { void handleWorkspaceUpdate(); }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleWorkspaceUpdate();
+                }
+              }}
+            />
+          </label>
         </div>
         <div className="status-strip-context">
           <div
@@ -1973,7 +2213,7 @@ export function App() {
             type="button"
             className="cancel-submit-button"
             title="Cancel current request"
-            onClick={() => { void window.electronAPI.cancelActiveSubmit(); }}
+            onClick={() => { void window.electronAPI.cancelActiveSubmit(activeTabIdRef.current ?? undefined); }}
             aria-label="Cancel current request"
           >
             ✕
@@ -3152,6 +3392,7 @@ function findProviderProfile(profiles: ProviderProfile[], providerId: string | n
 
 function renderAgentPicker(
   agentProfiles: AgentProfileTemplate[],
+  assignedProfileIds: ReadonlySet<string>,
   startingProfileId: string | null,
   startupError: string | null,
   onStart: (profileId: string) => void,
@@ -3188,9 +3429,11 @@ function renderAgentPicker(
               type="button"
               className="agent-card-button"
               onClick={() => void onStart(profile.id)}
-              disabled={startingProfileId !== null}
+              disabled={startingProfileId !== null || assignedProfileIds.has(profile.id)}
             >
-              {startingProfileId === profile.id ? 'Starting...' : 'Start with this agent'}
+              {assignedProfileIds.has(profile.id)
+                ? 'In use by another tab'
+                : startingProfileId === profile.id ? 'Starting...' : 'Start with this agent'}
             </button>
           </article>
         ))}

@@ -23,6 +23,7 @@ export interface DesktopSubmitResponse {
   readonly result: CommandResult<unknown>;
   readonly blocks: RendererOutputBlock[];
   readonly runtimeStatus: DesktopRuntimeStatus;
+  readonly tabId?: string;
 }
 
 export interface DesktopToolApprovalRequest {
@@ -51,6 +52,7 @@ export interface DesktopToolApprovalState {
 }
 
 export interface DesktopToolApprovalResponse {
+  readonly tabId?: string | null;
   readonly batchId: string;
   readonly decision: 'allow' | 'allow-all' | 'deny';
   readonly selectedRequestIds: string[];
@@ -67,6 +69,7 @@ export interface DesktopFileReviewRequest {
 }
 
 export interface DesktopFileReviewResponse {
+  readonly tabId?: string | null;
   readonly reviewId: string;
   readonly decision: 'keep' | 'discard';
 }
@@ -167,11 +170,13 @@ export interface DesktopTalkState {
 }
 
 export interface DesktopTalkRequestResponse {
+  readonly tabId?: string | null;
   readonly conversationId: string;
   readonly decision: 'accept' | 'reject';
 }
 
 export interface DesktopTalkContinuationResponse {
+  readonly tabId?: string | null;
   readonly conversationId: string;
   readonly decision: 'continue' | 'end';
 }
@@ -205,6 +210,69 @@ export interface DesktopRuntimeStatus {
 export interface DesktopSessionSelectionResponse {
   readonly runtimeStatus: DesktopRuntimeStatus;
   readonly session: Session | null;
+  readonly tabId?: string;
+}
+
+export interface DesktopAgentTab {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly runtimeStatus: DesktopRuntimeStatus;
+  readonly isSubmitting: boolean;
+  readonly hasPendingToolApproval: boolean;
+  readonly hasPendingFileReview: boolean;
+}
+
+export interface DesktopCreateTabInput {
+  readonly profileId?: string | null;
+  readonly providerId?: string | null;
+  readonly modelId?: string | null;
+  readonly workspace?: string | null;
+}
+
+export interface DesktopUpdateTabInput extends DesktopCreateTabInput {
+  readonly tabId: string;
+}
+
+export interface DesktopCloseTabResult {
+  readonly closedTabId: string;
+  readonly fallbackTabId: string | null;
+  readonly tabs: DesktopAgentTab[];
+}
+
+export interface DesktopTabSubmitRequest {
+  readonly tabId?: string | null;
+  readonly envelope: IpcInputEnvelope;
+}
+
+export interface DesktopTabAgentSessionRequest {
+  readonly tabId?: string | null;
+  readonly profileId: string;
+}
+
+export interface DesktopTabInputFilesRequest {
+  readonly tabId?: string | null;
+  readonly sessionId: string | null;
+}
+
+export interface DesktopTabEntityRequest {
+  readonly tabId?: string | null;
+  readonly sessionId: string;
+}
+
+export interface DesktopTabAgentSessionsRequest {
+  readonly tabId?: string | null;
+  readonly agentInstanceId: string;
+}
+
+export interface DesktopTabOutputEvent {
+  readonly tabId: string;
+  readonly block: RendererOutputBlock;
+}
+
+export interface DesktopTabToolApprovalStateEvent {
+  readonly tabId: string;
+  readonly state: DesktopToolApprovalState;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,14 +287,26 @@ export interface DesktopLoopJobProgress {
 }
 
 export interface DesktopBridge {
+  listDesktopTabs(): Promise<DesktopAgentTab[]>;
+  createDesktopTab(input?: DesktopCreateTabInput): Promise<DesktopAgentTab>;
+  updateDesktopTab(input: DesktopUpdateTabInput): Promise<DesktopAgentTab>;
+  closeDesktopTab(tabId: string): Promise<DesktopCloseTabResult>;
+  onDesktopTabsChanged(listener: (tabs: DesktopAgentTab[]) => void): () => void;
+  onTabOutput(listener: (event: DesktopTabOutputEvent) => void): () => void;
+  onTabToolApprovalState(listener: (event: DesktopTabToolApprovalStateEvent) => void): () => void;
   listProviderConfigurations(): Promise<DesktopProviderConfigurationList>;
   saveGenericProviderConfiguration(input: DesktopSaveGenericProviderConfigurationInput): Promise<DesktopGenericProviderConfiguration>;
   removeGenericProviderConfiguration(providerId: string): Promise<void>;
   submitInput(envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse>;
+  submitInput(request: DesktopTabSubmitRequest): Promise<DesktopSubmitResponse>;
   cancelActiveSubmit(): Promise<void>;
+  cancelActiveSubmit(tabId: string): Promise<void>;
   selectInputFiles(sessionId: string | null): Promise<InputAttachmentManifest[]>;
+  selectInputFiles(request: DesktopTabInputFilesRequest): Promise<InputAttachmentManifest[]>;
   getRuntimeStatus(): Promise<DesktopRuntimeStatus>;
+  getRuntimeStatus(tabId: string): Promise<DesktopRuntimeStatus>;
   getToolApprovalState(): Promise<DesktopToolApprovalState>;
+  getToolApprovalState(tabId: string): Promise<DesktopToolApprovalState>;
   getTalkState(): Promise<DesktopTalkState>;
   respondToolApproval(response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState>;
   respondFileReview(response: DesktopFileReviewResponse): Promise<DesktopToolApprovalState>;
@@ -234,10 +314,15 @@ export interface DesktopBridge {
   respondTalkContinuation(response: DesktopTalkContinuationResponse): Promise<DesktopTalkState>;
   listAgentProfiles(): Promise<AgentProfileTemplate[]>;
   startAgentSession(profileId: string): Promise<DesktopRuntimeStatus>;
+  startAgentSession(request: DesktopTabAgentSessionRequest): Promise<DesktopRuntimeStatus>;
   listAgentSessions(agentInstanceId: string): Promise<AgentSessionSummary[]>;
+  listAgentSessions(request: DesktopTabAgentSessionsRequest): Promise<AgentSessionSummary[]>;
   getSession(sessionId: string): Promise<Session | null>;
+  getSession(request: DesktopTabEntityRequest): Promise<Session | null>;
   listSessionMemories(sessionId: string): Promise<MemoryRecord[]>;
+  listSessionMemories(request: DesktopTabEntityRequest): Promise<MemoryRecord[]>;
   selectSession(sessionId: string): Promise<DesktopSessionSelectionResponse>;
+  selectSession(request: DesktopTabEntityRequest): Promise<DesktopSessionSelectionResponse>;
   onMenuAction(listener: (action: DesktopMenuAction) => void): () => void;
   onToolApprovalState(listener: (state: DesktopToolApprovalState) => void): () => void;
   onTalkState(listener: (state: DesktopTalkState) => void): () => void;

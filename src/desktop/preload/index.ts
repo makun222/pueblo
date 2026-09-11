@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  DesktopAgentTab,
+  DesktopCloseTabResult,
+  DesktopCreateTabInput,
   DesktopProviderConfigurationList,
   DesktopFileReviewResponse,
   DesktopMenuAction,
@@ -8,11 +11,19 @@ import type {
   DesktopRuntimeStatus,
   DesktopSessionSelectionResponse,
   DesktopSubmitResponse,
+  DesktopTabAgentSessionRequest,
+  DesktopTabAgentSessionsRequest,
+  DesktopTabEntityRequest,
+  DesktopTabInputFilesRequest,
+  DesktopTabOutputEvent,
+  DesktopTabSubmitRequest,
+  DesktopTabToolApprovalStateEvent,
   DesktopTalkContinuationResponse,
   DesktopTalkRequestResponse,
   DesktopTalkState,
   DesktopToolApprovalResponse,
   DesktopToolApprovalState,
+  DesktopUpdateTabInput,
 } from '../shared/ipc-contract';
 import type { InstantNoteDraft, InstantNoteRecord } from '../shared/instant-notes';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, Session } from '../../shared/schema';
@@ -21,32 +32,73 @@ import type { McpConnectionState, McpServerConfig } from '../../mcp/mcp-types';
 const MENU_ACTION_CHANNEL = 'desktop-menu-action';
 const TOOL_APPROVAL_CHANNEL = 'tool-approval-state';
 const TALK_STATE_CHANNEL = 'talk-state';
+const TAB_OUTPUT_CHANNEL = 'desktop-tab-output';
+const TAB_TOOL_APPROVAL_CHANNEL = 'desktop-tab-tool-approval-state';
+const TABS_CHANGED_CHANNEL = 'desktop-tabs-changed';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
+  listDesktopTabs: (): Promise<DesktopAgentTab[]> => ipcRenderer.invoke('desktop-tabs:list'),
+  createDesktopTab: (input?: DesktopCreateTabInput): Promise<DesktopAgentTab> => ipcRenderer.invoke('desktop-tabs:create', input ?? {}),
+  updateDesktopTab: (input: DesktopUpdateTabInput): Promise<DesktopAgentTab> => ipcRenderer.invoke('desktop-tabs:update', input),
+  closeDesktopTab: (tabId: string): Promise<DesktopCloseTabResult> => ipcRenderer.invoke('desktop-tabs:close', tabId),
+  onDesktopTabsChanged: (callback: (tabs: DesktopAgentTab[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, tabs: DesktopAgentTab[]): void => {
+      callback(tabs);
+    };
+    ipcRenderer.on(TABS_CHANGED_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(TABS_CHANGED_CHANNEL, listener);
+    };
+  },
+  onTabOutput: (callback: (event: DesktopTabOutputEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: DesktopTabOutputEvent): void => {
+      callback(payload);
+    };
+    ipcRenderer.on(TAB_OUTPUT_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(TAB_OUTPUT_CHANNEL, listener);
+    };
+  },
+  onTabToolApprovalState: (callback: (event: DesktopTabToolApprovalStateEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: DesktopTabToolApprovalStateEvent): void => {
+      callback(payload);
+    };
+    ipcRenderer.on(TAB_TOOL_APPROVAL_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(TAB_TOOL_APPROVAL_CHANNEL, listener);
+    };
+  },
   focusMonitor: (): Promise<void> => ipcRenderer.invoke('loop:focus-monitor'),
   listProviderConfigurations: (): Promise<DesktopProviderConfigurationList> => ipcRenderer.invoke('provider-config:list'),
   saveGenericProviderConfiguration: (input: DesktopSaveGenericProviderConfigurationInput): Promise<DesktopGenericProviderConfiguration> =>
     ipcRenderer.invoke('provider-config:save-generic', input),
   removeGenericProviderConfiguration: (providerId: string): Promise<void> =>
     ipcRenderer.invoke('provider-config:remove-generic', providerId),
-  submitInput: (envelope: IpcInputEnvelope): Promise<DesktopSubmitResponse> => ipcRenderer.invoke('submit-input', envelope),
-  cancelActiveSubmit: (): Promise<void> => ipcRenderer.invoke('cancel-active-submit'),
-  selectInputFiles: (sessionId: string | null): Promise<InputAttachmentManifest[]> => ipcRenderer.invoke('select-input-files', sessionId),
-  getRuntimeStatus: (): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('get-runtime-status'),
-  getToolApprovalState: (): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('get-tool-approval-state'),
+  submitInput: (input: IpcInputEnvelope | DesktopTabSubmitRequest): Promise<DesktopSubmitResponse> =>
+    ipcRenderer.invoke('submit-input', isTabSubmitRequest(input) ? input : { envelope: input }),
+  cancelActiveSubmit: (tabId?: string): Promise<void> => ipcRenderer.invoke('cancel-active-submit', tabId ?? null),
+  selectInputFiles: (input: string | null | DesktopTabInputFilesRequest): Promise<InputAttachmentManifest[]> =>
+    ipcRenderer.invoke('select-input-files', typeof input === 'object' && input !== null ? input : { sessionId: input, tabId: null }),
+  getRuntimeStatus: (tabId?: string): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('get-runtime-status', tabId ?? null),
+  getToolApprovalState: (tabId?: string): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('get-tool-approval-state', tabId ?? null),
   getTalkState: (): Promise<DesktopTalkState> => ipcRenderer.invoke('get-talk-state'),
   respondToolApproval: (response: DesktopToolApprovalResponse): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('respond-tool-approval', response),
   respondFileReview: (response: DesktopFileReviewResponse): Promise<DesktopToolApprovalState> => ipcRenderer.invoke('respond-file-review', response),
   respondTalkRequest: (response: DesktopTalkRequestResponse): Promise<DesktopTalkState> => ipcRenderer.invoke('respond-talk-request', response),
   respondTalkContinuation: (response: DesktopTalkContinuationResponse): Promise<DesktopTalkState> => ipcRenderer.invoke('respond-talk-continuation', response),
   listAgentProfiles: (): Promise<AgentProfileTemplate[]> => ipcRenderer.invoke('list-agent-profiles'),
-  startAgentSession: (profileId: string): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('start-agent-session', profileId),
-  listAgentSessions: (agentInstanceId: string): Promise<AgentSessionSummary[]> => ipcRenderer.invoke('list-agent-sessions', agentInstanceId),
-  getSession: (sessionId: string): Promise<Session | null> => ipcRenderer.invoke('get-session', sessionId),
-  listSessionMemories: (sessionId: string): Promise<MemoryRecord[]> => ipcRenderer.invoke('list-session-memories', sessionId),
-  selectSession: (sessionId: string): Promise<DesktopSessionSelectionResponse> => ipcRenderer.invoke('select-session', sessionId),
+  startAgentSession: (input: string | DesktopTabAgentSessionRequest): Promise<DesktopRuntimeStatus> =>
+    ipcRenderer.invoke('start-agent-session', typeof input === 'string' ? { profileId: input, tabId: null } : input),
+  listAgentSessions: (input: string | DesktopTabAgentSessionsRequest): Promise<AgentSessionSummary[]> =>
+    ipcRenderer.invoke('list-agent-sessions', typeof input === 'string' ? { agentInstanceId: input, tabId: null } : input),
+  getSession: (input: string | DesktopTabEntityRequest): Promise<Session | null> =>
+    ipcRenderer.invoke('get-session', typeof input === 'string' ? { sessionId: input, tabId: null } : input),
+  listSessionMemories: (input: string | DesktopTabEntityRequest): Promise<MemoryRecord[]> =>
+    ipcRenderer.invoke('list-session-memories', typeof input === 'string' ? { sessionId: input, tabId: null } : input),
+  selectSession: (input: string | DesktopTabEntityRequest): Promise<DesktopSessionSelectionResponse> =>
+    ipcRenderer.invoke('select-session', typeof input === 'string' ? { sessionId: input, tabId: null } : input),
   onMenuAction: (callback: (action: DesktopMenuAction) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, action: DesktopMenuAction): void => {
       callback(action);
@@ -115,3 +167,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcpDeleteCredential: (key: string): Promise<void> =>
     ipcRenderer.invoke('mcp:delete-credential', key),
 });
+
+function isTabSubmitRequest(value: IpcInputEnvelope | DesktopTabSubmitRequest): value is DesktopTabSubmitRequest {
+  return typeof value === 'object' && value !== null && 'envelope' in value;
+}

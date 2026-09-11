@@ -200,6 +200,8 @@ export interface CliDependencies {
   readonly getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
   readonly listAgentProfiles: () => AgentProfileTemplate[];
   readonly startAgentSession: (profileId: string) => Promise<DesktopRuntimeStatus>;
+  readonly setWorkspaceRoot: (workspacePath: string) => Promise<DesktopRuntimeStatus>;
+  readonly setProviderSelection: (providerId: string, modelId?: string | null) => Promise<DesktopRuntimeStatus>;
   readonly listAgentSessions: (agentInstanceId: string) => AgentSessionSummary[];
   readonly getSession: (sessionId: string) => Session | null;
   readonly listSessionMemories: (sessionId: string) => MemoryRecord[];
@@ -222,6 +224,7 @@ export interface CreateCliDependenciesOptions {
   readonly startNewSession?: boolean;
   readonly deferAgentSelection?: boolean;
   readonly puebloWorkingDirectory?: string;
+  readonly initialWorkspace?: string | null;
   readonly credentialStore?: CredentialStore;
   readonly pepeWorkerFactory?: PepeWorkerFactory;
   readonly mcpClientManager?: import('../mcp/mcp-client').McpClientManager;
@@ -344,10 +347,11 @@ export async function launchDesktopDialog(
   const write = options.write ?? ((text: string) => {
     process.stdout.write(text);
   });
-  const projectRoot = resolveProjectRoot(options.cwd ?? process.cwd());
+  const launchWorkspace = path.resolve(options.cwd ?? process.cwd());
+  const projectRoot = resolveProjectRoot(launchWorkspace);
   const electronBinary = options.electronBinary ?? resolveElectronBinary();
   const spawnImpl = options.spawnImpl ?? spawn;
-  const child = spawnImpl(electronBinary, [projectRoot], {
+  const child = spawnImpl(electronBinary, [projectRoot, `--desktop-workspace=${launchWorkspace}`], {
     cwd: projectRoot,
     detached: true,
     stdio: 'ignore',
@@ -461,7 +465,12 @@ export function createCliDependencies(
   const memoryService = new MemoryService(memoryRepository, currentConfig.memory);
   const memoryQueries = new MemoryQueries(memoryRepository);
   const memoRecallTool = new MemoRecallTool(memoryQueries);
-  let currentWorkspace = initializeWorkspacePath(memoryService, process.cwd());
+  let currentWorkspace = options.initialWorkspace
+    ? resolveWorkspaceDirectory(options.initialWorkspace)
+    : initializeWorkspacePath(memoryService, process.cwd());
+  if (options.initialWorkspace) {
+    memoryService.setWorkspacePath(currentWorkspace);
+  }
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
   const pepeResultService = new PepeResultService(memoryService, currentConfig.pepe);
   const toolInvocationRepository = new ToolInvocationRepository({ connection: database.connection });
@@ -1802,6 +1811,19 @@ export function createCliDependencies(
         ? sessionService.selectSession(mostRecentSession.id)
         : sessionService.createSession(`${agentInstance.profileName} session`, selectionState.modelId, agentInstance.id);
       await syncSelectionFromSession(session.id);
+      return this.getRuntimeStatus();
+    },
+    async setWorkspaceRoot(workspacePath: string) {
+      setWorkspaceRoot(workspacePath);
+      return this.getRuntimeStatus();
+    },
+    async setProviderSelection(providerId: string, modelId?: string | null) {
+      const selection = modelService.selectModel(providerId, modelId ?? undefined);
+      selectionState.providerId = selection.provider.id;
+      selectionState.modelId = selection.model.id;
+      if (selectionState.sessionId) {
+        sessionService.setCurrentModel(selectionState.sessionId, selection.model.id);
+      }
       return this.getRuntimeStatus();
     },
     listAgentSessions(agentInstanceId: string) {

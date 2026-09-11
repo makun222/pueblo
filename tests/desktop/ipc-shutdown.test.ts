@@ -9,21 +9,28 @@ const {
   routeInputMock,
   runtimeFactoryMock,
   mainWindow,
+  talkServiceMock,
 } = vi.hoisted(() => {
   let runtimeListeners = new Set<(message: { block: { type: string; title: string; content: string; sourceRefs?: unknown[] } }) => void>();
+  const runtimeState = {
+    agentProfileId: null as string | null,
+    agentProfileName: null as string | null,
+    agentInstanceId: null as string | null,
+    activeSessionId: null as string | null,
+  };
 
   const cli = {
     submitInput: vi.fn(),
     getRuntimeStatus: vi.fn(() => ({
       providerId: null,
       providerName: null,
-      agentProfileId: null,
-      agentProfileName: null,
-      agentInstanceId: null,
+      agentProfileId: runtimeState.agentProfileId,
+      agentProfileName: runtimeState.agentProfileName,
+      agentInstanceId: runtimeState.agentInstanceId,
       modelId: null,
       modelName: null,
       workspace: null,
-      activeSessionId: null,
+      activeSessionId: runtimeState.activeSessionId,
       contextCount: {
         estimatedTokens: 0,
         contextWindowLimit: null,
@@ -43,12 +50,23 @@ const {
         lastSummaryAt: null,
         lastSummaryMemoryId: null,
       },
+      availableProviders: [],
     })),
-    listAgentProfiles: vi.fn(() => []),
-    startAgentSession: vi.fn(),
+    listAgentProfiles: vi.fn(() => [{ id: 'code-master', name: 'Code Master' }]),
+    startAgentSession: vi.fn(async (profileId: string) => {
+      runtimeState.agentProfileId = profileId;
+      runtimeState.agentProfileName = 'Code Master';
+      runtimeState.agentInstanceId = 'agent-1';
+      runtimeState.activeSessionId = 'session-1';
+    }),
+    setWorkspaceRoot: vi.fn(async () => undefined),
+    setProviderSelection: vi.fn(async () => undefined),
     listAgentSessions: vi.fn(() => []),
     listSessionMemories: vi.fn(() => []),
     selectSession: vi.fn(() => ({ runtimeStatus: null, session: null })),
+    listProviderConfigurations: vi.fn(() => []),
+    saveGenericProviderConfiguration: vi.fn(),
+    removeGenericProviderConfiguration: vi.fn(),
     setProgressReporter: vi.fn(),
     setToolApprovalHandler: vi.fn(),
     setToolApprovalBatchHandler: vi.fn(),
@@ -87,17 +105,40 @@ const {
     once: vi.fn(),
   };
 
+  const talkService = vi.fn().mockImplementation(() => ({
+    onStateChange: vi.fn(() => () => {}),
+    dispose: vi.fn(),
+    getState: vi.fn(() => ({ localPid: process.pid, incomingRequest: null, activeConversation: null })),
+    handleTalkCommand: vi.fn(async () => null),
+    canAcceptUserInput: vi.fn(() => true),
+    createLockedResult: vi.fn(() => ({
+      ok: false,
+      code: 'LOCKED',
+      message: 'locked',
+      suggestions: [],
+    })),
+    respondToIncomingRequest: vi.fn(),
+    respondToContinuation: vi.fn(),
+  }));
+
   return {
     cliMock: cli,
     ipcMainMock: ipcMain,
-    loadAppConfigMock: vi.fn(() => ({ databasePath: 'memory', desktopWindow: { enabled: true } })),
+    loadAppConfigMock: vi.fn(() => ({ databasePath: 'memory', desktopWindow: { enabled: true }, defaultAgentProfileId: 'code-master' })),
     routeInputMock: vi.fn(),
     runtimeFactoryMock: runtimeFactory,
     mainWindow: window,
+    talkServiceMock: talkService,
   };
 });
 
 vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn(() => 'd:\\workspace\\trends\\pueblo\\.pueblo'),
+  },
+  dialog: {
+    showOpenDialog: vi.fn(),
+  },
   ipcMain: ipcMainMock,
   BrowserWindow: vi.fn(),
 }));
@@ -124,6 +165,36 @@ vi.mock('../../src/shared/result', async () => {
 
 vi.mock('../../src/app/runtime', () => ({
   createRuntimeCoordinator: runtimeFactoryMock,
+}));
+
+vi.mock('../../src/channel/channel-service', () => ({
+  ChannelService: vi.fn().mockImplementation(() => ({
+    dispose: vi.fn(),
+    start: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock('../../src/channel/channel-registry-factory', () => ({
+  createChannelRegistry: vi.fn(() => ({})),
+}));
+
+vi.mock('../../src/channel/channel-config', () => ({
+  loadChannelsConfig: vi.fn().mockResolvedValue({ channels: [] }),
+}));
+
+vi.mock('../../src/channel/channel-ipc', () => ({
+  registerChannelIpcHandlers: vi.fn(() => vi.fn()),
+}));
+
+vi.mock('../../src/channel/channels/feishu/feishu-adapter', () => ({
+  createFeishuChannelAdapter: vi.fn(() => ({
+    testConnection: vi.fn().mockResolvedValue({ ok: true, error: undefined }),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock('../../src/desktop/main/talk-service', () => ({
+  DesktopTalkService: talkServiceMock,
 }));
 
 import { setupIpcHandlers } from '../../src/desktop/main/ipc';
@@ -214,6 +285,7 @@ describe('Desktop IPC shutdown', () => {
       attachments: [],
       submittedAt: new Date().toISOString(),
     });
+    await Promise.resolve();
     cleanup();
 
     await expect(pendingSubmit).rejects.toThrow('Task cancelled because the desktop window closed.');

@@ -17,7 +17,7 @@ describe('Desktop CLI Launch Handoff', () => {
 
     expect(spawnImpl).toHaveBeenCalledWith(
       'C:/tools/electron.exe',
-      ['d:\\workspace\\trends\\pueblo'],
+      ['d:\\workspace\\trends\\pueblo', '--desktop-workspace=d:\\workspace\\trends\\pueblo'],
       expect.objectContaining({
         cwd: 'd:\\workspace\\trends\\pueblo',
         detached: true,
@@ -27,5 +27,28 @@ describe('Desktop CLI Launch Handoff', () => {
     );
     expect(unref).toHaveBeenCalledTimes(1);
     expect(write).toHaveBeenCalledWith('Opening Pueblo desktop dialog...\n');
+  });
+
+  it('forwards the original launch workspace separately from the Electron project root', async () => {
+    const unref = vi.fn();
+    const spawnImpl = vi.fn().mockReturnValue({ unref });
+
+    await launchDesktopDialog(createTestAppConfig(), {
+      cwd: 'd:/workspace/trends/pueblo/packages/feature-a',
+      electronBinary: 'C:/tools/electron.exe',
+      spawnImpl: spawnImpl as never,
+      write: vi.fn(),
+    });
+
+    expect(spawnImpl).toHaveBeenCalledWith(
+      'C:/tools/electron.exe',
+      [
+        'd:\\workspace\\trends\\pueblo',
+        '--desktop-workspace=d:\\workspace\\trends\\pueblo\\packages\\feature-a',
+      ],
+      expect.objectContaining({
+        cwd: 'd:\\workspace\\trends\\pueblo',
+      }),
+    );
   });
 });

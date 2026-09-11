@@ -18,9 +18,14 @@ let mainWindow: BrowserWindow | null = null;
 let mcpManagerWindow: BrowserWindow | null = null;
 let disposeDesktopRuntime: (() => void) | null = null;
 
+interface DesktopStartupOptions {
+  readonly initialWorkspace: string | null;
+}
+
 async function createMainWindow(): Promise<void> {
   disposeDesktopRuntime?.();
   disposeDesktopRuntime = null;
+  const startupOptions = resolveDesktopStartupOptions(process.argv);
   const onOpenMcp = (): void => {
     if (mcpManagerWindow && !mcpManagerWindow.isDestroyed()) {
       if (mcpManagerWindow.isMinimized()) mcpManagerWindow.restore();
@@ -82,7 +87,7 @@ async function createMainWindow(): Promise<void> {
       },
     );
 
-    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager, appWindow, mcpClient);
+    disposeDesktopRuntime = setupIpcHandlers(mainWindow, loopJobManager, appWindow, mcpClient, startupOptions);
 
     ipcMain.removeHandler('loop:start');
     ipcMain.handle('loop:start', async (_event, params) => {
@@ -211,6 +216,18 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
     throw normalizedError;
   };
 
+  ipcMain.removeHandler('desktop-tabs:list');
+  ipcMain.handle('desktop-tabs:list', async () => []);
+
+  ipcMain.removeHandler('desktop-tabs:create');
+  ipcMain.handle('desktop-tabs:create', failWithStartupError);
+
+  ipcMain.removeHandler('desktop-tabs:update');
+  ipcMain.handle('desktop-tabs:update', failWithStartupError);
+
+  ipcMain.removeHandler('desktop-tabs:close');
+  ipcMain.handle('desktop-tabs:close', failWithStartupError);
+
   ipcMain.removeHandler('get-runtime-status');
   ipcMain.handle('get-runtime-status', async () => emptyRuntimeStatus);
 
@@ -255,6 +272,17 @@ export function publishDesktopStartupError(window: BrowserWindow, error: unknown
 
   ipcMain.removeHandler('submit-input');
   ipcMain.handle('submit-input', failWithStartupError);
+
+  ipcMain.removeHandler('cancel-active-submit');
+  ipcMain.handle('cancel-active-submit', async () => undefined);
+}
+
+function resolveDesktopStartupOptions(argv: readonly string[]): DesktopStartupOptions {
+  const prefix = '--desktop-workspace=';
+  const rawWorkspace = argv.find((value) => value.startsWith(prefix))?.slice(prefix.length).trim() ?? '';
+  return {
+    initialWorkspace: rawWorkspace.length > 0 ? rawWorkspace : null,
+  };
 }
 
 app.whenReady().then(() => {

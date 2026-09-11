@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { appMock, browserWindowCtor, createWindowMock, installMenuMock, setupIpcHandlersMock, mockWindow, appEventHandlers } = vi.hoisted(() => {
+const { appMock, browserWindowCtor, createWindowMock, installMenuMock, setupIpcHandlersMock, mockWindow, appEventHandlers, globalShortcutMock } = vi.hoisted(() => {
   const handlers = new Map<string, (...args: unknown[]) => void>();
   const app = {
     getAppPath: vi.fn(() => 'd:/workspace/trends/pueblo'),
@@ -27,6 +27,10 @@ const { appMock, browserWindowCtor, createWindowMock, installMenuMock, setupIpcH
       getAllWindows: vi.fn(() => []),
     },
     createWindowMock: vi.fn(() => window),
+    globalShortcutMock: {
+      register: vi.fn(),
+      unregisterAll: vi.fn(),
+    },
     installMenuMock: vi.fn(),
     setupIpcHandlersMock: vi.fn(() => vi.fn()),
     mockWindow: window,
@@ -37,10 +41,26 @@ const { appMock, browserWindowCtor, createWindowMock, installMenuMock, setupIpcH
 vi.mock('electron', () => ({
   app: appMock,
   BrowserWindow: browserWindowCtor,
+  globalShortcut: globalShortcutMock,
   ipcMain: {
     removeHandler: vi.fn(),
     handle: vi.fn(),
   },
+}));
+
+vi.mock('../../src/mcp/mcp-config', () => ({
+  loadConfig: vi.fn().mockResolvedValue({ servers: [] }),
+  saveConfig: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../src/mcp/mcp-client', () => ({
+  McpClientManager: vi.fn().mockImplementation(() => ({
+    restartServers: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock('../../src/mcp/mcp-ipc', () => ({
+  registerMcpIpcHandlers: vi.fn(),
 }));
 
 vi.mock('../../src/desktop/main/window', () => ({
@@ -62,6 +82,8 @@ describe('Desktop main shutdown', () => {
     appMock.on.mockClear();
     appMock.quit.mockClear();
     createWindowMock.mockClear();
+    globalShortcutMock.register.mockClear();
+    globalShortcutMock.unregisterAll.mockClear();
     installMenuMock.mockClear();
     setupIpcHandlersMock.mockClear();
     mockWindow.on.mockReset();
@@ -74,7 +96,9 @@ describe('Desktop main shutdown', () => {
     setupIpcHandlersMock.mockReturnValueOnce(cleanup);
 
     await import('../../src/desktop/main/main');
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(setupIpcHandlersMock).toHaveBeenCalled();
+    });
 
     const beforeQuit = appEventHandlers.get('before-quit');
     expect(beforeQuit).toBeTypeOf('function');
