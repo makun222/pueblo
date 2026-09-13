@@ -465,10 +465,17 @@ export function createCliDependencies(
   const memoryService = new MemoryService(memoryRepository, currentConfig.memory);
   const memoryQueries = new MemoryQueries(memoryRepository);
   const memoRecallTool = new MemoRecallTool(memoryQueries);
+  // 桌面页签 runtime（deferAgentSelection）是独立 CLI 会话，其 workspace 归 agent-instance 所有，
+  // 因此不读取也不写入全局 memory workspace，避免各页签互相污染（曾导致新页签复用首标签页 workspace）。
+  const isPerTabRuntime = options.deferAgentSelection === true;
   let currentWorkspace = options.initialWorkspace
     ? resolveWorkspaceDirectory(options.initialWorkspace)
-    : initializeWorkspacePath(memoryService, process.cwd());
-  if (options.initialWorkspace) {
+    : isPerTabRuntime
+      ? resolveWorkspaceDirectory(process.cwd())
+      : initializeWorkspacePath(memoryService, process.cwd());
+  // 页签在尚无 activeAgentInstance 时执行 set workspace，先暂存，待 startAgentSession 写回 agent-instance。
+  let requestedWorkspaceRoot: string | null = null;
+  if (options.initialWorkspace && !isPerTabRuntime) {
     memoryService.setWorkspacePath(currentWorkspace);
   }
   const agentInstanceService = new AgentInstanceService(agentInstanceRepository, new AgentTemplateLoader(cliProjectRoot));
@@ -1374,12 +1381,34 @@ export function createCliDependencies(
 
     if (activeAgentInstanceId) {
       agentInstanceService.updateWorkspaceRoot(activeAgentInstanceId, nextWorkspace);
+    } else {
+      // 尚无 agent 实例（例如新页签先设 workspace 再选 profile）：暂存，稍后写回 agent-instance。
+      requestedWorkspaceRoot = nextWorkspace;
     }
 
     return successResult('WORKSPACE_SET', 'Workspace updated', {
       workspace: nextWorkspace,
       memoryId: workspaceMemory.id,
     });
+  };
+
+  // 将 agent-instance 的持久化 workspaceRoot 采纳为当前 runtime 的 workspace。
+  // 若存在用户显式 set workspace 的暂存值，则以暂存值写回 agent-instance 并采用它。
+  const adoptAgentInstanceWorkspace = (agentInstance: { id: string; workspaceRoot: string }): void => {
+    if (requestedWorkspaceRoot) {
+      if (requestedWorkspaceRoot !== agentInstance.workspaceRoot) {
+        agentInstanceService.updateWorkspaceRoot(agentInstance.id, requestedWorkspaceRoot);
+      }
+      currentWorkspace = requestedWorkspaceRoot;
+      requestedWorkspaceRoot = null;
+      memoryService.setWorkspacePath(currentWorkspace);
+      return;
+    }
+
+    if (agentInstance.workspaceRoot && agentInstance.workspaceRoot !== currentWorkspace) {
+      currentWorkspace = agentInstance.workspaceRoot;
+      memoryService.setWorkspacePath(currentWorkspace);
+    }
   };
 
   const inputRouter = new InputRouter({
@@ -1723,6 +1752,7 @@ export function createCliDependencies(
         agentInstanceService.getOrCreateDefaultAgentInstance(profileId, currentWorkspace).id,
       );
       activeAgentInstanceId = agentInstance.id;
+      adoptAgentInstanceWorkspace(agentInstance);
       const mostRecentSession = sessionService.getMostRecentSessionForAgentInstance(agentInstance.id);
       const session = mostRecentSession
         ? sessionService.selectSession(mostRecentSession.id)
@@ -1806,6 +1836,7 @@ export function createCliDependencies(
         agentInstanceService.getOrCreateDefaultAgentInstance(profileId, currentWorkspace).id,
       );
       activeAgentInstanceId = agentInstance.id;
+      adoptAgentInstanceWorkspace(agentInstance);
       const mostRecentSession = sessionService.getMostRecentSessionForAgentInstance(agentInstance.id);
       const session = mostRecentSession
         ? sessionService.selectSession(mostRecentSession.id)
@@ -1915,6 +1946,7 @@ export function createCliDependencies(
     );
     activeAgentProfileId = agentInstance.profileId;
     activeAgentInstanceId = agentInstance.id;
+    adoptAgentInstanceWorkspace(agentInstance);
     return agentInstance.id;
   }
 

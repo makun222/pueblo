@@ -323,7 +323,7 @@ export const providerEditToolInputSchema: ProviderToolInputSchema = {
     },
     oldText: {
       type: 'string',
-      description: 'Exact existing text to replace (must match exactly once in the target file). When startLine/endLine are provided, pass an empty string to operate on a specific line range instead of matching text.',
+      description: 'Exact existing text to replace (must match exactly once in the target file). When startLine/endLine are provided, pass an empty string to operate on a specific line range instead of matching text. Do not pass an empty oldText without startLine/endLine to create or overwrite a file; use write to create a new file or overwrite an entire file.',
     },
     newText: {
       type: 'string',

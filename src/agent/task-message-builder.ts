@@ -18,6 +18,7 @@ const ATTACHMENT_CONTEXT_LIMIT = 4;
 const ATTACHMENT_PREVIEW_CHAR_LIMIT = 400;
 const ATTACHMENT_INLINE_JSON_CHAR_LIMIT = 1_600;
 const ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT = 6_000;
+const MATERIAL_INDEX_MESSAGE_CHAR_LIMIT = 3_000;
 const ACTIVE_TURN_STEP_CONTEXT_CHAR_LIMIT = 3_000;
 const SESSION_SUMMARY_ITEM_LIMIT = 2;
 const SESSION_SUMMARY_ITEM_CHAR_LIMIT = 1_200;
@@ -50,6 +51,7 @@ const SECTION_ORDER = {
   session: 30,
   workflow: 40,
   attachment: 50,
+  material: 55,
   resultItems: 60,
   goal: 100,
 } as const;
@@ -106,6 +108,9 @@ export function buildProviderMessages(taskContext: TaskContext, goal: string): P
       : []),
     ...(attachmentContextMessage
       ? [{ name: 'attachment' as const, content: attachmentContextMessage, maxChars: ATTACHMENT_CONTEXT_MESSAGE_CHAR_LIMIT }]
+      : []),
+    ...(taskContext.materialIndexText
+      ? [{ name: 'material' as const, content: taskContext.materialIndexText, maxChars: MATERIAL_INDEX_MESSAGE_CHAR_LIMIT }]
       : []),
     ...(taskContext.resultItems.length > 0
       ? [
@@ -181,6 +186,19 @@ function buildAttachmentImageParts(taskContext: TaskContext): ProviderImagePart[
       dataUrl: `data:${attachment.source.mimeType};base64,${buffer.toString('base64')}`,
       mimeType: attachment.source.mimeType,
     });
+  }
+
+  // Phase3：<workspace>/materials 增量扫描出的图片（仅 vision 模型会非空）。
+  for (const material of taskContext.materialImages) {
+    try {
+      const buffer = readFileSync(material.absolutePath);
+      parts.push({
+        dataUrl: `data:${material.mimeType};base64,${buffer.toString('base64')}`,
+        mimeType: material.mimeType,
+      });
+    } catch {
+      // 扫描与读取之间存在竞态（文件被删除/移动）：跳过该图，不阻断整轮请求。
+    }
   }
 
   return parts;

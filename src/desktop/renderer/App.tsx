@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ToolbarIcon } from './icons';
 import type { AgentProfileTemplate, AgentSessionSummary, InputAttachmentManifest, IpcInputEnvelope, MemoryRecord, ProviderProfile, ProviderUsageStats, RendererAction, RendererExecCommand, RendererFileChange, RendererMessageTraceStep, RendererOutputBlock, Session, SessionMessage } from '../../shared/schema';
 import type {
   DesktopFileReviewRequest,
@@ -230,6 +231,23 @@ export function App() {
   const [isSessionSidebarOpen, setIsSessionSidebarOpen] = useState(false);
   const [isToolApprovalSidebarOpen, setIsToolApprovalSidebarOpen] = useState(true);
   const [isTodoSidebarOpen, setIsTodoSidebarOpen] = useState(true);
+  const [theme, setTheme] = useState<'legacy' | 'pueblo' | 'dark'>(() => {
+    if (typeof window === 'undefined') {
+      return 'legacy';
+    }
+    const stored = window.localStorage.getItem('pueblo.theme');
+    if (stored === 'legacy' || stored === 'pueblo' || stored === 'dark') {
+      return stored;
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'legacy';
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('pueblo.theme', theme);
+    }
+  }, [theme]);
   const [providerConfigMode, setProviderConfigMode] = useState<ProviderConfigMode>('github-copilot');
   const [providerConfigError, setProviderConfigError] = useState<string | null>(null);
   const [providerConfigPending, setProviderConfigPending] = useState<string | null>(null);
@@ -1697,9 +1715,7 @@ export function App() {
               setIsSessionSidebarOpen((current) => !current);
             }}
           >
-            <svg className="app-toolbar-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 6.75C4 5.78 4.78 5 5.75 5h12.5C19.22 5 20 5.78 20 6.75v2.5C20 10.22 19.22 11 18.25 11H5.75C4.78 11 4 10.22 4 9.25v-2.5Zm0 8C4 13.78 4.78 13 5.75 13h12.5c.97 0 1.75.78 1.75 1.75v2.5c0 .97-.78 1.75-1.75 1.75H5.75C4.78 19 4 18.22 4 17.25v-2.5Zm2 1.25v1.5h4V16h-4Zm0-8v1.5h7V8H6Z" fill="currentColor" />
-            </svg>
+            <ToolbarIcon name="session" theme={theme} />
           </button>
           <button
             type="button"
@@ -1709,21 +1725,29 @@ export function App() {
               setIsToolApprovalSidebarOpen((current) => !current);
             }}
           >
-            <svg className="app-toolbar-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 5.75A1.75 1.75 0 0 1 7.75 4h8.5A1.75 1.75 0 0 1 18 5.75v1.5A1.75 1.75 0 0 1 16.25 9h-8.5A1.75 1.75 0 0 1 6 7.25v-1.5Zm-2 7A1.75 1.75 0 0 1 5.75 11h12.5A1.75 1.75 0 0 1 20 12.75v5.5A1.75 1.75 0 0 1 18.25 20H5.75A1.75 1.75 0 0 1 4 18.25v-5.5Zm3 1.75v2.5h3v-2.5H7Zm5 0v2.5h5v-2.5h-5Z" fill="currentColor" />
-            </svg>
+            <ToolbarIcon name="approvals" theme={theme} />
           </button>
           <button
             type="button"
             className="app-toolbar-icon"
             aria-label={isTodoSidebarOpen ? 'Hide todo sidebar' : 'Show todo sidebar'}
+            aria-pressed={isTodoSidebarOpen}
             onClick={() => {
               setIsTodoSidebarOpen((current) => !current);
             }}
           >
-            <svg className="app-toolbar-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6.75 5A1.75 1.75 0 0 0 5 6.75v10.5C5 18.22 5.78 19 6.75 19h10.5c.97 0 1.75-.78 1.75-1.75V6.75C19 5.78 18.22 5 17.25 5H6.75Zm1.5 3.25h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5Zm0 3.5h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5Zm0 3.5h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5Z" fill="currentColor" />
-            </svg>
+            <ToolbarIcon name="todo" theme={theme} />
+          </button>
+          <button
+            type="button"
+            className="app-toolbar-icon"
+            aria-label={`Color theme: ${theme}. Activate to switch to the next color theme.`}
+            title={`Color theme: ${theme} (click to cycle)`}
+            onClick={() => {
+              setTheme((current) => (current === 'legacy' ? 'pueblo' : current === 'pueblo' ? 'dark' : 'legacy'));
+            }}
+          >
+            <ToolbarIcon name="theme" theme={theme} />
           </button>
         </div>
       </header>

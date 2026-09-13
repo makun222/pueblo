@@ -8,7 +8,9 @@ export const DEEPSEEK_MODELS: readonly ProviderModel[] = [
     id: 'deepseek-v4-flash',
     name: 'DeepSeek V4 Flash',
     supportsTools: true,
-    supportsVision: false,
+    // 2026-09-13 实测：deepseek-v4-flash 接受 image_url content part（HTTP 200，模型正确描述了图片内容，
+    // 上游响应的 model 字段为 deepseek-flash）。此前的 false 是过时标记，会让工具读图/素材目录注入整条链路被闸门拦掉。
+    supportsVision: true,
     contextWindow: DEEPSEEK_CONTEXT_WINDOW,
   },
   {

@@ -36,6 +36,7 @@ const BUDGET_TRUNCATION_TAIL_RATIO = 0.9;
 const PROTECTED_PRIORITY_RANK = 2;
 const DETERMINISTIC_RECALL_SKIP_RATIO = 0.9;
 const DETERMINISTIC_RECALL_MEMORY_KINDS: MemoryRecord['memoryKind'][] = ['turn', 'summary', 'knowledge', 'workflow'];
+import { collectMaterialInjection, commitMaterialInjection } from './material-injector';
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
@@ -387,6 +388,15 @@ export class ContextResolver {
     //const selectedStepSummaryCount = activeTurnStepSummaries.length;//0614-zero
     const selectedStepSummaryCount = 0;
     const compactContextMode = isCompactContextModeEnabled(contextCount);
+    // Phase3：扫描 <workspace>/materials，增量注入新增/变更图片（仅 vision 模型）。
+    const materialPlan = collectMaterialInjection({
+      workspaceRoot: input.workspace ?? input.cwd ?? null,
+      supportsVision: selection.model?.supportsVision === true,
+    });
+    if (materialPlan.images.length > 0) {
+      commitMaterialInjection(materialPlan);
+    }
+    const materialIndexText = materialPlan.indexLines.length > 0 ? materialPlan.indexLines.join('\n') : null;
     const taskContext = createTaskContext({
       config: this.dependencies.config,
       session,
@@ -408,6 +418,8 @@ export class ContextResolver {
       puebloProfile,
       contextCount,
       uploadedAttachments,
+      materialImages: [...materialPlan.images],
+      materialIndexText,
       backgroundSummaryStatus,
     });
 

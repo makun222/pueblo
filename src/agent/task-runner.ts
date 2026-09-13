@@ -6,6 +6,7 @@ import {
   getToolExecutionPolicy,
   type ProviderToolArgs,
   ProviderMessage,
+  type ProviderImagePart,
   type ProviderRequestMetrics,
   ProviderRunResult,
   ProviderStepResult,
@@ -328,13 +329,14 @@ export class AgentTaskRunner {
     const availableTools: ProviderToolDefinition[] =
       this.toolService?.describeTools?.() ?? [];
     const executionCwd = this.toolService?.getDefaultExecutionCwd?.();
+    const supportsVision = this.modelSupportsVision(providerId, modelId);
 
     // Step 1: Initial run
     let result = await adapter.runStep({
       modelId,
       messages: turnMessages,
       availableTools,
-      supportsVision: this.modelSupportsVision(providerId, modelId),
+      supportsVision,
       signal,
     });
 
@@ -347,6 +349,7 @@ export class AgentTaskRunner {
 
       // Execute all tool calls once (allow-once: allow all, no further tool calls)
       const toolResults: ProviderMessage[] = [];
+      const toolImageParts: ProviderImagePart[] = [];
       for (const tc of toolCalls) {
         const { output } = await this.executeToolCall(
           /* taskId */ task.id,
@@ -361,9 +364,13 @@ export class AgentTaskRunner {
           toolCallId: tc.toolCallId,
           toolName: tc.toolName,
         });
+        if (output.imageParts && output.imageParts.length > 0) {
+          toolImageParts.push(...output.imageParts);
+        }
       }
 
-      // Feed tool results back for final response
+      // Feed tool results back for final response. Images read by tools can only
+      // ride on a user message, so append one carrier message when vision is on.
       const updatedMessages: ProviderMessage[] = [
         ...turnMessages,
         {
@@ -372,13 +379,14 @@ export class AgentTaskRunner {
           toolCalls,
         },
         ...toolResults,
+        ...this.buildToolImageCarrierMessages(supportsVision, toolImageParts),
       ];
 
       result = await adapter.runStep({
         modelId,
         messages: updatedMessages,
         availableTools,
-        supportsVision: this.modelSupportsVision(providerId, modelId),
+        supportsVision,
         signal,
       });
 
@@ -409,6 +417,29 @@ export class AgentTaskRunner {
       return false;
     }
   }
+
+  /**
+   * 把工具读取到的图片部件折叠成一条 `user` 消息（Chat Completions 规定图片只能挂在
+   * user 消息上，不能塞进 tool 结果）。当模型不支持图片输入时返回空数组，避免 adapter
+   * 因消息含图但 `supportsVision=false` 而拒绝整个请求。
+   */
+  private buildToolImageCarrierMessages(
+    supportsVision: boolean,
+    imageParts: readonly ProviderImagePart[],
+  ): ProviderMessage[] {
+    if (!supportsVision || imageParts.length === 0) {
+      return [];
+    }
+    return [
+      {
+        role: 'user',
+        content: '以下是由工具读取到的图片，已作为图像输入提供，请结合图像内容理解上述工具结果。',
+        imageParts: [...imageParts],
+      },
+    ];
+  }
+
+
 
   private buildInputSummary(input: RunAgentTaskInput): string {
     return JSON.stringify({
@@ -655,6 +686,7 @@ export class AgentTaskRunner {
         });
       }
 
+      const toolImageParts: ProviderImagePart[] = [];
       for (let toolIndex = 0; toolIndex < requestedToolCalls.length; toolIndex += 1) {
         const toolCall = requestedToolCalls[toolIndex];
         const toolExecution = toolExecutions[toolIndex];
@@ -667,7 +699,12 @@ export class AgentTaskRunner {
           toolCallId: toolCall.toolCallId,
           toolName: toolCall.toolName,
         });
+        if (toolExecution.output.imageParts && toolExecution.output.imageParts.length > 0) {
+          toolImageParts.push(...toolExecution.output.imageParts);
+        }
       }
+
+      messages.push(...this.buildToolImageCarrierMessages(args.supportsVision, toolImageParts));
 
       const currentToolLoopFingerprint = createToolLoopFingerprint(requestedToolCalls, toolExecutions);
       if (currentToolLoopFingerprint === previousToolLoopFingerprint) {

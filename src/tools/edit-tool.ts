@@ -335,7 +335,7 @@ function prepareCreateFileOutcome(request: EditToolRequest): PendingEditOutcome 
 
     previousContent = fs.readFileSync(absolutePath, 'utf8');
     if (previousContent.length > 0) {
-      throw new Error(`Cannot create ${relativePath} with empty oldText because the file already exists and is not empty`);
+      throw new Error(`File already exists: ${relativePath}. Use the write tool to overwrite the entire file, or call edit with a non-empty oldText to modify a specific portion.`);
     }
 
     changeType = 'modified';

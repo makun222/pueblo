@@ -26,9 +26,11 @@ export class AgentInstanceService {
   }
 
   getOrCreateDefaultAgentInstance(profileId: string, workspaceRoot: string): AgentInstance {
+    // 已存在的默认实例以其持久化的 workspaceRoot 为准，不用传入值覆盖。
+    // 传入的 workspaceRoot 仅作为“首次创建”时的默认项；写入请用 updateWorkspaceRoot。
     const existing = this.getDefaultAgentInstance(profileId);
     if (existing) {
-      return this.syncWorkspaceRoot(existing, workspaceRoot);
+      return existing;
     }
 
     const legacyCandidate = this.repository.list()
@@ -36,7 +38,7 @@ export class AgentInstanceService {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0] ?? null;
 
     if (legacyCandidate) {
-      return this.syncWorkspaceRoot(this.setDefaultAgentInstance(profileId, legacyCandidate.id), workspaceRoot);
+      return this.setDefaultAgentInstance(profileId, legacyCandidate.id);
     }
 
     const profile = this.requireProfileTemplate(profileId);

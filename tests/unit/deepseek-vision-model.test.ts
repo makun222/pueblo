@@ -30,7 +30,8 @@ describe('DeepSeek vision model registration', () => {
     expect(profile.models).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'deepseek-v4-flash-vision-exp', supportsVision: true }),
-        expect.objectContaining({ id: 'deepseek-v4-flash', supportsVision: false }),
+        // 上游实测 deepseek-v4-flash 支持图片输入（见 image-capability-probe 探针结果），不再标记为不支持。
+        expect.objectContaining({ id: 'deepseek-v4-flash', supportsVision: true }),
       ]),
     );
   });
@@ -87,8 +88,8 @@ describe('DeepSeek vision request serialization', () => {
     const adapter = createAdapter(fetchImpl);
 
     const promise = adapter.runStep({
-      modelId: 'deepseek-v4-flash',
-      // supportsVision omitted -> treated as unsupported
+      modelId: 'deepseek-v4-pro',
+      // supportsVision omitted -> treated as unsupported (闸门只认 context.supportsVision，与模型 id 无关)
       messages: [
         {
           role: 'user',

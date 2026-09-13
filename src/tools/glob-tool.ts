@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { RendererFileChange } from '../shared/schema';
+import type { ProviderImagePart } from '../providers/provider-adapter';
 import minimatch from 'minimatch';
 
 const MAX_GLOB_RESULTS = 500;
@@ -21,6 +22,8 @@ export interface ToolExecutionResult {
   readonly totalLines?: number;
   readonly hasMore?: boolean;
   readonly nextStartLine?: number;
+  /** 工具读取到的图片部件（如 read 命中图片）；由 agent loop 转成后续 user 消息注入。 */
+  readonly imageParts?: readonly ProviderImagePart[];
 }
 
 export function createGlobTool() {

@@ -12,6 +12,18 @@ describe('tokenizeCommandInput', () => {
     ]);
   });
 
+  it('preserves Windows path backslashes', () => {
+    expect(tokenizeCommandInput('/set workspace C:\\Users\\me\\project')).toEqual([
+      '/set',
+      'workspace',
+      'C:\\Users\\me\\project',
+    ]);
+  });
+
+  it('collapses doubled backslashes into one literal backslash', () => {
+    expect(tokenizeCommandInput('/show C:\\\\temp')).toEqual(['/show', 'C:\\temp']);
+  });
+
   it('supports single quotes and escaped quotes', () => {
     expect(tokenizeCommandInput("/talkto 41234 -m 'say \"hello\" first'")).toEqual([
       '/talkto',

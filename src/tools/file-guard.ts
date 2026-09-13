@@ -17,7 +17,7 @@ export const UNREADABLE_EXTENSIONS = new Set([
   '.db', '.sqlite', '.sqlite3', '.mdb',
   '.exe', '.dll', '.so', '.dylib', '.bin', '.o', '.obj', '.a', '.lib',
   '.zip', '.tar', '.gz', '.tgz', '.7z', '.rar',
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
+  '.ico', '.bmp',
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
   '.mp3', '.mp4', '.avi', '.mov', '.wav',
   '.woff', '.woff2', '.ttf', '.otf',

@@ -1,4 +1,5 @@
 import type { AppConfig } from '../shared/config';
+import type { MaterialImageRef } from './material-injector';
 import type { SkillContextSnapshot } from './skill-context';
 import type {
   BackgroundSummaryStatus,
@@ -37,6 +38,10 @@ export interface TaskContext {
   readonly contextCount: ContextCount;
   readonly backgroundSummaryStatus: BackgroundSummaryStatus;
   readonly uploadedAttachments: InputAttachmentManifest[];
+  /** `<workspace>/materials` 增量扫描出的图片（Phase3，仅 vision 模型非空）。 */
+  readonly materialImages: MaterialImageRef[];
+  /** `materials/` 目录的图片索引文本（含本轮注入标记），无目录时为 null。 */
+  readonly materialIndexText: string | null;
   readonly config: AppConfig;
   /** Unique identifier for the agent job (loop job).
    *  Set by LoopJobManager; defaults to process PID for single-run scenarios. */
@@ -64,6 +69,8 @@ export interface TaskContextInput {
   readonly contextCount: ContextCount;
   readonly backgroundSummaryStatus?: BackgroundSummaryStatus;
   readonly uploadedAttachments?: InputAttachmentManifest[];
+  readonly materialImages?: MaterialImageRef[];
+  readonly materialIndexText?: string | null;
   readonly config: AppConfig;
   /** Unique identifier for the agent job. Defaults to process PID if not provided. */
   readonly userId?: string;
@@ -99,6 +106,8 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     puebloProfile: input.puebloProfile,
     contextCount: input.contextCount,
     uploadedAttachments: input.uploadedAttachments ?? [],
+    materialImages: input.materialImages ?? [],
+    materialIndexText: input.materialIndexText ?? null,
     backgroundSummaryStatus: input.backgroundSummaryStatus ?? {
       state: 'idle',
       activeSummarySessionId: null,

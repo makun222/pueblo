@@ -195,13 +195,13 @@ export class ToolService {
       },
       {
         name: 'edit',
-        description: `Edit a text file within the current task root by replacing one exact text match, optionally constrained to a line range. ${taskRootExplanation} Requires user approval before execution.`,
+        description: `Edit a text file within the current task root by replacing one exact text match, optionally constrained to a line range. Use edit only to modify an existing file in place. To create a new file or overwrite a file's entire contents, use write. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerEditToolInputSchema,
         executionPolicy: getToolExecutionPolicy('edit'),
       },
       {
         name: 'write',
-        description: `Writes content to a file within the current task root, creating or overwriting it. ${taskRootExplanation} Requires user approval before execution.`,
+        description: `Writes content to a file within the current task root, creating or overwriting it. This replaces the file's entire contents. Use write to create a new file or overwrite an existing file; use edit for targeted in-place changes. ${taskRootExplanation} Requires user approval before execution.`,
         inputSchema: providerWriteToolInputSchema,
         executionPolicy: getToolExecutionPolicy('write'),
       },

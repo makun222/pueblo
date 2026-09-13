@@ -2,6 +2,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolExecutionResult } from './glob-tool';
 import { checkFileReadable } from './file-guard';
+import { isImagePath, probeImageFileSync, toImageDataUrl } from './image-format';
+
+/**
+ * 读取图片文件：探测格式/体积 → 生成 imageParts。
+ * 图片内容不能当文本读入，交由 agent loop 转成后续 user 消息的 image part。
+ */
+function readImageFile(absolutePath: string, normalizedRelativePath: string): ToolExecutionResult {
+  const probe = probeImageFileSync(absolutePath);
+  if (!probe.ok) {
+    const detail = probe.detail ? `: ${probe.detail}` : '';
+    return {
+      toolName: 'read',
+      status: 'failed',
+      summary: `Image could not be read (${probe.reason}${detail}): ${normalizedRelativePath}`,
+      output: [],
+    };
+  }
+
+  const imageBuffer = fs.readFileSync(absolutePath);
+  const kib = Math.max(1, Math.round(probe.sizeBytes / 1024));
+  return {
+    toolName: 'read',
+    status: 'succeeded',
+    summary: `Image (${probe.mimeType}, ${kib} KiB) loaded from ${normalizedRelativePath}; attached to the next user message as an image part (vision models only).`,
+    output: [`image: ${normalizedRelativePath}`],
+    imageParts: [
+      {
+        dataUrl: toImageDataUrl(imageBuffer, probe.mimeType),
+        mimeType: probe.mimeType,
+      },
+    ],
+  } as ToolExecutionResult;
+}
 
 export interface ReadToolRequest {
   readonly path: string;
@@ -70,6 +103,10 @@ export function createReadTool() {
           summary: 'startLine must be less than or equal to endLine',
           output: [],
         };
+      }
+
+      if (isImagePath(absolutePath)) {
+        return readImageFile(absolutePath, normalizedRelativePath);
       }
 
       const guard = checkFileReadable(absolutePath);

@@ -76,7 +76,11 @@ export function tokenizeCommandInput(input: string): string[] {
     currentToken = '';
   };
 
-  for (const character of input.trim()) {
+  const characters = input.trim();
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+
     if (escaping) {
       currentToken += character;
       escaping = false;
@@ -84,7 +88,15 @@ export function tokenizeCommandInput(input: string): string[] {
     }
 
     if (character === '\\') {
-      escaping = true;
+      const nextCharacter = characters[index + 1];
+
+      // 仅在转义引号或反斜杠时消费反斜杠；其余情况（例如 Windows 路径 C:\Users）按字面量保留。
+      if (nextCharacter === '"' || nextCharacter === "'" || nextCharacter === '\\') {
+        escaping = true;
+        continue;
+      }
+
+      currentToken += character;
       continue;
     }
 
@@ -109,10 +121,6 @@ export function tokenizeCommandInput(input: string): string[] {
     }
 
     currentToken += character;
-  }
-
-  if (escaping) {
-    currentToken += '\\';
   }
 
   pushCurrentToken();
