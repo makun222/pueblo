@@ -19,6 +19,7 @@ const {
     workspace: string | null;
     activeSessionId: string | null;
     submitCalls: string[];
+    createdSessions: Array<{ title: string; agentInstanceId: string | null }>;
   }
 
   const availableProviders = [
@@ -57,6 +58,7 @@ const {
       workspace: options?.initialWorkspace ?? 'd:\\workspace\\default',
       activeSessionId: null,
       submitCalls: [],
+      createdSessions: [],
     };
     states.push(state);
 
@@ -129,6 +131,11 @@ const {
         };
       }),
       getRuntimeStatus,
+      createSession: vi.fn((title: string, agentInstanceId: string | null) => {
+        state.activeSessionId = `${instanceId}-session-${state.createdSessions.length + 1}`;
+        state.createdSessions.push({ title, agentInstanceId });
+        return { id: state.activeSessionId, title, agentInstanceId };
+      }),
       listAgentProfiles: vi.fn(() => [
         { id: 'code-master', name: 'Code Master' },
         { id: 'architect', name: 'Architect' },
@@ -273,5 +280,55 @@ describe('DesktopAgentTabManager', () => {
     await expect(manager.createTab({ profileId: 'architect', workspace: 'd:\\workspace\\gamma' }))
       .rejects
       .toThrow('Agent profile "architect" is already assigned');
+  });
+
+  it('resolves a null channel tabId to the legacy (first) tab for createSession', async () => {
+    const manager = new DesktopAgentTabManager({
+      config: createTestAppConfig(),
+      initialWorkspace: 'd:\\workspace\\default',
+      onOutput: vi.fn(),
+      onToolApprovalState: vi.fn(),
+      onTabsChanged: vi.fn(),
+    });
+
+    await manager.ready();
+    const [firstTab] = await manager.listTabs();
+
+    const session = await manager.createChannelSession(null, 'Channel thread', null);
+
+    // A null tabId must fall back through resolveTabId -> legacyTabId (the very
+    // first tab). It must not fabricate a target nor silently pick another tab.
+    expect(cliStates).toHaveLength(1);
+    expect(cliStates[0]?.createdSessions).toEqual([{ title: 'Channel thread', agentInstanceId: null }]);
+    expect(session.id).toBe('cli-1-session-1');
+    // The synchronous channel-side lookup honours the same fallback, so both the
+    // async create path and the sync cache read agree on the session's tab.
+    expect(manager.getCachedActiveSessionId(null)).toBe(session.id);
+    expect(manager.getCachedActiveSessionId(firstTab.id)).toBe(session.id);
+  });
+
+  it('routes a null channel tabId to the same tab as an explicit default tabId even with multiple tabs', async () => {
+    const manager = new DesktopAgentTabManager({
+      config: createTestAppConfig(),
+      initialWorkspace: 'd:\\workspace\\alpha',
+      onOutput: vi.fn(),
+      onToolApprovalState: vi.fn(),
+      onTabsChanged: vi.fn(),
+    });
+
+    await manager.ready();
+    await manager.createTab({ workspace: 'd:\\workspace\\beta' });
+    const tabs = await manager.listTabs();
+    expect(tabs).toHaveLength(2);
+
+    await manager.createChannelSession(null, 'from null', null);
+    await manager.createChannelSession(tabs[0]!.id, 'from explicit default', null);
+
+    // Both land on the first (legacy) tab; the second tab is left untouched.
+    expect(cliStates[0]?.createdSessions).toEqual([
+      { title: 'from null', agentInstanceId: null },
+      { title: 'from explicit default', agentInstanceId: null },
+    ]);
+    expect(cliStates[1]?.createdSessions).toEqual([]);
   });
 });

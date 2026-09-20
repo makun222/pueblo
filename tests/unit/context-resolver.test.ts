@@ -16,6 +16,7 @@ import { createProviderProfile } from '../../src/providers/provider-profile';
 import { ProviderRegistry } from '../../src/providers/provider-registry';
 import { InMemorySessionRepository } from '../../src/sessions/session-repository';
 import { SessionService } from '../../src/sessions/session-service';
+import { commitMaterialInjection, resolveMaterialManifestPath } from '../../src/agent/material-injector';
 import { createTestAppConfig } from '../helpers/test-config';
 import { WorkflowPlanStore } from '../../src/workflow/workflow-plan-store';
 import { WorkflowExporter } from '../../src/workflow/workflow-exporter';
@@ -1345,3 +1346,61 @@ function createResultItem(memoryId: string, summary: string, similarity: number)
 function makeLongSummary(label: string, charCount: number) {
   return `${label}: ${'x'.repeat(charCount)}`;
 }
+
+describe('context resolver material commit deferral (P0)', () => {
+  it('plans material injection without writing, and only the runner commits it', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-context-material-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+    const materialsDir = path.join(tempDir, 'materials');
+    fs.mkdirSync(materialsDir, { recursive: true });
+    fs.writeFileSync(path.join(materialsDir, 'paper-01.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+
+    const sessionService = new SessionService(new InMemorySessionRepository());
+    const promptService = new PromptService(new InMemoryPromptRepository());
+    const memoryService = new MemoryService(new InMemoryMemoryRepository());
+    const agentInstanceService = new AgentInstanceService(new InMemoryAgentInstanceRepository(), new AgentTemplateLoader(tempDir));
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(
+      createProviderProfile({
+        id: 'vision-provider',
+        name: 'Vision Provider',
+        defaultModelId: 'vision-1',
+        models: [{ id: 'vision-1', name: 'Vision 1', supportsTools: true, supportsVision: true, contextWindow: 16000 }],
+      }),
+      new InMemoryProviderAdapter('vision-provider', 'Task completed'),
+    );
+
+    const session = sessionService.createSession('Material session', 'vision-1');
+    const pepeResultService = new PepeResultService(memoryService, createTestAppConfig({ defaultProviderId: 'vision-provider' }).pepe);
+    const resolver = new ContextResolver({
+      config: createTestAppConfig({ defaultProviderId: 'vision-provider' }),
+      sessionService,
+      promptService,
+      memoryService,
+      agentInstanceService,
+      providerRegistry,
+      pepeResultService,
+    });
+    const manifestPath = resolveMaterialManifestPath(tempDir);
+
+    // Read-only resolve (status / pre-flight): plans nothing to commit, writes nothing.
+    const preflight = await resolver.resolve({ activeSessionId: session.id, cwd: tempDir });
+    expect(preflight.taskContext.materialCommit).toBeNull();
+    expect(fs.existsSync(manifestPath)).toBe(false);
+
+    // Execution resolve opts in: the plan is attached but still not written.
+    const execution = await resolver.resolve({ activeSessionId: session.id, cwd: tempDir, commitMaterials: true });
+    expect(execution.taskContext.materialImages.map((image) => image.relativePath)).toEqual(['materials/paper-01.png']);
+    expect(execution.taskContext.materialCommit?.images).toHaveLength(1);
+    expect(fs.existsSync(manifestPath)).toBe(false);
+
+    // The runner commits right after the request messages are built.
+    commitMaterialInjection(execution.taskContext.materialCommit!);
+    expect(fs.existsSync(manifestPath)).toBe(true);
+
+    // Same session: per-session delivery means no re-attach on the next turn.
+    const nextTurn = await resolver.resolve({ activeSessionId: session.id, cwd: tempDir, commitMaterials: true });
+    expect(nextTurn.taskContext.materialImages).toEqual([]);
+  });
+});

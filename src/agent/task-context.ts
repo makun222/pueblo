@@ -1,5 +1,5 @@
 import type { AppConfig } from '../shared/config';
-import type { MaterialImageRef } from './material-injector';
+import type { MaterialImageRef, MaterialInjectionPlan } from './material-injector';
 import type { SkillContextSnapshot } from './skill-context';
 import type {
   BackgroundSummaryStatus,
@@ -40,6 +40,8 @@ export interface TaskContext {
   readonly uploadedAttachments: InputAttachmentManifest[];
   /** `<workspace>/materials` 增量扫描出的图片（Phase3，仅 vision 模型非空）。 */
   readonly materialImages: MaterialImageRef[];
+  /** P0: pending material-injection plan the runner commits once messages are built. */
+  readonly materialCommit: MaterialInjectionPlan | null;
   /** `materials/` 目录的图片索引文本（含本轮注入标记），无目录时为 null。 */
   readonly materialIndexText: string | null;
   readonly config: AppConfig;
@@ -70,6 +72,7 @@ export interface TaskContextInput {
   readonly backgroundSummaryStatus?: BackgroundSummaryStatus;
   readonly uploadedAttachments?: InputAttachmentManifest[];
   readonly materialImages?: MaterialImageRef[];
+  readonly materialCommit?: MaterialInjectionPlan | null;
   readonly materialIndexText?: string | null;
   readonly config: AppConfig;
   /** Unique identifier for the agent job. Defaults to process PID if not provided. */
@@ -108,6 +111,7 @@ export function createTaskContext(input: TaskContextInput): TaskContext {
     uploadedAttachments: input.uploadedAttachments ?? [],
     materialImages: input.materialImages ?? [],
     materialIndexText: input.materialIndexText ?? null,
+    materialCommit: input.materialCommit ?? null,
     backgroundSummaryStatus: input.backgroundSummaryStatus ?? {
       state: 'idle',
       activeSummarySessionId: null,

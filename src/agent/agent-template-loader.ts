@@ -121,6 +121,7 @@ export function parseAgentTemplate(content: string, loadedFromPath: string, fall
     id: profileMetadata.id,
     name: profileMetadata.name,
     description: profileMetadata.description,
+    avatar: profileMetadata.avatar,
     roleDirectives: sections.role,
     goalDirectives: sections.goals,
     constraintDirectives: sections.constraints,
@@ -233,7 +234,7 @@ function hashTemplateContent(content: string): string {
   return createHash('sha256').update(content).digest('hex');
 }
 
-function parseProfileMetadata(lines: string[], fallbackId: string): { id: string; name: string; description: string } {
+function parseProfileMetadata(lines: string[], fallbackId: string): { id: string; name: string; description: string; avatar: string | null } {
   const metadata = new Map<string, string>();
 
   for (const line of lines) {
@@ -255,6 +256,7 @@ function parseProfileMetadata(lines: string[], fallbackId: string): { id: string
     id: metadata.get('id') ?? fallbackId,
     name: metadata.get('name') ?? fallbackId,
     description: metadata.get('description') ?? `${metadata.get('name') ?? fallbackId} agent profile.`,
+    avatar: metadata.get('avatar') ?? metadata.get('头像') ?? null,
   };
 }
 

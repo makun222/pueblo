@@ -159,3 +159,52 @@ describe('collectMaterialInjection', () => {
     expect(plan.images.map((image) => image.relativePath)).toEqual(['materials/a.png']);
   });
 });
+
+describe('collectMaterialInjection per-session delivery', () => {
+  it('re-delivers unchanged images once per session and records delivered sessions', () => {
+    writeImage('a.png', 8);
+
+    const sessionA = collectMaterialInjection({ workspaceRoot, supportsVision: true, sessionId: 'session-a' });
+    expect(sessionA.images.map((image) => image.relativePath)).toEqual(['materials/a.png']);
+    commitMaterialInjection(sessionA);
+
+    // Same session, later turn: already delivered, nothing to re-attach.
+    const sessionAAgain = collectMaterialInjection({ workspaceRoot, supportsVision: true, sessionId: 'session-a' });
+    expect(sessionAAgain.images).toEqual([]);
+    expect(sessionAAgain.nextManifest).toBeNull();
+    expect(sessionAAgain.indexLines.join('\n')).not.toContain('[attached as image part this turn]');
+
+    // A brand new session must receive the image once.
+    const sessionB = collectMaterialInjection({ workspaceRoot, supportsVision: true, sessionId: 'session-b' });
+    expect(sessionB.images.map((image) => image.relativePath)).toEqual(['materials/a.png']);
+    commitMaterialInjection(sessionB);
+
+    const manifest = loadMaterialManifest(resolveMaterialManifestPath(workspaceRoot));
+    expect(manifest.files['materials/a.png']?.deliveredSessionIds).toEqual(['session-a', 'session-b']);
+  });
+
+  it('re-delivers to an existing session when the file content changes', () => {
+    const pngA = writeImage('a.png', 8);
+    commitMaterialInjection(collectMaterialInjection({ workspaceRoot, supportsVision: true, sessionId: 'session-a' }));
+
+    fs.writeFileSync(pngA, Buffer.concat([PNG_HEADER, Buffer.alloc(64, 0x25)]));
+
+    const reDelivered = collectMaterialInjection({ workspaceRoot, supportsVision: true, sessionId: 'session-a' });
+    expect(reDelivered.images.map((image) => image.relativePath)).toEqual(['materials/a.png']);
+    commitMaterialInjection(reDelivered);
+
+    const manifest = loadMaterialManifest(resolveMaterialManifestPath(workspaceRoot));
+    expect(manifest.files['materials/a.png']?.deliveredSessionIds).toEqual(['session-a']);
+  });
+
+  it('keeps the legacy global incremental behaviour when no session id is provided', () => {
+    writeImage('a.png', 8);
+    commitMaterialInjection(collectMaterialInjection({ workspaceRoot, supportsVision: true }));
+
+    const second = collectMaterialInjection({ workspaceRoot, supportsVision: true });
+    expect(second.images).toEqual([]);
+
+    const manifest = loadMaterialManifest(resolveMaterialManifestPath(workspaceRoot));
+    expect(manifest.files['materials/a.png']?.deliveredSessionIds).toBeUndefined();
+  });
+});

@@ -644,7 +644,7 @@ describe('Desktop Renderer', () => {
     });
 
     fireEvent.change(screen.getByPlaceholderText('Enter command or task...'), { target: { value: 'Summarize the uploaded file' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
     await waitFor(() => {
       expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -737,11 +737,19 @@ describe('Desktop Renderer', () => {
     });
   });
 
-  it('renders exec tool results as a collapsible command execution block', async () => {
+  it('merges consecutive exec tool results into a single collapsible command execution group', async () => {
     render(createElement(App));
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Enter command or task...')).toBeTruthy();
+    });
+
+    // Submit a real turn so both command blocks land in the same user/assistant group.
+    fireEvent.change(screen.getByPlaceholderText('Enter command or task...'), { target: { value: 'run two commands' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => {
+      expect(submitInputMock).toHaveBeenCalledWith(expect.objectContaining({ inputText: 'run two commands' }));
     });
 
     act(() => {
@@ -764,21 +772,51 @@ describe('Desktop Renderer', () => {
       });
     });
 
-    expect(screen.getByText('dir')).toBeTruthy();
-    expect(screen.queryByText('dir src')).toBeNull();
-    expect(screen.queryByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeNull();
+    act(() => {
+      outputListener?.({}, {
+        id: 'exec-block-2',
+        type: 'tool-result',
+        title: 'Command Execution',
+        content: 'ok',
+        collapsed: true,
+        messageTrace: [],
+        fileChanges: [],
+        execCommand: {
+          rawCommand: 'npm run build',
+          command: 'npm',
+          args: ['run', 'build'],
+          result: 'ok',
+        },
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: 'dir' }));
+    // Collapsed by default: a single group header with the command count, no rows rendered.
+    const groupTrigger = screen.getByRole('button', { name: /Command executions/ });
+    expect(screen.getByText('2', { selector: '.exec-command-group-count' })).toBeTruthy();
+    expect(document.querySelectorAll('.exec-command-group').length).toBe(1);
+    expect(screen.queryByText('dir', { selector: '.exec-command-row-command' })).toBeNull();
+    expect(screen.queryByText((content, element) => element?.classList.contains('exec-command-row-output') ? content.includes('package.json') : false)).toBeNull();
 
-    expect(screen.getByText('dir src')).toBeTruthy();
-    expect(screen.getByText('src', { selector: '.exec-output-meta-value' })).toBeTruthy();
-    expect(screen.getByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeTruthy();
+    // Expanding the group reveals one unified row per command; rows stay collapsed (no output).
+    fireEvent.click(groupTrigger);
+    expect(document.querySelectorAll('.exec-command-list').length).toBe(1);
+    expect(document.querySelectorAll('.exec-command-row').length).toBe(2);
+    expect(screen.getByText('dir', { selector: '.exec-command-row-command' })).toBeTruthy();
+    expect(screen.getByText('npm', { selector: '.exec-command-row-command' })).toBeTruthy();
+    expect(screen.queryByText((content, element) => element?.classList.contains('exec-command-row-output') ? content.includes('package.json') : false)).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'dir' }));
-    expect(screen.queryByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeNull();
+    // Expanding a row reveals its raw command, args, and output.
+    const rowTrigger = screen.getByRole('button', { name: /dir/ });
+    fireEvent.click(rowTrigger);
+    expect(screen.getByText('src', { selector: '.exec-command-row-args' })).toBeTruthy();
+    expect(screen.getByText('dir src', { selector: '.exec-command-row-meta-value' })).toBeTruthy();
+    expect(screen.getByText((content, element) => element?.classList.contains('exec-command-row-output') ? content.includes('package.json') : false)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'dir' }));
-    expect(screen.getByText((content, element) => element?.classList.contains('exec-output-content') ? content.includes('package.json') : false)).toBeTruthy();
+    // Collapsing the row hides its body again.
+    fireEvent.click(rowTrigger);
+    expect(screen.queryByText((content, element) => element?.classList.contains('exec-command-row-output') ? content.includes('package.json') : false)).toBeNull();
   });
 
   it('renders the sidebar approval queue and current todo list', async () => {
@@ -2242,5 +2280,113 @@ describe('Desktop Renderer', () => {
       const reorderedHeadings = screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent);
       expect(reorderedHeadings.indexOf('Alpha review')).toBeLessThan(reorderedHeadings.indexOf('Bravo task'));
     });
+  });
+});
+
+describe('Pueblo codemaster avatar', () => {
+  it('renders the workspace avatar at the top-left of every pueblo answer block', async () => {
+    const session: Session = {
+      id: 'session-1',
+      title: 'Avatar session',
+      status: 'active',
+      sessionKind: 'user',
+      agentInstanceId: 'agent-1',
+      currentModelId: 'copilot-chat',
+      messageHistory: [
+        { id: 'user-1', role: 'user', content: 'Hello', createdAt: '2026-05-04T00:00:00.000Z', taskId: null, toolName: null },
+        { id: 'assistant-1', role: 'assistant', content: 'Hello there', createdAt: '2026-05-04T00:00:01.000Z', taskId: null, toolName: null },
+      ],
+      selectedPromptIds: [],
+      pinnedMemoryIds: [],
+      workingMemoryIds: [],
+      selectedMemoryIds: [],
+      providerUsageStats: emptyProviderUsageStats,
+      originSessionId: null,
+      triggerReason: null,
+      createdAt: '2026-05-04T00:00:00.000Z',
+      updatedAt: '2026-05-04T00:00:01.000Z',
+      startedAt: '2026-05-04T00:00:00.000Z',
+      completedAt: null,
+      failedAt: null,
+      archivedAt: null,
+    };
+    listAgentSessionsMock.mockResolvedValue([toSessionSummary(session)]);
+    getSessionMock.mockResolvedValue(session);
+
+    // The rail and the chat avatars both resolve against the active agent
+    // profile, so provide one tab plus one emoji-configured profile instead of
+    // relying on the empty defaults used by the other renderer tests.
+    window.electronAPI.listDesktopTabs = vi.fn().mockResolvedValue([
+      {
+        id: 'tab-1',
+        title: 'Code Master',
+        runtimeStatus: { agentProfileId: 'code-master', agentProfileName: 'Code Master' },
+        isSubmitting: false,
+      },
+    ]);
+    window.electronAPI.listAgentProfiles = vi.fn().mockResolvedValue([
+      { id: 'code-master', name: 'Code Master', description: '', systemPrompt: '', modelId: 'gpt-5.4', tools: [], avatar: '💻' },
+    ]);
+
+    render(createElement(App));
+
+    await waitFor(() => {
+      expect(screen.getByText('Hello there')).toBeTruthy();
+    });
+
+    // branch A: role-based assistant transcript entries
+    const historyAvatar = screen.getByText('Hello there').closest('.chat-entry-answer')?.querySelector('img.chat-entry-avatar');
+    expect(historyAvatar).toBeTruthy();
+
+    // branch B: block-type based answer entries
+    act(() => {
+      outputListener?.({}, {
+        id: 'task-result-1',
+        type: 'task-result',
+        title: 'Task result',
+        content: 'Streamed answer',
+        collapsed: false,
+        messageTrace: [],
+        fileChanges: [],
+        sourceRefs: [],
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Streamed answer')).toBeTruthy();
+    });
+
+    const avatars = Array.from(document.querySelectorAll('.chat-entry-answer img.chat-entry-avatar')) as HTMLImageElement[];
+    expect(avatars.length).toBe(2);
+    // A profile with an emoji glyph resolves to a deterministic, self-contained
+    // SVG data-URI instead of the built-in Pueblo bitmap.
+    for (const avatar of avatars) {
+      const src = avatar.getAttribute('src') ?? '';
+      expect(src.startsWith('data:image/svg+xml')).toBe(true);
+      expect(src).not.toContain('resources/e80433aa7a48c8ee1c8b59382d1a1a7e.jpg');
+    }
+    // Both transcript branches share the active profile, so the avatar src is identical.
+    expect(avatars[0]?.getAttribute('src')).toBe(avatars[1]?.getAttribute('src'));
+
+    // The user transcript entry and the app toolbar both render the shared resources avatar.
+    const userBlock = screen.getByText('Hello').closest('.chat-entry-user');
+    const userAvatar = userBlock?.querySelector('img.chat-entry-avatar-user') as HTMLImageElement | null;
+    expect(userAvatar).not.toBeNull();
+    expect(userAvatar?.getAttribute('src') ?? '').toContain('e80433aa7a48c8ee1c8b59382d1a1a7e.jpg');
+
+    const toolbarAvatar = document.querySelector('img.app-toolbar-avatar') as HTMLImageElement | null;
+    expect(toolbarAvatar).not.toBeNull();
+    expect(toolbarAvatar?.getAttribute('src') ?? '').toContain('e80433aa7a48c8ee1c8b59382d1a1a7e.jpg');
+
+    const railItems = Array.from(document.querySelectorAll('.session-rail-item'));
+    expect(railItems.length).toBe(1);
+    for (const railItem of railItems) {
+      const railAvatar = railItem.querySelector('img.session-rail-avatar') as HTMLImageElement | null;
+      expect(railAvatar).not.toBeNull();
+      const railSrc = railAvatar?.getAttribute('src') ?? '';
+      expect(railSrc.startsWith('data:image/svg+xml')).toBe(true);
+      expect(railSrc).toBe(avatars[0]?.getAttribute('src'));
+    }
   });
 });

@@ -27,6 +27,8 @@ import type {
 import { isTaskCancellationError } from '../../shared/task-cancellation.js';
 import './styles.css';
 import { McpManager } from './mcp-manager';
+import puebloAvatarUrl from '../../shared/resources/e80433aa7a48c8ee1c8b59382d1a1a7e.jpg';
+import { resolveAgentAvatarSrc } from './agent-avatars';
 
 const THINKING_PLACEHOLDER = 'Thinking through the next step...';
 const STREAM_CHUNK_SIZE = 24;
@@ -79,6 +81,13 @@ interface AssistantTranscriptEntry {
 }
 
 type TranscriptEntry = UserTranscriptEntry | AssistantTranscriptEntry | RendererOutputBlock;
+type ExecCommandTranscriptEntry = RendererOutputBlock & {
+  readonly type: 'tool-result';
+  readonly execCommand: RendererExecCommand;
+};
+function isExecCommandEntry(entry: TranscriptEntry): entry is ExecCommandTranscriptEntry {
+  return !('role' in entry) && entry.type === 'tool-result' && Boolean(entry.execCommand);
+}
 interface TranscriptGroup {
   readonly id: string;
   readonly entries: TranscriptEntry[];
@@ -224,6 +233,16 @@ export function App() {
   const [isCreatingTab, setIsCreatingTab] = useState(false);
   const [workspaceDraft, setWorkspaceDraft] = useState('');
   const [agentProfiles, setAgentProfiles] = useState<AgentProfileTemplate[]>([]);
+  const activeAgentProfile = useMemo<AgentProfileTemplate | null>(() => {
+    const tabProfileId = desktopTabs.find((tab) => tab.id === activeTabId)?.runtimeStatus.agentProfileId ?? null;
+    const profileId = tabProfileId ?? runtimeStatus.agentProfileId;
+    if (!profileId) {
+      return null;
+    }
+    return agentProfiles.find((profile) => profile.id === profileId) ?? null;
+  }, [desktopTabs, activeTabId, runtimeStatus.agentProfileId, agentProfiles]);
+  const activeAgentAvatarSrc = resolveAgentAvatarSrc(activeAgentProfile, puebloAvatarUrl);
+  const activeAgentLabel = activeAgentProfile?.name ?? runtimeStatus.agentProfileName ?? 'Pueblo';
   const [startupError, setStartupError] = useState<string | null>(null);
   const [startingProfileId, setStartingProfileId] = useState<string | null>(null);
   const [isAgentPickerOpen, setIsAgentPickerOpen] = useState(false);
@@ -231,6 +250,7 @@ export function App() {
   const [isSessionSidebarOpen, setIsSessionSidebarOpen] = useState(false);
   const [isToolApprovalSidebarOpen, setIsToolApprovalSidebarOpen] = useState(true);
   const [isTodoSidebarOpen, setIsTodoSidebarOpen] = useState(true);
+  const [isSessionRailCollapsed, setIsSessionRailCollapsed] = useState(false);
   const [theme, setTheme] = useState<'legacy' | 'pueblo' | 'dark'>(() => {
     if (typeof window === 'undefined') {
       return 'legacy';
@@ -238,6 +258,9 @@ export function App() {
     const stored = window.localStorage.getItem('pueblo.theme');
     if (stored === 'legacy' || stored === 'pueblo' || stored === 'dark') {
       return stored;
+    }
+    if (typeof window.matchMedia !== 'function') {
+      return 'legacy';
     }
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'legacy';
   });
@@ -1749,267 +1772,311 @@ export function App() {
           >
             <ToolbarIcon name="theme" theme={theme} />
           </button>
+          <img
+            className="app-toolbar-avatar"
+            src={puebloAvatarUrl}
+            alt=""
+            aria-hidden="true"
+          />
         </div>
       </header>
-      {desktopTabs.length > 0 ? (
-        <nav className="agent-tab-bar" aria-label="agent tabs">
-          {desktopTabs.map((tab, index) => (
-            <div key={tab.id} className={`agent-tab ${tab.id === activeTabId ? 'agent-tab-active' : ''}`}>
-              <button type="button" className="agent-tab-select" onClick={() => { void handleSelectTab(tab.id); }}>
-                <span>{tab.runtimeStatus.agentProfileName ?? `Agent ${index + 1}`}</span>
-                {tab.isSubmitting ? <span className="agent-tab-busy">Working</span> : null}
-              </button>
-              <button
-                type="button"
-                className="agent-tab-close"
-                aria-label={`Close ${tab.runtimeStatus.agentProfileName ?? `agent ${index + 1}`} tab`}
-                disabled={desktopTabs.length === 1}
-                onClick={() => { void handleCloseTab(tab.id); }}
-              >
-                x
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="agent-tab-add"
-            aria-label="Add agent tab"
-            title={desktopTabs.length >= agentProfiles.length ? 'All agent profiles are already assigned' : 'Add agent tab'}
-            disabled={isCreatingTab || agentProfiles.length === 0 || desktopTabs.length >= agentProfiles.length}
-            onClick={() => { void handleCreateTab(); }}
-          >
-            +
-          </button>
-        </nav>
-      ) : null}
-      <div className="workspace-shell" style={{ ['--workspace-columns' as string]: workspaceColumns }}>
-        <section ref={outputPaneRef} className="output-pane" aria-label="output-region">
-          {activeTalkConversation ? renderTalkBanner({ conversation: activeTalkConversation }) : null}
-          {showAgentPicker ? renderAgentPicker(
-            agentProfiles,
-            new Set(desktopTabs
-              .filter((tab) => tab.id !== activeTabId)
-              .map((tab) => tab.runtimeStatus.agentProfileId)
-              .filter((profileId): profileId is string => profileId !== null)),
-            startingProfileId,
-            startupError,
-            handleStartAgentSession,
-            !needsAgentSelection ? () => {
-              setIsAgentPickerOpen(false);
-              setStartupError(null);
-            } : null,
-          ) : showProviderConfig ? renderProviderConfigPanel({
-            providerConfigMode,
-            providerConfigError,
-            providerConfigPending,
-            deepSeekApiKey,
-            deepSeekModelId,
-            deepSeekBaseUrl,
-            genericProviderConfigurations,
-            isGenericProvidersLoading,
-            isEditingGenericProvider,
-            genericProviderId,
-            genericProviderDisplayName,
-            genericProviderBaseUrl,
-            genericProviderApiKey,
-            genericProviderModelsInput,
-            genericProviderDefaultModelId,
-            genericProviderEnabled,
-            genericProviderSetAsDefault,
-            githubProviderStatus,
-            deepSeekProviderStatus,
-            isDeepSeekEditing,
-            onSelectMode: (mode) => {
-              setProviderConfigMode(mode);
-              setProviderConfigError(null);
-              setIsDeepSeekEditing(mode === 'deepseek' ? deepSeekProviderStatus.authState !== 'configured' : false);
-              if (mode === 'generic-openai') {
-                resetGenericProviderForm();
-                void loadProviderConfigurations();
-              }
-            },
-            onClose: runtimeStatus.providerId ? () => {
-              setIsProviderConfigOpen(false);
-              setProviderConfigError(null);
-              setIsDeepSeekEditing(false);
-              resetGenericProviderForm();
-            } : null,
-            onGitHubLogin: () => {
-              void handleGitHubProviderLogin();
-            },
-            onStartDeepSeekEdit: () => {
-              setProviderConfigError(null);
-              setDeepSeekApiKey('');
-              setDeepSeekModelId(deepSeekProviderStatus.defaultModelId ?? 'deepseek-v4-flash');
-              setDeepSeekBaseUrl(deepSeekProviderStatus.baseUrl ?? 'https://api.deepseek.com');
-              setIsDeepSeekEditing(true);
-            },
-            onCancelDeepSeekEdit: () => {
-              setProviderConfigError(null);
-              setDeepSeekApiKey('');
-              setDeepSeekModelId(deepSeekProviderStatus.defaultModelId ?? 'deepseek-v4-flash');
-              setDeepSeekBaseUrl(deepSeekProviderStatus.baseUrl ?? 'https://api.deepseek.com');
-              setIsDeepSeekEditing(false);
-            },
-            onDeepSeekApiKeyChange: setDeepSeekApiKey,
-            onDeepSeekModelChange: setDeepSeekModelId,
-            onDeepSeekBaseUrlChange: setDeepSeekBaseUrl,
-            onDeepSeekSubmit: (event) => {
-              void handleDeepSeekProviderSave(event);
-            },
-            onStartGenericProviderCreate: () => {
-              resetGenericProviderForm();
-              setProviderConfigError(null);
-            },
-            onStartGenericProviderEdit: (provider) => {
-              startEditingGenericProvider(provider);
-            },
-            onGenericProviderIdChange: setGenericProviderId,
-            onGenericProviderDisplayNameChange: setGenericProviderDisplayName,
-            onGenericProviderBaseUrlChange: setGenericProviderBaseUrl,
-            onGenericProviderApiKeyChange: setGenericProviderApiKey,
-            onGenericProviderModelsInputChange: setGenericProviderModelsInput,
-            onGenericProviderDefaultModelIdChange: setGenericProviderDefaultModelId,
-            onGenericProviderEnabledChange: setGenericProviderEnabled,
-            onGenericProviderSetAsDefaultChange: setGenericProviderSetAsDefault,
-            onGenericProviderSubmit: (event) => {
-              void handleGenericProviderSave(event);
-            },
-            onGenericProviderDelete: (providerId) => {
-              void handleGenericProviderDelete(providerId);
-            },
-          }) : (
-            <>
-              <div className="output-pane-toolbar">
-                {renderTranscriptToolbar({
-                  transcriptSearchInput,
-                  transcriptSearchTerm,
-                  onSearchInputChange: setTranscriptSearchInput,
-                  onSubmit: handleTranscriptSearchSubmit,
-                  onClear: handleClearTranscriptSearch,
-                })}
+      <div
+        className={`app-body ${desktopTabs.length > 0 ? 'app-body-with-rail' : ''} ${
+          desktopTabs.length > 0 && isSessionRailCollapsed ? 'app-body-rail-collapsed' : ''
+        }`}
+      >
+        {desktopTabs.length > 0 ? (
+          <>
+            <nav className="session-rail" aria-label="agent sessions">
+              <div className="session-rail-body" inert={isSessionRailCollapsed}>
+                <div className="session-rail-list">
+                  {desktopTabs.map((tab, index) => (
+                    <div key={tab.id} className={`session-rail-item ${tab.id === activeTabId ? 'session-rail-item-active' : ''}`}>
+                      <img
+                        className="session-rail-avatar"
+                        src={resolveAgentAvatarSrc(
+                          agentProfiles.find((profile) => profile.id === tab.runtimeStatus.agentProfileId) ?? null,
+                          puebloAvatarUrl,
+                        )}
+                        alt=""
+                        aria-hidden="true"
+                      />
+                      <button type="button" className="session-rail-select" onClick={() => { void handleSelectTab(tab.id); }}>
+                        <span className="session-rail-name">{tab.runtimeStatus.agentProfileName ?? `Agent ${index + 1}`}</span>
+                        {tab.isSubmitting ? <span className="session-rail-busy">Working</span> : null}
+                      </button>
+                      <button
+                        type="button"
+                        className="session-rail-close"
+                        aria-label={`Close ${tab.runtimeStatus.agentProfileName ?? `agent ${index + 1}`} tab`}
+                        disabled={desktopTabs.length === 1}
+                        onClick={() => { void handleCloseTab(tab.id); }}
+                      >
+                        <ToolbarIcon name="close" theme={theme} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="session-rail-add"
+                  aria-label="Add agent tab"
+                  title={desktopTabs.length >= agentProfiles.length ? 'All agent profiles are already assigned' : 'Add agent tab'}
+                  disabled={isCreatingTab || agentProfiles.length === 0 || desktopTabs.length >= agentProfiles.length}
+                  onClick={() => { void handleCreateTab(); }}
+                >
+                  <ToolbarIcon name="plus" theme={theme} />
+                  <span>PorkBrain</span>
+                </button>
               </div>
-              <div className="output-pane-transcript">
-                {transcriptEntries.length === 0 ? (
-                  <div className="output-empty">No output yet.</div>
-                ) : filteredTranscriptGroups.length === 0 ? (
-                  <div className="output-empty">No chat records matched the current search.</div>
-                ) : (
-                  <>
-                    {hiddenTranscriptGroups.length > 0 ? renderCollapsedTranscriptHistory({
-                      groups: hiddenTranscriptGroups,
-                      isOpen: isTranscriptHistoryExpanded,
-                      onToggle: setIsTranscriptHistoryExpanded,
-                      onOpenFileChange: setSelectedFileChange,
-                      onActionClick: handleActionClick,
-                      activeActionPrompt: input.trim(),
-                      answerTimerNowMs,
-                    }) : null}
-                    {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, {
-                      onOpenFileChange: setSelectedFileChange,
-                      answerTimerNowMs,
-                      onActionClick: handleActionClick,
-                      activeActionPrompt: input.trim(),
-                    }))}
-                  </>
-                )}
-                <div ref={transcriptEndRef} className="output-pane-end" aria-hidden="true" />
-              </div>
-            </>
-          )}
-        </section>
-        {isSessionSidebarOpen ? (
-          <aside className="workspace-sidebar workspace-sidebar-session" aria-label="workspace-session-sidebar">
-            {renderSessionSidebar({
-              sessions: sortedAndFilteredSessions,
-              activeSessionId: runtimeStatus.activeSessionId,
-              selectedSessionId: selectedSidebarSessionId,
-              agentProfileName: runtimeStatus.agentProfileName,
-              error: sessionPanelError,
-              disabled: needsAgentSelection,
-              isCreatingSession: isSubmitting,
-              sessionSearchQuery,
-              sessionSortMode,
-              isNewSessionComposerOpen,
-              newSessionTitle,
-              onCreateSession: () => {
-                void handleCreateSessionFromSidebar();
-              },
-              onOpenNewSessionComposer: () => {
-                setIsNewSessionComposerOpen(true);
-              },
-              onCancelNewSessionComposer: () => {
-                setIsNewSessionComposerOpen(false);
-                setNewSessionTitle('');
-              },
-              onNewSessionTitleChange: setNewSessionTitle,
-              onSessionSearchQueryChange: setSessionSearchQuery,
-              onSessionSortModeChange: setSessionSortMode,
-              onSelectSession: (session) => {
-                setSelectedSidebarSessionId(session.id);
-              },
-              onInspectSession: (session) => {
-                void handleOpenSessionInspector(session);
-              },
-            })}
-          </aside>
-        ) : null}
-        {isToolApprovalSidebarOpen ? (
-          <aside
-            ref={toolApprovalSidebarRef}
-            className={`workspace-sidebar workspace-sidebar-approval ${isResizingToolApprovalSidebar ? 'workspace-sidebar-approval-resizing' : ''}`}
-            aria-label="workspace-tool-approval-sidebar"
-          >
+            </nav>
             <button
               type="button"
-              className="workspace-sidebar-resize-handle"
-              aria-label="Resize tool approval sidebar"
-              onMouseDown={handleStartToolApprovalSidebarResize}
-            />
-            {renderToolApprovalSidebar({
-              toolApprovalBatch: activeToolApprovalBatch,
-              fileReviewRequest: activeFileReview,
-              selectedRequestIds: effectiveSelectedToolApprovalIds,
-              isResolvingToolApproval,
-              isResolvingFileReview,
-              onToggleRequest: handleToggleToolApprovalSelection,
-              onOpenFileReviewPreview: setSelectedFileChange,
-              onAllow: () => {
-                void handleResolveToolApproval('allow');
-              },
-              onAllowAll: () => {
-                void handleResolveToolApproval('allow-all');
-              },
-              onDeny: () => {
-                void handleResolveToolApproval('deny');
-              },
-              onKeepFileReview: () => {
-                void handleResolveFileReview('keep');
-              },
-              onDiscardFileReview: () => {
-                void handleResolveFileReview('discard');
-              },
-            })}
-          </aside>
+              className="session-rail-toggle"
+              aria-label={isSessionRailCollapsed ? 'Show agent sessions' : 'Hide agent sessions'}
+              aria-expanded={!isSessionRailCollapsed}
+              title={isSessionRailCollapsed ? 'Show agent sessions' : 'Hide agent sessions'}
+              onClick={() => {
+                setIsSessionRailCollapsed((current) => !current);
+              }}
+            >
+              <ToolbarIcon name="chevron" theme={theme} />
+            </button>
+          </>
         ) : null}
-        {isTodoSidebarOpen ? (
-          <aside className="workspace-sidebar workspace-sidebar-todo" aria-label="workspace-todo-sidebar">
-            {renderTodoSidebar({
-              todoMemory,
-              todoItems,
-              hasActiveWorkflow,
-              staleTodoMemory,
-              staleTodoItems,
-              isSubmitting,
-              onRequeueStaleTodo: () => {
-                void handleRequeueStaleTodo();
+        <div className="workspace-shell" style={{ ['--workspace-columns' as string]: workspaceColumns }}>
+          <section ref={outputPaneRef} className="output-pane" aria-label="output-region">
+            {activeTalkConversation ? renderTalkBanner({ conversation: activeTalkConversation }) : null}
+            {showAgentPicker ? renderAgentPicker(
+              agentProfiles,
+              new Set(desktopTabs
+                .filter((tab) => tab.id !== activeTabId)
+                .map((tab) => tab.runtimeStatus.agentProfileId)
+                .filter((profileId): profileId is string => profileId !== null)),
+              startingProfileId,
+              startupError,
+              handleStartAgentSession,
+              !needsAgentSelection ? () => {
+                setIsAgentPickerOpen(false);
+                setStartupError(null);
+              } : null,
+            ) : showProviderConfig ? renderProviderConfigPanel({
+              providerConfigMode,
+              providerConfigError,
+              providerConfigPending,
+              deepSeekApiKey,
+              deepSeekModelId,
+              deepSeekBaseUrl,
+              genericProviderConfigurations,
+              isGenericProvidersLoading,
+              isEditingGenericProvider,
+              genericProviderId,
+              genericProviderDisplayName,
+              genericProviderBaseUrl,
+              genericProviderApiKey,
+              genericProviderModelsInput,
+              genericProviderDefaultModelId,
+              genericProviderEnabled,
+              genericProviderSetAsDefault,
+              githubProviderStatus,
+              deepSeekProviderStatus,
+              isDeepSeekEditing,
+              onSelectMode: (mode) => {
+                setProviderConfigMode(mode);
+                setProviderConfigError(null);
+                setIsDeepSeekEditing(mode === 'deepseek' ? deepSeekProviderStatus.authState !== 'configured' : false);
+                if (mode === 'generic-openai') {
+                  resetGenericProviderForm();
+                  void loadProviderConfigurations();
+                }
               },
-              onClearStaleTodo: () => {
-                void handleClearStaleTodo();
+              onClose: runtimeStatus.providerId ? () => {
+                setIsProviderConfigOpen(false);
+                setProviderConfigError(null);
+                setIsDeepSeekEditing(false);
+                resetGenericProviderForm();
+              } : null,
+              onGitHubLogin: () => {
+                void handleGitHubProviderLogin();
               },
-            })}
-          </aside>
-        ) : null}
+              onStartDeepSeekEdit: () => {
+                setProviderConfigError(null);
+                setDeepSeekApiKey('');
+                setDeepSeekModelId(deepSeekProviderStatus.defaultModelId ?? 'deepseek-v4-flash');
+                setDeepSeekBaseUrl(deepSeekProviderStatus.baseUrl ?? 'https://api.deepseek.com');
+                setIsDeepSeekEditing(true);
+              },
+              onCancelDeepSeekEdit: () => {
+                setProviderConfigError(null);
+                setDeepSeekApiKey('');
+                setDeepSeekModelId(deepSeekProviderStatus.defaultModelId ?? 'deepseek-v4-flash');
+                setDeepSeekBaseUrl(deepSeekProviderStatus.baseUrl ?? 'https://api.deepseek.com');
+                setIsDeepSeekEditing(false);
+              },
+              onDeepSeekApiKeyChange: setDeepSeekApiKey,
+              onDeepSeekModelChange: setDeepSeekModelId,
+              onDeepSeekBaseUrlChange: setDeepSeekBaseUrl,
+              onDeepSeekSubmit: (event) => {
+                void handleDeepSeekProviderSave(event);
+              },
+              onStartGenericProviderCreate: () => {
+                resetGenericProviderForm();
+                setProviderConfigError(null);
+              },
+              onStartGenericProviderEdit: (provider) => {
+                startEditingGenericProvider(provider);
+              },
+              onGenericProviderIdChange: setGenericProviderId,
+              onGenericProviderDisplayNameChange: setGenericProviderDisplayName,
+              onGenericProviderBaseUrlChange: setGenericProviderBaseUrl,
+              onGenericProviderApiKeyChange: setGenericProviderApiKey,
+              onGenericProviderModelsInputChange: setGenericProviderModelsInput,
+              onGenericProviderDefaultModelIdChange: setGenericProviderDefaultModelId,
+              onGenericProviderEnabledChange: setGenericProviderEnabled,
+              onGenericProviderSetAsDefaultChange: setGenericProviderSetAsDefault,
+              onGenericProviderSubmit: (event) => {
+                void handleGenericProviderSave(event);
+              },
+              onGenericProviderDelete: (providerId) => {
+                void handleGenericProviderDelete(providerId);
+              },
+            }) : (
+              <>
+                <div className="output-pane-toolbar">
+                  {renderTranscriptToolbar({
+                    transcriptSearchInput,
+                    transcriptSearchTerm,
+                    onSearchInputChange: setTranscriptSearchInput,
+                    onSubmit: handleTranscriptSearchSubmit,
+                    onClear: handleClearTranscriptSearch,
+                  })}
+                </div>
+                <div className="output-pane-transcript">
+                  {transcriptEntries.length === 0 ? (
+                    <div className="output-empty">No output yet.</div>
+                  ) : filteredTranscriptGroups.length === 0 ? (
+                    <div className="output-empty">No chat records matched the current search.</div>
+                  ) : (
+                    <>
+                      {hiddenTranscriptGroups.length > 0 ? renderCollapsedTranscriptHistory({
+                        groups: hiddenTranscriptGroups,
+                        isOpen: isTranscriptHistoryExpanded,
+                        onToggle: setIsTranscriptHistoryExpanded,
+                        onOpenFileChange: setSelectedFileChange,
+                        onActionClick: handleActionClick,
+                        activeActionPrompt: input.trim(),
+                        answerTimerNowMs,
+                        answerAvatarSrc: activeAgentAvatarSrc,
+                        answerLabel: activeAgentLabel,
+                      }) : null}
+                      {visibleTranscriptGroups.map((group) => renderTranscriptGroup(group, {
+                        onOpenFileChange: setSelectedFileChange,
+                        answerTimerNowMs,
+                        onActionClick: handleActionClick,
+                        activeActionPrompt: input.trim(),
+                        answerAvatarSrc: activeAgentAvatarSrc,
+                        answerLabel: activeAgentLabel,
+                      }))}
+                    </>
+                  )}
+                  <div ref={transcriptEndRef} className="output-pane-end" aria-hidden="true" />
+                </div>
+              </>
+            )}
+          </section>
+          {isSessionSidebarOpen ? (
+            <aside className="workspace-sidebar workspace-sidebar-session" aria-label="workspace-session-sidebar">
+              {renderSessionSidebar({
+                sessions: sortedAndFilteredSessions,
+                activeSessionId: runtimeStatus.activeSessionId,
+                selectedSessionId: selectedSidebarSessionId,
+                agentProfileName: runtimeStatus.agentProfileName,
+                error: sessionPanelError,
+                disabled: needsAgentSelection,
+                isCreatingSession: isSubmitting,
+                sessionSearchQuery,
+                sessionSortMode,
+                isNewSessionComposerOpen,
+                newSessionTitle,
+                onCreateSession: () => {
+                  void handleCreateSessionFromSidebar();
+                },
+                onOpenNewSessionComposer: () => {
+                  setIsNewSessionComposerOpen(true);
+                },
+                onCancelNewSessionComposer: () => {
+                  setIsNewSessionComposerOpen(false);
+                  setNewSessionTitle('');
+                },
+                onNewSessionTitleChange: setNewSessionTitle,
+                onSessionSearchQueryChange: setSessionSearchQuery,
+                onSessionSortModeChange: setSessionSortMode,
+                onSelectSession: (session) => {
+                  setSelectedSidebarSessionId(session.id);
+                },
+                onInspectSession: (session) => {
+                  void handleOpenSessionInspector(session);
+                },
+              })}
+            </aside>
+          ) : null}
+          {isToolApprovalSidebarOpen ? (
+            <aside
+              ref={toolApprovalSidebarRef}
+              className={`workspace-sidebar workspace-sidebar-approval ${isResizingToolApprovalSidebar ? 'workspace-sidebar-approval-resizing' : ''}`}
+              aria-label="workspace-tool-approval-sidebar"
+            >
+              <button
+                type="button"
+                className="workspace-sidebar-resize-handle"
+                aria-label="Resize tool approval sidebar"
+                onMouseDown={handleStartToolApprovalSidebarResize}
+              />
+              {renderToolApprovalSidebar({
+                toolApprovalBatch: activeToolApprovalBatch,
+                fileReviewRequest: activeFileReview,
+                selectedRequestIds: effectiveSelectedToolApprovalIds,
+                isResolvingToolApproval,
+                isResolvingFileReview,
+                onToggleRequest: handleToggleToolApprovalSelection,
+                onOpenFileReviewPreview: setSelectedFileChange,
+                onAllow: () => {
+                  void handleResolveToolApproval('allow');
+                },
+                onAllowAll: () => {
+                  void handleResolveToolApproval('allow-all');
+                },
+                onDeny: () => {
+                  void handleResolveToolApproval('deny');
+                },
+                onKeepFileReview: () => {
+                  void handleResolveFileReview('keep');
+                },
+                onDiscardFileReview: () => {
+                  void handleResolveFileReview('discard');
+                },
+              })}
+            </aside>
+          ) : null}
+          {isTodoSidebarOpen ? (
+            <aside className="workspace-sidebar workspace-sidebar-todo" aria-label="workspace-todo-sidebar">
+              {renderTodoSidebar({
+                todoMemory,
+                todoItems,
+                hasActiveWorkflow,
+                staleTodoMemory,
+                staleTodoItems,
+                isSubmitting,
+                onRequeueStaleTodo: () => {
+                  void handleRequeueStaleTodo();
+                },
+                onClearStaleTodo: () => {
+                  void handleClearStaleTodo();
+                },
+              })}
+            </aside>
+          ) : null}
+        </div>
       </div>
       <section className="status-strip" aria-label="runtime-status">
         <div className="status-strip-controls">
@@ -2210,7 +2277,7 @@ export function App() {
                     handleRemovePendingAttachment(attachment.attachmentId);
                   }}
                 >
-                  X
+                  <ToolbarIcon name="remove" theme={theme} />
                 </button>
               </div>
             ))}
@@ -2240,10 +2307,10 @@ export function App() {
             onClick={() => { void window.electronAPI.cancelActiveSubmit(activeTabIdRef.current ?? undefined); }}
             aria-label="Cancel current request"
           >
-            ✕
+            <ToolbarIcon name="close" theme={theme} />
           </button>
         ) : (
-          <button type="submit" disabled={needsAgentSelection}>Send</button>
+          <button type="submit" aria-label="Send message" disabled={needsAgentSelection}><ToolbarIcon name="send" theme={theme} /></button>
         )}
         {actionInputHint ? <div className="input-action-hint" aria-live="polite">{actionInputHint}</div> : null}
       </form>
@@ -2545,6 +2612,8 @@ function renderCollapsedTranscriptHistory(args: {
   onActionClick: (prompt: string) => void;
   activeActionPrompt: string;
   answerTimerNowMs: number;
+  answerAvatarSrc: string;
+  answerLabel: string;
 }) {
   const firstGroup = args.groups[0];
   const lastGroup = args.groups[args.groups.length - 1];
@@ -2571,6 +2640,8 @@ function renderCollapsedTranscriptHistory(args: {
             answerTimerNowMs: args.answerTimerNowMs,
             onActionClick: args.onActionClick,
             activeActionPrompt: args.activeActionPrompt,
+            answerAvatarSrc: args.answerAvatarSrc,
+            answerLabel: args.answerLabel,
           }))}
         </div>
       ) : null}
@@ -2585,13 +2656,59 @@ function renderTranscriptGroup(
     readonly answerTimerNowMs: number;
     readonly onActionClick: (prompt: string) => void;
     readonly activeActionPrompt: string;
+    readonly answerAvatarSrc: string;
+    readonly answerLabel: string;
   },
 ) {
   return (
     <div key={group.id} className="transcript-group">
-      {group.entries.map((entry) => renderTranscriptEntry(entry, actions))}
+      {renderTranscriptGroupEntries(group.entries, actions)}
     </div>
   );
+}
+
+function renderTranscriptGroupEntries(
+  entries: readonly TranscriptEntry[],
+  actions: {
+    readonly onOpenFileChange: (fileChange: RendererFileChange) => void;
+    readonly answerTimerNowMs: number;
+    readonly onActionClick: (prompt: string) => void;
+    readonly activeActionPrompt: string;
+    readonly answerAvatarSrc: string;
+    readonly answerLabel: string;
+  },
+): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let index = 0;
+
+  while (index < entries.length) {
+    const entry = entries[index];
+
+    // Collapse every consecutive run of shell command executions into a single
+    // foldable region, so a turn with a dozen tool calls stays one compact row.
+    if (isExecCommandEntry(entry)) {
+      const run: ExecCommandTranscriptEntry[] = [];
+      while (index < entries.length && isExecCommandEntry(entries[index])) {
+        run.push(entries[index] as ExecCommandTranscriptEntry);
+        index += 1;
+      }
+
+      nodes.push(<ExecCommandGroup key={`exec-command-group-${run[0].id}`} commands={run} />);
+      for (const command of run) {
+        nodes.push(
+          <React.Fragment key={`${command.id}-messages`}>
+            {renderMessageTrace(`${command.id}-messages`, command.messageTrace, { scrollable: false })}
+          </React.Fragment>,
+        );
+      }
+      continue;
+    }
+
+    nodes.push(renderTranscriptEntry(entry, actions));
+    index += 1;
+  }
+
+  return nodes;
 }
 
 function renderToolApprovalSidebar(args: {
@@ -3663,6 +3780,8 @@ function renderTranscriptEntry(
     readonly answerTimerNowMs: number;
     readonly onActionClick: (prompt: string) => void;
     readonly activeActionPrompt: string;
+    readonly answerAvatarSrc: string;
+    readonly answerLabel: string;
   },
 ) {
   if ('role' in entry) {
@@ -3674,7 +3793,8 @@ function renderTranscriptEntry(
       return (
         <article key={entry.id} className={`chat-entry chat-entry-answer chat-entry-answer-${entry.blockType} ${entry.status === 'pending' ? 'chat-entry-answer-pending' : ''}`}>
           <div className="chat-entry-header">
-            <header className="chat-entry-label">Pueblo</header>
+            <img className="chat-entry-avatar" src={actions.answerAvatarSrc} alt="" aria-hidden="true" />
+            <header className="chat-entry-label">{actions.answerLabel}</header>
             {thinkingDuration ? <span className="chat-entry-thinking-duration">{thinkingDuration}</span> : null}
           </div>
           {renderAnswerContent(entry.content, handoff)}
@@ -3703,19 +3823,13 @@ function renderTranscriptEntry(
 
     return (
       <article key={entry.id} className="chat-entry chat-entry-user">
-        <header className="chat-entry-label">You</header>
+        <div className="chat-entry-header">
+          <img className="chat-entry-avatar chat-entry-avatar-user" src={puebloAvatarUrl} alt="" aria-hidden="true" />
+          <header className="chat-entry-label">You</header>
+        </div>
         <p className="chat-entry-body">{entry.content}</p>
         {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: false })}
       </article>
-    );
-  }
-
-  if (entry.type === 'tool-result' && entry.execCommand) {
-    return (
-      <div key={entry.id} className="output-block-stack">
-        <ExecCommandBlock entryId={entry.id} execCommand={entry.execCommand} content={entry.content} collapsed={entry.collapsed} />
-        {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: false })}
-      </div>
     );
   }
 
@@ -3737,7 +3851,10 @@ function renderTranscriptEntry(
     const handoff = parseTaskHandoff(entry.content);
     return (
       <article key={entry.id} className={`chat-entry chat-entry-answer chat-entry-answer-${entry.type}`}>
-        <header className="chat-entry-label">Pueblo</header>
+        <div className="chat-entry-header">
+          <img className="chat-entry-avatar" src={actions.answerAvatarSrc} alt="" aria-hidden="true" />
+          <header className="chat-entry-label">{actions.answerLabel}</header>
+        </div>
         {renderAnswerContent(entry.content, handoff)}
         {renderFileChangeSummary(entry.fileChanges, actions.onOpenFileChange)}
         {renderMessageTrace(`${entry.id}-messages`, entry.messageTrace, { scrollable: entry.type === 'task-result' })}
@@ -3756,58 +3873,73 @@ function renderTranscriptEntry(
   );
 }
 
-const ExecCommandBlock = React.memo(function ExecCommandBlock(args: {
-  readonly entryId: string;
-  readonly execCommand: RendererExecCommand;
-  readonly content: string;
-  readonly collapsed: boolean;
-}) {
-  const [isExpanded, setIsExpanded] = useState(() => !args.collapsed);
-  const [hasLoadedBody, setHasLoadedBody] = useState(() => !args.collapsed);
-  const argsText = args.execCommand.args.length > 0 ? args.execCommand.args.join(' ') : '(no arguments)';
+function formatExecCommandArgs(execCommand: RendererExecCommand): string {
+  return execCommand.args.length > 0 ? execCommand.args.join(' ') : '(no arguments)';
+}
 
-  useEffect(() => {
-    if (!args.collapsed) {
-      setIsExpanded(true);
-      setHasLoadedBody(true);
-    }
-  }, [args.collapsed]);
+const ExecCommandGroup = React.memo(function ExecCommandGroup(args: {
+  readonly commands: readonly ExecCommandTranscriptEntry[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const count = args.commands.length;
 
   return (
-    <section className="exec-output-block" aria-label={`Command execution ${args.execCommand.command}`}>
+    <section className="exec-command-group" aria-label={`Command executions (${count})`}>
       <button
         type="button"
-        className="exec-output-trigger"
-        aria-expanded={isExpanded}
-        aria-controls={`${args.entryId}-exec-output`}
-        onClick={() => {
-          setIsExpanded((previous) => {
-            const next = !previous;
-            if (next) {
-              setHasLoadedBody(true);
-            }
-            return next;
-          });
-        }}
+        className="exec-command-group-trigger"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((previous) => !previous)}
       >
-        <span className="exec-output-trigger-text">{args.execCommand.command}</span>
+        <span className="exec-command-group-title">Command executions</span>
+        <span className="exec-command-group-count">{count}</span>
       </button>
-      {hasLoadedBody && isExpanded ? (
-        <div className="exec-output-body" id={`${args.entryId}-exec-output`}>
-          <div className="exec-output-meta">
-            <p className="exec-output-meta-row">
-              <span className="exec-output-meta-label">Command</span>
-              <span className="exec-output-meta-value">{args.execCommand.rawCommand}</span>
-            </p>
-            <p className="exec-output-meta-row">
-              <span className="exec-output-meta-label">Args</span>
-              <span className="exec-output-meta-value">{argsText}</span>
-            </p>
-          </div>
-          <pre className="exec-output-content">{args.content}</pre>
-        </div>
+      {isOpen ? (
+        <ul className="exec-command-list">
+          {args.commands.map((command, index) => (
+            <ExecCommandRow key={command.id} index={index + 1} entry={command} />
+          ))}
+        </ul>
       ) : null}
     </section>
+  );
+});
+
+const ExecCommandRow = React.memo(function ExecCommandRow(args: {
+  readonly index: number;
+  readonly entry: ExecCommandTranscriptEntry;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const argsText = formatExecCommandArgs(args.entry.execCommand);
+
+  return (
+    <li className="exec-command-row">
+      <button
+        type="button"
+        className="exec-command-row-trigger"
+        aria-expanded={isExpanded}
+        onClick={() => setIsExpanded((previous) => !previous)}
+      >
+        <span className="exec-command-row-index" aria-hidden="true">
+          {args.index}
+        </span>
+        <span className="exec-command-row-command">{args.entry.execCommand.command}</span>
+        <span className="exec-command-row-args">{argsText}</span>
+      </button>
+      {isExpanded ? (
+        <div className="exec-command-row-body">
+          <p className="exec-command-row-meta">
+            <span className="exec-command-row-meta-label">Command</span>
+            <span className="exec-command-row-meta-value">{args.entry.execCommand.rawCommand}</span>
+          </p>
+          <p className="exec-command-row-meta">
+            <span className="exec-command-row-meta-label">Args</span>
+            <span className="exec-command-row-meta-value">{argsText}</span>
+          </p>
+          <pre className="exec-command-row-output">{args.entry.content}</pre>
+        </div>
+      ) : null}
+    </li>
   );
 });
 

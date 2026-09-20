@@ -1,4 +1,8 @@
-# 飞书频道集成 — 使用说明
+# ⚠️ 已过期：飞书频道集成 — 使用说明
+
+> **本文档描述的是旧 API，与当前代码不符（例：`config:{...}` 包装不被识别、凭据 target 应为
+> `pueblo:feishu:<id>`、子命令是 `list|add|remove|test|start|stop|status|secret`）。
+> 请以 [`docs/channel-feishu-quick-help.md`](./channel-feishu-quick-help.md) 为准。**
 
 ## 概述
 

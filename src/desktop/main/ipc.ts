@@ -8,11 +8,13 @@ import { ChannelService } from '../../channel/channel-service';
 import { createChannelRegistry } from '../../channel/channel-registry-factory';
 import { createFeishuChannelAdapter } from '../../channel/channels/feishu/feishu-adapter';
 import type { ChannelConfig } from '../../channel/channel-types';
-import { loadChannelsConfig } from '../../channel/channel-config';
+import { listChannelBindingsBySession, loadChannelsConfig } from '../../channel/channel-config';
 import { registerChannelIpcHandlers } from '../../channel/channel-ipc';
 import { channelLogger } from '../../utils/logger.js';
 import { DesktopTalkService } from './talk-service';
 import { DesktopAgentTabManager } from './desktop-tab-manager';
+import { createDesktopChannelControl } from './channel-control';
+import { createChannelApprovalBridge } from './channel-approval-bridge';
 import type { AppWindow } from './app-window';
 import type { DesktopLoopJobManager } from './loop-job-manager';
 import type {
@@ -102,7 +104,35 @@ export function setupIpcHandlers(
     mainWindow.webContents.send(TAB_OUTPUT_CHANNEL, { tabId, block });
   };
 
-  const manager = new DesktopAgentTabManager({
+  // Declared up front so the approval bridge can close over them; both are
+  // assigned immediately after construction and only read at runtime.
+  let manager: DesktopAgentTabManager;
+  let channelService: ChannelService;
+
+  // Mirrors tool-approval batches to every Feishu conversation bound to the
+  // batch's session, so a user away from the PC can answer from their phone.
+  const approvalBridge = createChannelApprovalBridge({
+    getChannelTabId: () => currentDefaultTabId,
+    // Synchronous: the bridge captures the owning session in the same tick the
+    // batch is announced, so a slow lookup cannot retarget a stale prompt.
+    getActiveSessionId: (tabId) => manager.getCachedActiveSessionId(tabId),
+    listTargets: async (sessionId) => {
+      const bindings = await listChannelBindingsBySession(sessionId);
+      return bindings.map((binding) => ({
+        channelId: binding.channelId,
+        externalConversationId: binding.externalConversationId,
+      }));
+    },
+    sendText: (target, text) =>
+      channelService.send(target.channelId, {
+        externalConversationId: target.externalConversationId,
+        text,
+      }),
+    respondApproval: (response) => manager.respondToolApproval(response),
+    logger: channelLogger,
+  });
+
+  manager = new DesktopAgentTabManager({
     config,
     initialWorkspace: options.initialWorkspace ?? null,
     loopJobManager,
@@ -111,6 +141,8 @@ export function setupIpcHandlers(
     reloadConfig: loadAppConfig,
     onOutput: emitOutput,
     onToolApprovalState: (tabId, state) => {
+      // Fan out to bound Feishu conversations regardless of renderer liveness.
+      approvalBridge.handleToolApprovalState(tabId, state);
       if (mainWindow.isDestroyed()) {
         return;
       }
@@ -154,13 +186,38 @@ export function setupIpcHandlers(
     },
   });
   const channelRegistry = createChannelRegistry();
-  const channelService = new ChannelService({
+  channelService = new ChannelService({
     runtime: channelRuntime,
     registry: channelRegistry,
-    createSession: async (channelId, message) => {
-      const runtimeStatus = await manager.getRuntimeStatus(currentDefaultTabId);
-      return runtimeStatus.activeSessionId ?? `${channelId}-${message.externalMessageId ?? Date.now()}`;
+    createSession: async (_channelId, message) => {
+      // Reuse the active session when one exists; otherwise create a real one.
+      // A synthesized id (the previous fallback) is never persisted, so later
+      // approval/pending lookups by session would silently miss it.
+      const activeSessionId = manager.getCachedActiveSessionId(currentDefaultTabId);
+      if (activeSessionId) {
+        return activeSessionId;
+      }
+      const title = message.text ? `Channel: ${message.text.slice(0, 40)}` : 'Channel session';
+      const session = await manager.createChannelSession(currentDefaultTabId, title, null);
+      return session.id;
     },
+    // Channel commands (/agents, /sessions, /status, ...) operate the tab that
+    // owns the channel window, which is the same tab the runtime submits to.
+    control: createDesktopChannelControl({
+      getChannelTabId: () => currentDefaultTabId,
+      getTabState: (tabId) => manager.getTabState(tabId),
+      getRuntimeStatus: (tabId) => manager.getRuntimeStatus(tabId),
+      listAgentProfiles: () => manager.listAgentProfiles(),
+      listAgentInstances: (tabId) => manager.listAgentInstances(tabId),
+      startAgentSession: (tabId, profileId) => manager.startAgentSession(tabId, profileId),
+      listAgentSessions: (tabId, agentInstanceId) => manager.listAgentSessions(tabId, agentInstanceId),
+      getSession: (tabId, sessionId) => manager.getSession(tabId, sessionId),
+      selectSession: (tabId, sessionId) => manager.selectSession(tabId, sessionId),
+      readSessionTaskStatus: (tabId, sessionId) => manager.readSessionTaskStatus(tabId, sessionId),
+      createSession: (tabId, title, agentInstanceId) => manager.createChannelSession(tabId, title, agentInstanceId),
+      pendingApproval: () => approvalBridge.pendingApproval(),
+      respondApproval: (decision, requestId) => approvalBridge.respondApproval(decision, requestId),
+    }),
   });
   const disposeChannelIpc = registerChannelIpcHandlers(mainWindow, {
     channelService,

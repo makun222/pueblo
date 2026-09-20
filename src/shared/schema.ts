@@ -158,6 +158,8 @@ export const agentProfileTemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().min(1),
+  avatar: z.string().min(1).nullable().default(null)
+    .describe('Optional avatar: an image src/asset key, or a short glyph (emoji). Null falls back to a generated monogram.'),
   roleDirectives: z.array(z.string()),
   goalDirectives: z.array(z.string()),
   constraintDirectives: z.array(z.string()),

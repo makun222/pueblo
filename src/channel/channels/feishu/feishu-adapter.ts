@@ -60,9 +60,32 @@ export class FeishuAdapter extends BaseChannelAdapter {
 
   private larkChannel: LarkChannel | null = null;
   private unsubscribers: Array<() => void> = [];
+  private readonly credentialStore?: CredentialStore;
 
-  constructor(channelId: string, kind: ChannelKind = 'feishu') {
+  constructor(channelId: string, kind: ChannelKind = 'feishu', credentialStore?: CredentialStore) {
     super(channelId, kind);
+    this.credentialStore = credentialStore;
+  }
+
+  /**
+   * Resolve feishu credentials for a connect attempt. Prefers inline
+   * `options.appSecret`; when absent, falls back to the OS credential-store
+   * entry written by `/channel secret <id> <appSecret>`
+   * (target = `config.credentialTarget` or `pueblo:feishu:<id>`). This turns
+   * `/channel secret` into a real (non-dead) code path.
+   */
+  private async resolveSecret(config: ChannelConfig): Promise<FeishuSecret> {
+    const options: Record<string, unknown> = { ...config.options };
+    const inlineSecret = typeof options.appSecret === 'string' ? options.appSecret : '';
+    if (!inlineSecret && this.credentialStore?.isSupported()) {
+      const target = config.credentialTarget ?? `pueblo:feishu:${config.id}`;
+      const stored = this.credentialStore.readSecret(target);
+      if (stored) {
+        options.appSecret = stored;
+        channelDebugLog(`FeishuAdapter: appSecret resolved from credential store target=${target}`);
+      }
+    }
+    return safeParseFeishuOptions(options);
   }
 
   async connect(
@@ -71,7 +94,7 @@ export class FeishuAdapter extends BaseChannelAdapter {
   ): Promise<void> {
     channelDebugLog(`FeishuAdapter.connect: BEGIN channelId=${this.channelId}`);
     try {
-      const { appId, appSecret } = await safeParseFeishuOptions(config.options);
+      const { appId, appSecret } = await this.resolveSecret(config);
       channelDebugLog(`FeishuAdapter.connect: options parsed OK, appId=${appId }`);
       this.handler = handler;
       this.setStatus('connecting');
@@ -211,8 +234,8 @@ export class FeishuAdapter extends BaseChannelAdapter {
 
 export function createFeishuChannelAdapter(
   config: ChannelConfig,
-  _credentialStore?: CredentialStore,
+  credentialStore?: CredentialStore,
 ): FeishuAdapter {
   const channelId = config.id ?? `feishu-${Date.now()}`;
-  return new FeishuAdapter(channelId);
+  return new FeishuAdapter(channelId, 'feishu', credentialStore);
 }

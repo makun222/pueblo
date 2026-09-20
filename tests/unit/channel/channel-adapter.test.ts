@@ -1,163 +1,211 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { InMemoryChannelAdapter, BaseChannelAdapter } from '../../../src/channel/channel-adapter';
-import type { ChannelConfig, ChannelType, InboundMessage } from '../../../src/channel/channel-types';
+﻿import { describe, it, expect, vi } from 'vitest';
+import { BaseChannelAdapter, InMemoryChannelAdapter } from '../../../src/channel/channel-adapter';
+import type {
+  ChannelConfig,
+  ChannelEventHandler,
+  ChannelSendResult,
+  ChannelTestResult,
+  InboundMessage,
+  OutboundMessage,
+} from '../../../src/channel/channel-types';
 
-// ---------------------------------------------------------------------------
-// Test double: minimal concrete subclass to verify abstract behaviour
-// ---------------------------------------------------------------------------
+function makeConfig(id = 'ch-1'): ChannelConfig {
+  return { id, kind: 'feishu', name: id, enabled: true, transport: 'long-connection', options: {} };
+}
+
+function makeInbound(channelId: string, text: string): InboundMessage {
+  return {
+    channelId,
+    externalConversationId: 'conv-1',
+    externalMessageId: 'm-1',
+    senderId: 'u-1',
+    text,
+    raw: {},
+    receivedAt: Date.now(),
+  };
+}
+
+function makeHandler() {
+  return { onMessage: vi.fn(), onError: vi.fn(), onStatusChange: vi.fn() } satisfies ChannelEventHandler;
+}
+
 class TestAdapter extends BaseChannelAdapter {
-  override async connect(): Promise<void> { this._connected = true; }
-  override async disconnect(): Promise<void> { this._connected = false; }
-  override async send(_text: string): Promise<void> { /* no-op */ }
-  override async testConnection(): Promise<{ ok: boolean; error?: string }> {
+  readonly capabilities = { inboundEvents: true, outboundReply: true, card: false, longConnection: false };
+  lastConfig: ChannelConfig | null = null;
+  connectedCount = 0;
+  disconnectedCount = 0;
+  disposedFlag = false;
+
+  constructor() {
+    super('base-test', 'feishu');
+  }
+
+  async connect(config: ChannelConfig, handler: ChannelEventHandler): Promise<void> {
+    this.lastConfig = config;
+    this.handler = handler;
+    this.connectedCount++;
+    this.setStatus('connected');
+  }
+
+  async disconnect(): Promise<void> {
+    this.disconnectedCount++;
+    this.setStatus('disconnected');
+    this.handler = null;
+  }
+
+  async send(_message: OutboundMessage): Promise<ChannelSendResult> {
+    return { ok: true, externalMessageId: 'sent-1' };
+  }
+
+  async testConnection(_config: ChannelConfig): Promise<ChannelTestResult> {
     return { ok: true };
+  }
+
+  dispose(): void {
+    this.disposedFlag = true;
+    this.handler = null;
+    this.setStatus('disconnected');
+  }
+
+  deliver(message: InboundMessage): void {
+    this.handler?.onMessage(message);
+  }
+
+  raiseError(error: Error): void {
+    this.handler?.onError(error);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-describe('ChannelAdapter (abstract base)', () => {
-  const config: ChannelConfig = { id: 'base-test', type: 'test' as ChannelType, enabled: true, credential: 'cred' };
-  let adapter: TestAdapter;
-
-  beforeEach(() => {
-    adapter = new TestAdapter(config, vi.fn());
-  });
-
-  afterEach(async () => {
-    await adapter.dispose();
-  });
-
-  it('stores id and config from constructor', () => {
-    expect(adapter.id).toBe('base-test');
-    expect(adapter.type).toBe('test');
-    expect(adapter.config).toEqual(config);
-  });
-
-  it('starts as disconnected', () => {
-    expect(adapter.isConnected).toBe(false);
-  });
-
-  it('tracks connection state', async () => {
-    await adapter.connect();
-    expect(adapter.isConnected).toBe(true);
-    await adapter.disconnect();
-    expect(adapter.isConnected).toBe(false);
-  });
-
-  it('dispose calls disconnect and clears event listeners', async () => {
-    const disconnectSpy = vi.spyOn(adapter, 'disconnect');
-    await adapter.connect();
-    await adapter.dispose();
-    expect(disconnectSpy).toHaveBeenCalledOnce();
-    expect(adapter.isConnected).toBe(false);
-  });
-
-  it('emits message events', () => {
-    const handler = vi.fn();
-    adapter.on('message', handler);
-
-    const msg: InboundMessage = {
+describe('BaseChannelAdapter', () => {
+  it('starts disconnected with the configured id and kind', () => {
+    const adapter = new TestAdapter();
+    expect(adapter.state).toMatchObject({
       channelId: 'base-test',
-      text: 'hello',
-      from: 'user',
-      timestamp: 123,
-    };
-    adapter.emit('message', msg);
-    expect(handler).toHaveBeenCalledWith(msg);
+      kind: 'feishu',
+      status: 'disconnected',
+      connectedAt: null,
+    });
   });
 
-  it('emits disconnected events', () => {
-    const handler = vi.fn();
-    adapter.on('disconnected', handler);
-    adapter.emit('disconnected', 'base-test');
-    expect(handler).toHaveBeenCalledWith('base-test');
+  it('exposes capability flags', () => {
+    expect(new TestAdapter().capabilities).toEqual({
+      inboundEvents: true,
+      outboundReply: true,
+      card: false,
+      longConnection: false,
+    });
   });
 
-  it('removes event listeners on dispose', async () => {
-    const handler = vi.fn();
-    adapter.on('disconnected', handler);
-    await adapter.dispose();
-    adapter.emit('disconnected', 'base-test');
-    expect(handler).not.toHaveBeenCalled();
+  it('connect wires the handler and publishes connected', async () => {
+    const adapter = new TestAdapter();
+    const handler = makeHandler();
+    const config = makeConfig('base-test');
+
+    await adapter.connect(config, handler);
+
+    expect(adapter.connectedCount).toBe(1);
+    expect(adapter.lastConfig).toBe(config);
+    expect(adapter.state.status).toBe('connected');
+    expect(adapter.state.connectedAt).not.toBeNull();
+    expect(handler.onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'connected' }));
   });
 
-  it('testConnection returns ok by default', async () => {
-    const result = await adapter.testConnection();
-    expect(result.ok).toBe(true);
+  it('fans status transitions out to the handler', async () => {
+    const adapter = new TestAdapter();
+    const handler = makeHandler();
+    await adapter.connect(makeConfig('base-test'), handler);
+
+    await adapter.disconnect();
+
+    expect(adapter.state.status).toBe('disconnected');
+    expect(handler.onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'disconnected' }));
+  });
+
+  it('routes delivered messages and errors through the handler', async () => {
+    const adapter = new TestAdapter();
+    const handler = makeHandler();
+    await adapter.connect(makeConfig('base-test'), handler);
+
+    const msg = makeInbound('base-test', 'hi');
+    adapter.deliver(msg);
+    const err = new Error('boom');
+    adapter.raiseError(err);
+
+    expect(handler.onMessage).toHaveBeenCalledWith(msg);
+    expect(handler.onError).toHaveBeenCalledWith(err);
+  });
+
+  it('disconnect clears the handler so inbound events are dropped', async () => {
+    const adapter = new TestAdapter();
+    const handler = makeHandler();
+    await adapter.connect(makeConfig('base-test'), handler);
+
+    await adapter.disconnect();
+    adapter.deliver(makeInbound('base-test', 'late'));
+
+    expect(handler.onMessage).not.toHaveBeenCalled();
+    expect(adapter.disconnectedCount).toBe(1);
   });
 });
 
-// ---------------------------------------------------------------------------
-// InMemoryChannelAdapter
-// ---------------------------------------------------------------------------
 describe('InMemoryChannelAdapter', () => {
-  const config: ChannelConfig = { id: 'mem-test', type: 'test' as ChannelType, enabled: true, credential: 'cred' };
-  let adapter: InMemoryChannelAdapter;
-
-  beforeEach(() => {
-    adapter = new InMemoryChannelAdapter(config, vi.fn());
+  it('defaults to the feishu kind and a disconnected state', () => {
+    const adapter = new InMemoryChannelAdapter('mem-test');
+    expect(adapter).toBeInstanceOf(BaseChannelAdapter);
+    expect(adapter.state).toMatchObject({ channelId: 'mem-test', kind: 'feishu', status: 'disconnected' });
   });
 
-  afterEach(async () => {
-    await adapter.dispose();
+  it('routes simulateInbound / simulateError to the handler', async () => {
+    const adapter = new InMemoryChannelAdapter('mem-test');
+    const handler = makeHandler();
+    await adapter.connect(makeConfig('mem-test'), handler);
+    expect(adapter.state.status).toBe('connected');
+
+    const msg = makeInbound('mem-test', 'hello');
+    adapter.simulateInbound(msg);
+    const err = new Error('nope');
+    adapter.simulateError(err);
+
+    expect(handler.onMessage).toHaveBeenCalledWith(msg);
+    expect(handler.onError).toHaveBeenCalledWith(err);
   });
 
-  it('connect resolves immediately and sets connected', async () => {
-    expect(adapter.isConnected).toBe(false);
-    await adapter.connect();
-    expect(adapter.isConnected).toBe(true);
-  });
+  it('records outbound messages and reports success', async () => {
+    const adapter = new InMemoryChannelAdapter('mem-test');
+    await adapter.connect(makeConfig('mem-test'), makeHandler());
 
-  it('disconnect resolves immediately and clears connected', async () => {
-    await adapter.connect();
-    expect(adapter.isConnected).toBe(true);
-    await adapter.disconnect();
-    expect(adapter.isConnected).toBe(false);
-  });
+    const outbound: OutboundMessage = { externalConversationId: 'conv-1', text: 'reply' };
+    const result = await adapter.send(outbound);
 
-  it('send stores outgoing messages', async () => {
-    await adapter.connect();
-    await adapter.send('msg1');
-    await adapter.send('msg2');
-    const history = (adapter as any).outgoing;
-    expect(history).toEqual(['msg1', 'msg2']);
-  });
-
-  it('send throws when not connected', async () => {
-    await expect(adapter.send('fail')).rejects.toThrow(/not connected/i);
-  });
-
-  it('testConnection returns ok when connected', async () => {
-    await adapter.connect();
-    const result = await adapter.testConnection();
     expect(result.ok).toBe(true);
+    expect(result.externalMessageId).toBeTruthy();
+    expect(adapter.sentMessages).toEqual([outbound]);
   });
 
-  it('testConnection returns error when not connected', async () => {
-    const result = await adapter.testConnection();
-    expect(result.ok).toBe(false);
-    expect(result.error).toBeDefined();
+  it('testConnection reports ok', async () => {
+    const adapter = new InMemoryChannelAdapter('mem-test');
+    expect(await adapter.testConnection(makeConfig('mem-test'))).toEqual({ ok: true });
   });
 
-  it('dispose clears event listeners and disconnects', async () => {
-    const handler = vi.fn();
-    adapter.on('message', handler);
-    await adapter.connect();
-    await adapter.dispose();
+  it('disconnect drops later inbound events', async () => {
+    const adapter = new InMemoryChannelAdapter('mem-test');
+    const handler = makeHandler();
+    await adapter.connect(makeConfig('mem-test'), handler);
 
-    expect(adapter.isConnected).toBe(false);
-    // verify listener cleared
-    adapter.emit('message', {} as InboundMessage);
-    expect(handler).not.toHaveBeenCalled();
+    await adapter.disconnect();
+    adapter.simulateInbound(makeInbound('mem-test', 'late'));
+
+    expect(handler.onMessage).not.toHaveBeenCalled();
+    expect(adapter.state.status).toBe('disconnected');
   });
 
-  it('emits disconnected when disposed', async () => {
-    const handler = vi.fn();
-    adapter.on('disconnected', handler);
-    await adapter.connect();
-    await adapter.dispose();
-    expect(handler).toHaveBeenCalledWith('mem-test');
+  it('dispose flags isDisposed and moves to disconnected', async () => {
+    const adapter = new InMemoryChannelAdapter('mem-test');
+    await adapter.connect(makeConfig('mem-test'), makeHandler());
+
+    adapter.dispose();
+
+    expect(adapter.isDisposed).toBe(true);
+    expect(adapter.state.status).toBe('disconnected');
   });
 });

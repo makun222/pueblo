@@ -22,10 +22,27 @@ export const MATERIAL_MANIFEST_VERSION = 1;
 /** 单轮最多注入的图片数量，避免一次性把上下文/请求体撑爆。 */
 export const MAX_MATERIAL_IMAGES_PER_TURN = 8;
 
+/**
+ * Upper bound of delivered-session ids kept per image fingerprint. Prevents the
+ * manifest from growing without bound in long-lived workspaces; an evicted id
+ * only risks one redundant re-delivery in a very old session.
+ */
+export const MAX_DELIVERED_SESSION_IDS = 20;
+
 const materialManifestEntrySchema = z.object({
   size: z.number().int().nonnegative(),
   mtimeMs: z.number().nonnegative(),
+  /**
+   * Sessions that already received this exact fingerprint. Enables per-session
+   * delivery: a new session receives the image once, and later turns in the same
+   * session do not re-attach it. A missing value marks a legacy entry, which is
+   * treated as "not yet delivered to the current session" so the image is
+   * attached once more after an upgrade.
+   */
+  deliveredSessionIds: z.array(z.string()).optional(),
 });
+
+type MaterialManifestEntry = z.infer<typeof materialManifestEntrySchema>;
 
 export const materialManifestSchema = z.object({
   version: z.number().int().positive().default(MATERIAL_MANIFEST_VERSION),
@@ -101,6 +118,8 @@ export function collectMaterialInjection(args: {
   readonly workspaceRoot: string | null;
   readonly supportsVision: boolean;
   readonly maxImages?: number;
+  /** Current session id; enables per-session delivery when provided. */
+  readonly sessionId?: string | null;
 }): MaterialInjectionPlan {
   const workspaceRoot = args.workspaceRoot ? path.resolve(args.workspaceRoot) : null;
   if (!workspaceRoot) {
@@ -115,20 +134,29 @@ export function collectMaterialInjection(args: {
   const manifestPath = resolveMaterialManifestPath(workspaceRoot);
   const previousManifest = loadMaterialManifest(manifestPath);
   const scannedImages = scanMaterialImages(materialsDirectory);
+  const sessionId = args.sessionId ?? null;
   if (scannedImages.length === 0) {
     return {
       images: [],
       indexLines: [],
       materialsDirectoryPresent: true,
       scannedImageCount: 0,
-      nextManifest: buildNextManifest(previousManifest, []),
+      nextManifest: buildNextManifest(previousManifest, [], [], sessionId),
       manifestPath,
     };
   }
 
   const changedImages = scannedImages.filter((image) => {
     const fingerprint = previousManifest.files[image.relativePath];
-    return !fingerprint || fingerprint.size !== image.sizeBytes || fingerprint.mtimeMs !== image.mtimeMs;
+    if (!fingerprint) {
+      return true;
+    }
+    if (fingerprint.size !== image.sizeBytes || fingerprint.mtimeMs !== image.mtimeMs) {
+      return true;
+    }
+    // Per-session delivery: attach once per session even when the file is unchanged.
+    // Without a session id we keep the legacy global incremental behaviour.
+    return sessionId !== null && !(fingerprint.deliveredSessionIds ?? []).includes(sessionId);
 
   });
 
@@ -143,7 +171,7 @@ export function collectMaterialInjection(args: {
     indexLines,
     materialsDirectoryPresent: true,
     scannedImageCount: scannedImages.length,
-    nextManifest: buildNextManifest(previousManifest, selectedImages, scannedImages),
+    nextManifest: buildNextManifest(previousManifest, selectedImages, scannedImages, sessionId),
     manifestPath,
   };
 }
@@ -221,9 +249,10 @@ function buildNextManifest(
   previousManifest: MaterialManifest,
   selectedImages: readonly MaterialImageRef[],
   scannedImages: readonly MaterialImageRef[] = [],
+  sessionId: string | null = null,
 ): MaterialManifest | null {
   const validPaths = new Set(scannedImages.map((image) => image.relativePath));
-  const files: Record<string, { size: number; mtimeMs: number }> = {};
+  const files: Record<string, MaterialManifestEntry> = {};
 
   // 保留仍然存在且未被本轮选中的历史指纹（清理已删除文件）。
   for (const [relativePath, entry] of Object.entries(previousManifest.files)) {
@@ -234,7 +263,7 @@ function buildNextManifest(
 
   // 记录本轮实际注入的图片指纹。
   for (const image of selectedImages) {
-    files[image.relativePath] = { size: image.sizeBytes, mtimeMs: image.mtimeMs };
+    files[image.relativePath] = buildManifestEntry(previousManifest.files[image.relativePath], image, sessionId);
   }
 
   const sortedFiles = sortRecord(files);
@@ -242,7 +271,27 @@ function buildNextManifest(
   return isSameManifest(previousManifest, nextManifest) ? null : nextManifest;
 }
 
-function sortRecord(record: Record<string, { size: number; mtimeMs: number }>): Record<string, { size: number; mtimeMs: number }> {
+function buildManifestEntry(
+  previous: MaterialManifestEntry | undefined,
+  image: MaterialImageRef,
+  sessionId: string | null,
+): MaterialManifestEntry {
+  const deliveredSessionIds =
+    previous !== undefined && previous.size === image.sizeBytes && previous.mtimeMs === image.mtimeMs
+      ? [...(previous.deliveredSessionIds ?? [])]
+      : [];
+  if (sessionId !== null && !deliveredSessionIds.includes(sessionId)) {
+    deliveredSessionIds.push(sessionId);
+  }
+  const keptSessionIds = deliveredSessionIds.slice(-MAX_DELIVERED_SESSION_IDS);
+  return {
+    size: image.sizeBytes,
+    mtimeMs: image.mtimeMs,
+    ...(keptSessionIds.length > 0 ? { deliveredSessionIds: keptSessionIds } : {}),
+  };
+}
+
+function sortRecord(record: Record<string, MaterialManifestEntry>): Record<string, MaterialManifestEntry> {
   const sorted: Record<string, { size: number; mtimeMs: number }> = {};
   for (const key of Object.keys(record).sort((a, b) => a.localeCompare(b))) {
     sorted[key] = record[key];

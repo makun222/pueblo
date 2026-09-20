@@ -105,7 +105,7 @@ export function createLoopCommand(deps: LoopCommandDependencies): CommandHandler
     // Build a RunRoundFn that delegates to AgentTaskRunner.
     // Signature: (config, prevResult, signal) => Promise<{output; tokenUsage}>
     // Resolve context once before the loop (not inside each round)
-    const resolved = await contextResolver.resolve({ activeSessionId: session.id, cwd, workspace: cwd });
+    const resolved = await contextResolver.resolve({ activeSessionId: session.id, cwd, workspace: cwd, commitMaterials: true });
 
     const runRound: RunRoundFn = async (config, _prevResult, _signal) => {
 

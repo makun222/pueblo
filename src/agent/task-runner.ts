@@ -2,6 +2,7 @@ import { AgentTaskRepository } from './task-repository';
 import type { AgentTask } from '../shared/schema';
 import { buildCamelSystemMessages } from './camel/camel-prompt-builder';
 import { buildLegacyProviderMessages, buildProviderMessages } from './task-message-builder';
+import { commitMaterialInjection } from './material-injector';
 import {
   getToolExecutionPolicy,
   type ProviderToolArgs,
@@ -18,7 +19,7 @@ import {
 import { ProviderError, ProviderInvalidToolArgumentsError, ProviderUnknownToolError } from '../providers/provider-errors';
 import { ProviderRegistry } from '../providers/provider-registry';
 import { SessionRepository } from '../sessions/session-repository';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { InputAttachmentManifest, PromptAsset } from '../shared/schema';
 import { withSourceAttribution } from '../shared/result';
 import { ToolService } from '../tools/tool-service';
@@ -140,9 +141,84 @@ interface AgentStepTraceEntry {
   readonly toolCallId?: string;
 }
 
+export interface ModelMessageImageTraceEntry {
+  /** Local provenance label when known (workspace-relative path or file name). */
+  readonly sourcePath?: string;
+  readonly mimeType?: string;
+  /** Decoded image size in bytes (0 for non data-URL sources). */
+  readonly bytes: number;
+  /** First 8 hex chars of the image sha256; a stable, cheap image identity. */
+  readonly sha256Prefix: string;
+}
+
+export interface ModelMessageTraceMessage {
+  readonly role: ProviderMessage['role'];
+  readonly content: string;
+  readonly toolCallId?: string;
+  readonly toolName?: ProviderToolName;
+  readonly toolArgs?: ProviderToolArgs;
+  /** Number of image parts actually attached to this message (0 when none). */
+  readonly imageCount: number;
+  /** Per-image fingerprints for observability; never contains base64 payloads. */
+  readonly images?: readonly ModelMessageImageTraceEntry[];
+}
+
 interface ModelMessageTraceEntry {
   readonly stepNumber: number;
-  readonly messages: ProviderMessage[];
+  readonly messages: ModelMessageTraceMessage[];
+}
+
+const imageTraceCache = new WeakMap<ProviderImagePart, ModelMessageImageTraceEntry>();
+
+function describeImagePart(part: ProviderImagePart): ModelMessageImageTraceEntry {
+  const cached = imageTraceCache.get(part);
+  if (cached) {
+    return cached;
+  }
+  const entry = computeImagePartTrace(part);
+  imageTraceCache.set(part, entry);
+  return entry;
+}
+
+function computeImagePartTrace(part: ProviderImagePart): ModelMessageImageTraceEntry {
+  const match = /^data:([^;,]*)?(;base64)?,([\s\S]*)$/.exec(part.dataUrl);
+  let bytes: Buffer;
+  let mimeType = part.mimeType;
+  if (!match) {
+    bytes = Buffer.from(part.dataUrl, 'utf8');
+  } else if (match[2] === ';base64') {
+    bytes = Buffer.from(match[3] ?? '', 'base64');
+    mimeType = mimeType ?? (match[1] || undefined);
+  } else {
+    try {
+      bytes = Buffer.from(decodeURIComponent(match[3] ?? ''), 'utf8');
+    } catch {
+      bytes = Buffer.from(part.dataUrl, 'utf8');
+    }
+    mimeType = mimeType ?? (match[1] || undefined);
+  }
+  return {
+    ...(part.sourcePath ? { sourcePath: part.sourcePath } : {}),
+    ...(mimeType ? { mimeType } : {}),
+    bytes: bytes.byteLength,
+    sha256Prefix: createHash('sha256').update(bytes).digest('hex').slice(0, 8),
+  };
+}
+
+/** Build a base64-free, image-aware trace projection of the exact request messages. */
+export function summarizeTraceMessages(messages: readonly ProviderMessage[]): ModelMessageTraceMessage[] {
+  return messages.map((message) => {
+    const imageParts = message.role === 'user' ? message.imageParts ?? [] : [];
+    return {
+      role: message.role,
+      content: message.content,
+      toolCallId: message.toolCallId,
+      toolName: message.toolName,
+      toolArgs: message.toolArgs,
+      imageCount: imageParts.length,
+      ...(imageParts.length > 0 ? { images: imageParts.map(describeImagePart) } : {}),
+    };
+  });
 }
 
 export class AgentTaskRunner {
@@ -179,6 +255,7 @@ export class AgentTaskRunner {
     this.providerRegistry.ensureModel(input.providerId, input.modelId);
     const adapter = this.providerRegistry.getAdapter(input.providerId);
     const executionMessages = this.buildExecutionMessages(input);
+    this.commitPendingMaterialInjection(input);
     const availableTools = this.toolService?.describeTools() ?? [];
     let task = this.repository.create({
       goal: input.goal,
@@ -486,13 +563,7 @@ export class AgentTaskRunner {
           const _summary = `isAllowALL 已设置为 ${_newVal}`;
           args.modelMessageTrace.push({
             stepNumber: 1,
-            messages: [{
-              role: 'system',
-              content: _summary,
-              toolCallId: undefined,
-              toolName: undefined,
-              toolArgs: undefined,
-            }],
+            messages: summarizeTraceMessages([{ role: 'system', content: _summary }]),
           });
           return { outputSummary: _summary };
         }
@@ -502,13 +573,7 @@ export class AgentTaskRunner {
     // Log turn-start context (step 0) for diagnostic analysis
     args.modelMessageTrace.push({
       stepNumber: 0,
-      messages: messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        toolArgs: message.toolArgs,
-      })),
+      messages: summarizeTraceMessages(messages),
     });
 
     for (let stepIndex = 0; stepIndex < this.maxSteps; stepIndex += 1) {
@@ -516,13 +581,7 @@ export class AgentTaskRunner {
       const stepMessages = prepareMessagesForModel(messages);
       args.modelMessageTrace.push({
         stepNumber: stepIndex + 1,
-        messages: stepMessages.map((message) => ({
-          role: message.role,
-          content: message.content,
-          toolCallId: message.toolCallId,
-          toolName: message.toolName,
-          toolArgs: message.toolArgs,
-        })),
+        messages: summarizeTraceMessages(stepMessages),
       });
 
       let result: ProviderStepResult;
@@ -799,13 +858,7 @@ export class AgentTaskRunner {
     const stepMessages = prepareMessagesForModel(recoveryMessages);
     args.modelMessageTrace.push({
       stepNumber: args.stepNumber,
-      messages: stepMessages.map((message) => ({
-        role: message.role,
-        content: message.content,
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        toolArgs: message.toolArgs,
-      })),
+      messages: summarizeTraceMessages(stepMessages),
     });
 
     let streamedStepText = '';
@@ -871,13 +924,7 @@ export class AgentTaskRunner {
     const stepMessages = prepareMessagesForModel(handoffMessages);
     args.modelMessageTrace.push({
       stepNumber: args.stepNumber,
-      messages: stepMessages.map((message) => ({
-        role: message.role,
-        content: message.content,
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        toolArgs: message.toolArgs,
-      })),
+      messages: summarizeTraceMessages(stepMessages),
     });
 
     try {
@@ -939,13 +986,7 @@ export class AgentTaskRunner {
     const stepMessages = prepareMessagesForModel(clarificationMessages);//
     args.modelMessageTrace.push({
       stepNumber: args.stepNumber,
-      messages: stepMessages.map((message) => ({
-        role: message.role,
-        content: message.content,
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        toolArgs: message.toolArgs,
-      })),
+      messages: summarizeTraceMessages(stepMessages),
     });
 
     try {
@@ -1474,6 +1515,19 @@ export class AgentTaskRunner {
           toolName: (result as any).toolName,
           args: (result as any).args,
         };
+    }
+  }
+
+  /**
+   * P0: commit the planned material injection only once the request messages are
+   * actually built. Reaching this point means the images were attached to the user
+   * message about to be sent; a failure before it leaves the manifest untouched so
+   * the next turn can retry the delivery.
+   */
+  private commitPendingMaterialInjection(input: RunAgentTaskInput): void {
+    const plan = input.taskContext?.materialCommit;
+    if (plan && plan.images.length > 0) {
+      commitMaterialInjection(plan);
     }
   }
 

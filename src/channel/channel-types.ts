@@ -123,14 +123,139 @@ export type ChannelAdapterFactory = (config: ChannelConfig) => ChannelAdapter;
 
 // ─── Session Mapping ──────────────────────────────────────────────────────
 
-/** Mapping from an external conversation to a pueblo session id */
+/**
+ * Mapping from an external conversation to a pueblo session id, plus the
+ * channel-side selection state (which agent / session the conversation is on).
+ */
 export interface ChannelSessionMapping {
   /** "<channelId>::<externalConversationId>" */
   key: string;
   channelId: string;
   externalConversationId: string;
+  /** Session created for / first used by this conversation */
   sessionId: string;
+  /** Agent instance the conversation is currently bound to (null = runtime default) */
+  agentInstanceId?: string | null;
+  /** Session the conversation is currently talking to (falls back to sessionId) */
+  selectedSessionId?: string | null;
   createdAt: number;
+  updatedAt?: number;
+}
+
+// ─── Channel Control Surface ──────────────────────────────────────────────
+// Channels are a "window" onto the CLI runtime: selecting an agent/session
+// from a channel mutates the same runtime selection the CLI uses.
+
+export interface ChannelAgentOption {
+  /** Agent instance id */
+  id: string;
+  profileId: string;
+  /** Display name (instance/profile name) */
+  name: string;
+  isActive?: boolean;
+}
+
+/** Result of selecting an agent: the instance plus the session it landed on */
+export interface ChannelAgentSelection {
+  agent: ChannelAgentOption;
+  session: ChannelSessionOption | null;
+}
+
+export interface ChannelSessionOption {
+  id: string;
+  title: string;
+  agentInstanceId: string | null;
+  status: 'active' | 'archived' | 'deleted';
+  updatedAt: string;
+}
+
+export interface ChannelSessionStatus {
+  sessionId: string;
+  title?: string | null;
+  agentInstanceId?: string | null;
+  sessionStatus?: 'active' | 'archived' | 'deleted' | null;
+  /** Latest AgentTask status for the session, null when no task ran yet */
+  taskStatus: 'pending' | 'running' | 'completed' | 'failed' | null;
+  goal?: string | null;
+  outputSummary?: string | null;
+  updatedAt?: string | null;
+}
+
+// ─── Tool Approval Surface ────────────────────────────────────────────────
+// While a turn is running the host may pause on a tool-approval batch. The
+// batch is surfaced to every terminal bound to the session (desktop UI + all
+// Feishu conversations), and either side may answer it (first answer wins).
+
+/** One pending tool-approval request as seen by a channel command. */
+export interface ChannelApprovalRequest {
+  /** Request/toolCall id used to answer this specific request. */
+  id: string;
+  toolName: string;
+  /** Coarse category, mirrors the desktop UI badge (command/file-edit/other). */
+  kind: string;
+  title: string;
+  summary: string;
+}
+
+/** Snapshot of the active tool-approval batch, if any. */
+export interface ChannelApprovalPrompt {
+  batchId: string;
+  /** Session the batch belongs to (the channel window's active session). */
+  sessionId: string | null;
+  requests: ChannelApprovalRequest[];
+}
+
+export type ChannelApprovalDecision = 'allow' | 'allow-all' | 'deny';
+
+export interface ChannelApprovalResult {
+  ok: boolean;
+  decision: ChannelApprovalDecision;
+  /** Request ids this decision applied to. */
+  affectedIds: string[];
+  /** Human-readable confirmation for the channel reply. */
+  message: string;
+}
+
+/**
+ * Host-provided control surface. Implemented by the CLI/Desktop host so a
+ * channel command actually operates the underlying (CLI) runtime.
+ */
+export interface ChannelControl {
+  /**
+   * Optional hook to refresh any host-side snapshot before a control call reads
+   * it. Desktop keeps an async memory snapshot; calling this keeps `/agents`,
+   * `/sessions` and `/status` consistent without making the sync readers async.
+   */
+  refresh?(): Promise<void>;
+  /**
+   * True while the host runtime is busy with a CLI-originated turn.
+   * Channel input must NOT preempt it (dropped for now, queued later).
+   */
+  isRuntimeBusy?(): boolean;
+  listAgents(): ChannelAgentOption[];
+  /** Resolve a reference (number/id/profile name) to an agent instance, creating it when absent. */
+  selectAgent(ref: string): Promise<ChannelAgentSelection>;
+  listSessions(agentInstanceId?: string | null): ChannelSessionOption[];
+  createSession(title: string, agentInstanceId: string | null): Promise<ChannelSessionOption>;
+  selectSession(sessionId: string): Promise<ChannelSessionOption>;
+  /** Read-only snapshot; must not disturb any in-flight task. */
+  getSessionStatus(sessionId: string): ChannelSessionStatus;
+  /** Clear channel binding for the conversation and fall back to defaults. */
+  reset?(): Promise<void>;
+
+  /**
+   * Current tool-approval batch awaiting a decision, or null. Synchronous so
+   * the command router can render `/pending` without extra async plumbing.
+   */
+  pendingApproval?(): ChannelApprovalPrompt | null;
+  /**
+   * Answer the active tool-approval batch. `requestId` selects a single request
+   * (decision 'allow'); omit it to answer the whole batch ('allow-all'/'deny').
+   */
+  respondApproval?(
+    decision: ChannelApprovalDecision,
+    requestId?: string,
+  ): Promise<ChannelApprovalResult>;
 }
 
 /** Persisted session mapping file shape */

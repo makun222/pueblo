@@ -29,6 +29,7 @@ import {
 } from '../agent/task-runner';
 import { InputRouter } from '../commands/input-router';
 import { createAgentCommand } from '../commands/agent-command';
+import type { ChannelAgentOption, ChannelControl, ChannelSessionOption } from '../channel/channel-types';
 import { createModelCommand } from '../commands/model-command';
 import { createProviderCommand } from '../commands/provider-command';
 import { createProviderConfigCommand } from '../commands/provider-config-command';
@@ -203,6 +204,12 @@ export interface CliDependencies {
   readonly setWorkspaceRoot: (workspacePath: string) => Promise<DesktopRuntimeStatus>;
   readonly setProviderSelection: (providerId: string, modelId?: string | null) => Promise<DesktopRuntimeStatus>;
   readonly listAgentSessions: (agentInstanceId: string) => AgentSessionSummary[];
+  readonly listAgentInstances: () => import('../shared/schema').AgentInstance[];
+  readonly readSessionTaskStatus: (sessionId: string) => import('../shared/schema').AgentTaskStatus | null;
+  readonly createSession: (
+    title: string,
+    agentInstanceId: string | null,
+  ) => import('../shared/schema').Session;
   readonly getSession: (sessionId: string) => Session | null;
   readonly listSessionMemories: (sessionId: string) => MemoryRecord[];
   readonly selectSession: (sessionId: string) => Promise<{ runtimeStatus: DesktopRuntimeStatus; session: Session | null }>;
@@ -447,6 +454,8 @@ export function createCliDependencies(
   const database = createSqliteDatabase({ dbPath: config.databasePath });
   const dispatcher = new CommandDispatcher();
   const selectionState = createCommandSelectionState();
+  // 原则 1：channel(IM) 输入不得抢占 CLI runtime。计数在任一 CLI 侧任务执行期间 >0。
+  let runtimeActiveTurns = 0;
   const githubCopilotAuth = resolveGitHubCopilotAuth(currentConfig, { credentialStore });
   const deepSeekAuth = resolveDeepSeekAuth(currentConfig, { credentialStore });
   const providerRegistry = createConfiguredProviderRegistry(currentConfig, { credentialStore });
@@ -702,6 +711,7 @@ export function createCliDependencies(
       puebloWorkingDirectory,
       cwd: currentWorkspace,
       workspace: currentWorkspace,
+      commitMaterials: true,
     });
 
     pepeSupervisor.recordInput(sessionId, normalizedUserInput);
@@ -1489,9 +1499,15 @@ export function createCliDependencies(
     selectionState.modelId = resolved.runtimeStatus.modelId;
   };
 
-  // Submit input handler for RuntimeCoordinator
-  const submitInputHandler = (input: IpcInputEnvelope, signal?: AbortSignal) => {
-    return inputAbortSignalContext.run(signal, () => inputRouter.route(input));
+  // Submit input handler for RuntimeCoordinator (also used by the interactive
+  // CLI loop so channel input can observe "CLI is busy" via runtimeActiveTurns).
+  const submitInputHandler = async (input: IpcInputEnvelope, signal?: AbortSignal) => {
+    runtimeActiveTurns += 1;
+    try {
+      return await inputAbortSignalContext.run(signal, () => inputRouter.route(input));
+    } finally {
+      runtimeActiveTurns -= 1;
+    }
   };
   // Set up channel (IM integration) service
   const channelRegistry = createChannelRegistry({ credentialStore });
@@ -1500,10 +1516,109 @@ export function createCliDependencies(
     const agentId = ensureAgentInstance();
     return (await sessionService.createSession(title, undefined, agentId)).id;
   };
+
+  // 原则 2：channel 只是窗口——以下操作直接作用于 CLI runtime 的同一选择态。
+  const toChannelAgentOption = (instance: { id: string; profileId: string; profileName: string }): ChannelAgentOption => ({
+    id: instance.id,
+    profileId: instance.profileId,
+    name: instance.profileName,
+    isActive: instance.id === activeAgentInstanceId,
+  });
+  const toChannelSessionOption = (session: Session): ChannelSessionOption => ({
+    id: session.id,
+    title: session.title,
+    agentInstanceId: session.agentInstanceId ?? null,
+    status: session.status,
+    updatedAt: session.updatedAt,
+  });
+
+  const channelControl: ChannelControl = {
+    isRuntimeBusy: () => runtimeActiveTurns > 0,
+    listAgents: () => agentInstanceRepository.list().map(toChannelAgentOption),
+    selectAgent: async (ref: string) => {
+      const instances = agentInstanceRepository.list();
+      const byId = instances.find((instance) => instance.id === ref);
+      let instance: { id: string; profileId: string; profileName: string; workspaceRoot: string };
+      if (byId) {
+        instance = agentInstanceService.markActive(byId.id);
+      } else {
+        // 确认点 1：按 profile id/名称选择；实例不存在则创建（复用默认真例）。
+        const profile = agentInstanceService
+          .listProfileTemplates()
+          .find((candidate) => candidate.id === ref || candidate.name.toLowerCase() === ref.toLowerCase());
+        if (!profile) {
+          throw new Error(`未找到 Agent：${ref}`);
+        }
+        instance = agentInstanceService.markActive(
+          agentInstanceService.getOrCreateDefaultAgentInstance(profile.id, currentWorkspace).id,
+        );
+      }
+      activeAgentInstanceId = instance.id;
+      activeAgentProfileId = instance.profileId;
+      adoptAgentInstanceWorkspace(instance);
+      const mostRecent = sessionService.getMostRecentSessionForAgentInstance(instance.id);
+      const session = mostRecent
+        ? sessionService.selectSession(mostRecent.id)
+        : sessionService.createSession(`${instance.profileName} session`, selectionState.modelId, instance.id);
+      await syncSelectionFromSession(session.id);
+      return { agent: toChannelAgentOption(instance), session: toChannelSessionOption(session) };
+    },
+    listSessions: (agentInstanceId) => {
+      const summaries = sessionService.listSessionSummaries();
+      const filtered = agentInstanceId
+        ? summaries.filter((summary) => summary.agentInstanceId === agentInstanceId)
+        : summaries;
+      return filtered
+        .slice()
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+        .map((summary) => ({
+          id: summary.id,
+          title: summary.title,
+          agentInstanceId: summary.agentInstanceId ?? null,
+          status: summary.status,
+          updatedAt: summary.updatedAt,
+        }));
+    },
+    createSession: async (title, agentInstanceId) => {
+      const session = sessionService.createSession(
+        title,
+        selectionState.modelId,
+        agentInstanceId ?? activeAgentInstanceId ?? ensureAgentInstance(),
+      );
+      await syncSelectionFromSession(session.id);
+      return toChannelSessionOption(session);
+    },
+    selectSession: async (sessionId) => {
+      const session = sessionService.selectSession(sessionId);
+      await syncSelectionFromSession(session.id);
+      return toChannelSessionOption(session);
+    },
+    getSessionStatus: (sessionId) => {
+      // 确认点 2：只读快照，不触发/打断任何任务。
+      const session = sessionService.getSession(sessionId);
+      const tasks = taskRepository.listBySession(sessionId);
+      const latest = tasks.length > 0 ? tasks[tasks.length - 1] : null;
+      return {
+        sessionId,
+        title: session?.title ?? null,
+        agentInstanceId: session?.agentInstanceId ?? null,
+        sessionStatus: session?.status ?? null,
+        taskStatus: latest?.status ?? null,
+        goal: latest?.goal ?? null,
+        outputSummary: latest?.outputSummary ?? null,
+        updatedAt: latest?.completedAt ?? latest?.createdAt ?? session?.updatedAt ?? null,
+      };
+    },
+    reset: async () => {
+      await syncSelectionFromSession(currentConfig.defaultSessionId ?? null);
+    },
+  };
+
   const channelService = new ChannelService({
     runtime: createRuntimeCoordinator({ config: currentConfig, submitInput: submitInputHandler }),
     registry: channelRegistry,
     createSession: createSessionForChannel,
+    control: channelControl,
   });
   const setCredential = async (target: string, secret: string): Promise<void> => {
     await credentialStore.writeSecret(target, secret);
@@ -1777,11 +1892,22 @@ export function createCliDependencies(
     dispatcher,
     channelService,
     createSessionForChannel,
+    listAgentInstances: () => agentInstanceRepository.list(),
+    readSessionTaskStatus: (sessionId: string) => taskRepository.listBySession(sessionId).at(-1)?.status ?? null,
+    createSession: (title: string, agentInstanceId: string | null) => {
+      const session = sessionService.createSession(
+        title,
+        selectionState.modelId,
+        agentInstanceId ?? activeAgentInstanceId ?? ensureAgentInstance(),
+      );
+      syncSelectionFromSession(session.id);
+      return session;
+    },
     submitInput(input: string | IpcInputEnvelope, signal?: AbortSignal) {
       const envelope = typeof input === 'string'
         ? createIpcEnvelopeFromText(input, selectionState.sessionId ?? currentConfig.defaultSessionId)
         : input;
-      return inputAbortSignalContext.run(signal, () => inputRouter.route(envelope));
+      return submitInputHandler(envelope, signal);
     },
     async getRuntimeStatus() {
       //const t0 = perfStart('cli.getRuntimeStatus');

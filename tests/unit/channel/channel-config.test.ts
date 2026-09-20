@@ -1,132 +1,96 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadChannelsConfig, saveChannelsConfig, getChannelConfig, upsertChannelConfig, deleteChannelConfig } from '../../../src/channel/channel-config';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Persistence is fs-backed; stub it so CRUD logic is testable in memory.
+vi.mock('node:fs/promises', () => ({ readFile: vi.fn(), writeFile: vi.fn(), mkdir: vi.fn() }));
+vi.mock('node:fs', () => ({ existsSync: vi.fn(() => true) }));
+vi.mock('../../../src/channel/channel-debug-log', () => ({ channelDebugLog: vi.fn() }));
+
+import { readFile, writeFile } from 'node:fs/promises';
+import {
+  loadChannelsConfig,
+  saveChannelsConfig,
+  getChannelConfig,
+  upsertChannelConfig,
+  deleteChannelConfig,
+} from '../../../src/channel/channel-config';
 import type { ChannelConfig } from '../../../src/channel/channel-types';
-import fs from 'node:fs';
-import path from 'node:path';
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-vi.mock('node:fs');
+const mockedReadFile = vi.mocked(readFile);
+const mockedWriteFile = vi.mocked(writeFile);
 
-const mockConfigPath = '/fake/path/channels.json';
-const validConfig: ChannelConfig[] = [
-  {
-    id: 'feishu-1',
-    type: 'feishu' as any,
-    enabled: true,
-    credential: 'cred-abc',
-    endpoint: 'https://open.feishu.cn',
-    appId: 'cli_xxxx',
-    appSecret: 'secret_xxxx',
-    isTest: false,
-  },
-  {
-    id: 'slack-1',
-    type: 'feishu' as any,
-    enabled: false,
-    credential: 'cred-def',
-  },
-];
+function cfg(id: string, over: Partial<ChannelConfig> = {}): ChannelConfig {
+  return { id, kind: 'feishu', name: id, enabled: true, transport: 'long-connection', options: {}, ...over };
+}
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-describe('channel-config', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+function seedStore(channels: ChannelConfig[]): void {
+  mockedReadFile.mockResolvedValue(JSON.stringify({ channels }) as never);
+}
+
+function lastWrittenChannels(): ChannelConfig[] {
+  const call = mockedWriteFile.mock.calls.at(-1)!;
+  const payload = JSON.parse(call[1] as string) as { channels: ChannelConfig[] };
+  return payload.channels;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedWriteFile.mockResolvedValue(undefined as never);
+});
+
+describe('loadChannelsConfig / saveChannelsConfig', () => {
+  it('returns an empty store when the file cannot be read', async () => {
+    mockedReadFile.mockRejectedValue(new Error('ENOENT') as never);
+    const config = await loadChannelsConfig();
+    expect(config.channels).toEqual([]);
   });
 
-  describe('loadChannelsConfig', () => {
-    it('returns parsed config when file exists and is valid JSON', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(validConfig));
+  it('persists only the channels array', async () => {
+    await saveChannelsConfig({ channels: [cfg('a')] });
+    expect(mockedWriteFile).toHaveBeenCalledTimes(1);
+    expect(lastWrittenChannels()).toHaveLength(1);
+  });
+});
 
-      const result = loadChannelsConfig(mockConfigPath);
-      expect(result).toEqual(validConfig);
-    });
-
-    it('returns empty array when file does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const result = loadChannelsConfig(mockConfigPath);
-      expect(result).toEqual([]);
-    });
-
-    it('returns empty array on JSON parse error', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue('{{invalid json}}');
-
-      const result = loadChannelsConfig(mockConfigPath);
-      expect(result).toEqual([]);
-    });
+describe('getChannelConfig', () => {
+  it('finds a channel by id', async () => {
+    seedStore([cfg('a'), cfg('b')]);
+    expect((await getChannelConfig('b'))?.id).toBe('b');
   });
 
-  describe('saveChannelsConfig', () => {
-    it('writes JSON to file', () => {
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {});
+  it('returns null when the channel is absent', async () => {
+    seedStore([cfg('a')]);
+    expect(await getChannelConfig('nope')).toBeNull();
+  });
+});
 
-      saveChannelsConfig(mockConfigPath, validConfig);
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        mockConfigPath,
-        JSON.stringify(validConfig, null, 2),
-        'utf-8',
-      );
-    });
-
-    it('throws on write failure', () => {
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {
-        throw new Error('disk full');
-      });
-
-      expect(() => saveChannelsConfig(mockConfigPath, validConfig)).toThrow('disk full');
-    });
+describe('upsertChannelConfig', () => {
+  it('appends a new channel', async () => {
+    seedStore([cfg('a')]);
+    await upsertChannelConfig(cfg('b'));
+    expect(lastWrittenChannels().map((c) => c.id)).toEqual(['a', 'b']);
   });
 
-  describe('getChannelConfig', () => {
-    it('returns config by id', () => {
-      const result = getChannelConfig(validConfig, 'feishu-1');
-      expect(result).toEqual(validConfig[0]);
-    });
+  it('replaces an existing channel with the same id', async () => {
+    seedStore([cfg('a', { name: 'old' })]);
+    await upsertChannelConfig(cfg('a', { name: 'new', enabled: false }));
 
-    it('returns undefined for unknown id', () => {
-      const result = getChannelConfig(validConfig, 'nonexistent');
-      expect(result).toBeUndefined();
-    });
+    const out = lastWrittenChannels();
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('new');
+    expect(out[0].enabled).toBe(false);
+  });
+});
+
+describe('deleteChannelConfig', () => {
+  it('removes a channel and reports success', async () => {
+    seedStore([cfg('a'), cfg('b')]);
+    await expect(deleteChannelConfig('a')).resolves.toBe(true);
+    expect(lastWrittenChannels().map((c) => c.id)).toEqual(['b']);
   });
 
-  describe('upsertChannelConfig', () => {
-    it('adds a new config when id does not exist', () => {
-      const newConfig: ChannelConfig = {
-        id: 'new-1',
-        type: 'feishu' as any,
-        enabled: true,
-        credential: 'cred-new',
-      };
-      const result = upsertChannelConfig([...validConfig], newConfig);
-      expect(result).toHaveLength(3);
-      expect(result[2]).toEqual(newConfig);
-    });
-
-    it('updates an existing config when id matches', () => {
-      const update: Partial<ChannelConfig> = { enabled: false, endpoint: 'https://new.example.com' };
-      const result = upsertChannelConfig([...validConfig], { id: 'feishu-1', ...update } as ChannelConfig);
-      expect(result).toHaveLength(2);
-      expect(result[0].enabled).toBe(false);
-      expect(result[0].endpoint).toBe('https://new.example.com');
-    });
-  });
-
-  describe('deleteChannelConfig', () => {
-    it('removes config by id', () => {
-      const result = deleteChannelConfig([...validConfig], 'feishu-1');
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('slack-1');
-    });
-
-    it('returns same array when id not found', () => {
-      const result = deleteChannelConfig([...validConfig], 'nonexistent');
-      expect(result).toHaveLength(2);
-    });
+  it('returns false and does not persist when the id is absent', async () => {
+    seedStore([cfg('a')]);
+    await expect(deleteChannelConfig('missing')).resolves.toBe(false);
+    expect(mockedWriteFile).not.toHaveBeenCalled();
   });
 });

@@ -1,220 +1,242 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, afterEach } from 'vitest';
 import { LongConnectionBase, type LongConnectionOptions } from '../../../src/channel/channel-connection';
-import type { ChannelType } from '../../../src/channel/channel-types';
 
 // ---------------------------------------------------------------------------
-// Mock WebSocket
+// Fake WebSocket — satisfies the subset of the `ws` API the base class uses.
 // ---------------------------------------------------------------------------
-type WsEventMap = {
-  open: () => void;
-  message: (data: string) => void;
-  close: (code: number, reason: string) => void;
-  error: (err: Error) => void;
-  ping: () => void;
-  pong: () => void;
-};
+type Handler = (...args: any[]) => void;
 
 class FakeWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+
+  static latest: FakeWebSocket | null = null;
   readonly url: string;
-  readyState: number = WebSocket.CONNECTING;
-  onopen: (() => void) | null = null;
-  onclose: ((e: { code: number; reason: string }) => void) | null = null;
-  onerror: ((e: Error) => void) | null = null;
-  onmessage: ((e: { data: string }) => void) | null = null;
-  listeners = new Map<string, Set<(...args: any[]) => void>>();
+  readyState = FakeWebSocket.CONNECTING;
   closeCalled = false;
-  closeCode = 0;
-  closeReason = '';
+  private listeners = new Map<string, Set<Handler>>();
 
-  constructor(url: string) {
+  constructor(url: string, _options?: unknown) {
     this.url = url;
+    FakeWebSocket.latest = this;
   }
 
-  addEventListener(ev: string, fn: (...args: any[]) => void) {
-    if (!this.listeners.has(ev)) this.listeners.set(ev, new Set());
-    this.listeners.get(ev)!.add(fn);
+  on(event: string, handler: Handler): this {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    this.listeners.get(event)!.add(handler);
+    return this;
   }
 
-  removeEventListener(ev: string, fn: (...args: any[]) => void) {
-    this.listeners.get(ev)?.delete(fn);
+  once(event: string, handler: Handler): this {
+    const wrapped: Handler = (...args) => {
+      this.off(event, wrapped);
+      handler(...args);
+    };
+    return this.on(event, wrapped);
   }
 
-  // Test helpers
-  fakeOpen() {
-    this.readyState = WebSocket.OPEN;
-    this.onopen?.();
-    for (const fn of this.listeners.get('open') ?? []) fn();
+  off(event: string, handler: Handler): this {
+    this.listeners.get(event)?.delete(handler);
+    return this;
   }
 
-  fakeMessage(data: string) {
-    for (const fn of this.listeners.get('message') ?? []) fn(data);
-    this.onmessage?.({ data });
+  send(_data: unknown): void {
+    /* no-op */
   }
 
-  fakeClose(code: number, reason: string) {
-    this.readyState = WebSocket.CLOSED;
-    for (const fn of this.listeners.get('close') ?? []) fn(code, reason);
-    this.onclose?.({ code, reason });
-  }
-
-  fakeError(err: Error) {
-    for (const fn of this.listeners.get('error') ?? []) fn(err);
-    this.onerror?.(err);
-  }
-
-  close(code?: number, reason?: string) {
+  close(): void {
     this.closeCalled = true;
-    this.closeCode = code ?? 1000;
-    this.closeReason = reason ?? '';
-    this.readyState = WebSocket.CLOSED;
+    this.readyState = FakeWebSocket.CLOSED;
+    this.emit('close', 1000, 'normal');
+  }
+
+  private emit(event: string, ...args: unknown[]): void {
+    for (const handler of [...(this.listeners.get(event) ?? [])]) handler(...args);
+  }
+
+  // ---- test drivers ----
+  open(): void {
+    this.readyState = FakeWebSocket.OPEN;
+    this.emit('open');
+  }
+
+  message(data: string): void {
+    this.emit('message', data);
+  }
+
+  error(err: Error): void {
+    this.emit('error', err);
+  }
+
+  serverClose(code: number, reason: string): void {
+    this.readyState = FakeWebSocket.CLOSED;
+    this.emit('close', code, reason);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Helper: minimal concrete subclass for testing
+// Concrete connection under test
 // ---------------------------------------------------------------------------
 class TestConnection extends LongConnectionBase {
-  outgoing: string[] = [];
-  protected override async handshake(): Promise<void> { /* no-op */ }
-  protected override onIncoming(data: string): void { /* no-op */ }
-  protected override onOutgoing(data: string): void { this.outgoing.push(data); }
-  get wsFake(): FakeWebSocket | null { return (this as any).ws as FakeWebSocket | null; }
+  handshakeCalls = 0;
+  heartbeatCalls = 0;
+  frames: string[] = [];
+  hangHandshake = false;
+  reconnectPolicy: (code?: number) => boolean = () => true;
+
+  constructor(over: Partial<LongConnectionOptions> = {}) {
+    super({
+      channelId: 'test-channel',
+      kind: 'feishu',
+      webSocketCtor: FakeWebSocket as never,
+      startupTimeoutMs: 50,
+      pingIntervalMs: 1000,
+      ...over,
+    });
+  }
+
+  protected buildUrl(): Promise<string> {
+    return Promise.resolve('ws://localhost/test');
+  }
+
+  protected startHandshake(): Promise<void> {
+    this.handshakeCalls++;
+    return this.hangHandshake ? new Promise<void>(() => undefined) : Promise.resolve();
+  }
+
+  protected sendHeartbeat(): void {
+    this.heartbeatCalls++;
+  }
+
+  protected handleFrame(data: string): void {
+    this.frames.push(data);
+  }
+
+  protected shouldReconnect(code?: number): boolean {
+    return this.reconnectPolicy(code);
+  }
+
+  setErrorHandler(handler: (err: Error) => void): void {
+    this.onError = handler;
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function bringUp(conn: TestConnection): Promise<FakeWebSocket> {
+  const pending = conn.connect();
+  await flushMicrotasks();
+  const socket = FakeWebSocket.latest!;
+  socket.open();
+  await pending;
+  return socket;
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
 describe('LongConnectionBase', () => {
-  const fakeUrl = 'ws://localhost:9999/test';
-  let conn: TestConnection;
-  let origWs: any;
+  it('connect opens the socket, runs the handshake and reports connected', async () => {
+    const conn = new TestConnection();
+    const socket = await bringUp(conn);
+    expect(socket).toBeInstanceOf(FakeWebSocket);
 
-  beforeEach(() => {
-    origWs = (globalThis as any).WebSocket;
-    (globalThis as any).WebSocket = FakeWebSocket as any;
-    conn = new TestConnection(fakeUrl, 'test-channel' as ChannelType);
-  });
-
-  afterEach(async () => {
+    expect(conn.handshakeCalls).toBe(1);
+    expect(conn.state.status).toBe('connected');
     await conn.dispose();
-    (globalThis as any).WebSocket = origWs;
   });
 
-  // ---- connect / disconnect ----
-  it('connects and sets readyState = CONNECTED', async () => {
-    const promise = conn.connect();
-    const ws = conn.wsFake!;
-    ws.fakeOpen();
-    await promise;
-    expect(conn.readyState).toBe('CONNECTED');
-  });
+  it('routes inbound message frames to handleFrame', async () => {
+    const conn = new TestConnection();
+    const socket = await bringUp(conn);
 
-  it('dispose closes the socket and sets readyState = DISCONNECTED', async () => {
-    await conn.connect();
-    const ws = conn.wsFake!;
-    ws.fakeOpen();
+    socket.message('payload-1');
+    socket.message('payload-2');
 
+    expect(conn.frames).toEqual(['payload-1', 'payload-2']);
     await conn.dispose();
-    expect(conn.readyState).toBe('DISCONNECTED');
-    expect(ws.closeCalled).toBe(true);
   });
 
-  it('isConnected returns true only when CONNECTED', async () => {
-    expect(conn.isConnected).toBe(false);
-    await conn.connect();
-    conn.wsFake!.fakeOpen();
-    expect(conn.isConnected).toBe(true);
+  it('forwards socket errors to the error handler', async () => {
+    const conn = new TestConnection();
+    const onError = vi.fn();
+    conn.setErrorHandler(onError);
+    const socket = await bringUp(conn);
+
+    const err = new Error('socket exploded');
+    socket.error(err);
+
+    expect(onError).toHaveBeenCalledWith(err);
     await conn.dispose();
-    expect(conn.isConnected).toBe(false);
   });
 
-  // ---- send ----
-  it('send queues outgoing data and calls onOutgoing', async () => {
-    await conn.connect();
-    conn.wsFake!.fakeOpen();
-    conn.send('hello');
-    expect(conn.outgoing).toContain('hello');
+  it('fires the heartbeat on the ping interval while connected', async () => {
+    vi.useFakeTimers();
+    const conn = new TestConnection({ pingIntervalMs: 100 });
+    const socket = await bringUp(conn);
+
+    vi.advanceTimersByTime(100);
+    expect(conn.heartbeatCalls).toBeGreaterThanOrEqual(1);
+
+    conn.dispose();
   });
 
-  it('send before connect throws', () => {
-    expect(() => conn.send('data')).toThrow(/not connected/i);
-  });
+  it('schedules a reconnect after an unexpected close', async () => {
+    vi.useFakeTimers();
+    const conn = new TestConnection();
+    const socket = await bringUp(conn);
 
-  // ---- pending timeout ----
-  it('rejects connect on pending timeout', async () => {
-    const fastTimeout = new TestConnection(fakeUrl, 'test-channel' as ChannelType, {
-      pendingTimeoutMs: 10,
-    });
-    await expect(fastTimeout.connect()).rejects.toThrow(/timed?out/i);
-    await fastTimeout.dispose();
-  });
+    const reconnectSpy = vi.spyOn(conn, 'connect');
+    socket.serverClose(1006, 'connection lost');
+    expect(conn.state.status).toBe('disconnected');
 
-  // ---- reconnect (exponential backoff) ----
-  it('reconnects after close when auto-reconnect is enabled', async () => {
-    const autoConn = new TestConnection(fakeUrl, 'test-channel' as ChannelType, {
-      autoReconnect: true,
-      baseDelayMs: 10,
-      maxDelayMs: 50,
-    });
-    // Stub setTimeout so reconnection fires synchronously in test
-    const origSetTimeout = globalThis.setTimeout;
-    const timerCalls: Array<() => void> = [];
-    globalThis.setTimeout = ((fn: () => void, _ms: number) => {
-      timerCalls.push(fn);
-      return 0 as any;
-    }) as any;
-
-    await autoConn.connect();
-    (autoConn as any).ws.fakeOpen();
-
-    // Simulate unexpected close
-    const reconnectSpy = vi.spyOn(autoConn as any, 'reconnect');
-    (autoConn as any).ws.fakeClose(1006, 'connection lost');
-
-    // Execute scheduled reconnect
-    for (const cb of timerCalls) cb();
-
+    vi.advanceTimersByTime(60000);
     expect(reconnectSpy).toHaveBeenCalled();
 
-    globalThis.setTimeout = origSetTimeout;
-    await autoConn.dispose();
+    conn.dispose();
   });
 
-  it('does not reconnect when autoReconnect is false', async () => {
-    await conn.connect();
-    conn.wsFake!.fakeOpen();
+  it('does not reconnect when the policy declines', async () => {
+    vi.useFakeTimers();
+    const conn = new TestConnection();
+    conn.reconnectPolicy = () => false;
+    const socket = await bringUp(conn);
 
-    const reconnectSpy = vi.spyOn(conn as any, 'reconnect');
-    conn.wsFake!.fakeClose(1000, 'normal');
+    const reconnectSpy = vi.spyOn(conn, 'connect');
+    socket.serverClose(1000, 'normal');
+    vi.advanceTimersByTime(60000);
 
     expect(reconnectSpy).not.toHaveBeenCalled();
+    conn.dispose();
   });
 
-  // ---- heartbeat ----
-  it('sends ping frames during heartbeat interval', async () => {
-    vi.useFakeTimers();
-    const hbConn = new TestConnection(fakeUrl, 'test-channel' as ChannelType, {
-      heartbeatIntervalMs: 100,
-    });
-    await hbConn.connect();
-    (hbConn as any).ws.fakeOpen();
+  it('rejects with a startup timeout and closes the socket when the handshake hangs', async () => {
+    const conn = new TestConnection({ startupTimeoutMs: 10 });
+    conn.hangHandshake = true;
+    const pending = conn.connect();
+    await flushMicrotasks();
+    const socket = FakeWebSocket.latest!;
+    socket.open();
+    await flushMicrotasks();
 
-    const sendSpy = vi.spyOn(hbConn as any, 'sendRaw');
-    vi.advanceTimersByTime(100);
-    expect(sendSpy).toHaveBeenCalledWith(expect.stringMatching(/ping/i));
-
-    vi.useRealTimers();
-    await hbConn.dispose();
+    await expect(pending).rejects.toThrow(/timed out/i);
+    expect(socket.closeCalled).toBe(true);
   });
 
-  // ---- error handling ----
-  it('handles WebSocket error by closing', async () => {
-    await conn.connect();
-    conn.wsFake!.fakeOpen();
-    const closeSpy = vi.spyOn(conn as any, 'close');
+  it('marks the connection permanently disposed and refuses further connects', async () => {
+    const conn = new TestConnection();
+    const socket = await bringUp(conn);
 
-    conn.wsFake!.fakeError(new Error('test error'));
+    conn.dispose();
 
-    expect(closeSpy).toHaveBeenCalled();
+    expect(conn.disposed).toBe(true);
+    await expect(conn.connect()).rejects.toThrow(/disposed/i);
   });
 });

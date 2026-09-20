@@ -179,6 +179,23 @@ class DesktopTabRuntime {
     return this.cli.listAgentProfiles();
   }
 
+  async listAgentInstances() {
+    await this.ready();
+    return this.cli.listAgentInstances();
+  }
+
+  async readSessionTaskStatus(sessionId: string) {
+    await this.ready();
+    return this.cli.readSessionTaskStatus(sessionId);
+  }
+
+  async createSession(title: string, agentInstanceId: string | null) {
+    await this.ready();
+    const session = this.cli.createSession(title, agentInstanceId);
+    await this.refreshRuntimeStatus();
+    return session;
+  }
+
   async getRuntimeStatus(): Promise<DesktopRuntimeStatus> {
     await this.ready();
     return this.refreshRuntimeStatus();
@@ -199,6 +216,15 @@ class DesktopTabRuntime {
 
   getToolApprovalState(): DesktopToolApprovalState {
     return resolveToolApprovalState(this.activeToolApprovalBatch, this.activeFileReview);
+  }
+
+  /**
+   * Last known active session, from the cached runtime status. Returns without
+   * awaiting `ready()`/CLI resolution so callers that must not yield (the
+   * channel approval fan-out) can read it synchronously.
+   */
+  getCachedActiveSessionId(): string | null {
+    return this.lastRuntimeStatus?.activeSessionId ?? null;
   }
 
   async startAgentSession(profileId: string): Promise<DesktopRuntimeStatus> {
@@ -655,6 +681,19 @@ export class DesktopAgentTabManager {
     return this.getRuntime(this.resolveTabId(tabId)).getToolApprovalState();
   }
 
+  /**
+   * Synchronous counterpart of `getRuntimeStatus(...).activeSessionId`. Never
+   * throws for a missing tab and never yields — safe to call from a
+   * fire-and-forget sync path (channel tool-approval fan-out).
+   */
+  getCachedActiveSessionId(tabId?: string | null): string | null {
+    const resolved = tabId?.trim() || this.legacyTabId;
+    if (!resolved) {
+      return null;
+    }
+    return this.tabs.get(resolved)?.getCachedActiveSessionId() ?? null;
+  }
+
   async listAgentProfiles(): Promise<ReturnType<CliDependencies['listAgentProfiles']>> {
     await this.ready();
     return this.getRuntime(this.resolveTabId(null)).listAgentProfiles();
@@ -675,6 +714,30 @@ export class DesktopAgentTabManager {
   async listAgentSessions(tabId: string | null | undefined, agentInstanceId: string) {
     await this.ready();
     return this.getRuntime(this.resolveTabId(tabId)).listAgentSessions(agentInstanceId);
+  }
+
+  async listAgentInstances(tabId?: string | null | undefined) {
+    await this.ready();
+    return this.getRuntime(this.resolveTabId(tabId)).listAgentInstances();
+  }
+
+  async readSessionTaskStatus(tabId: string | null | undefined, sessionId: string) {
+    await this.ready();
+    return this.getRuntime(this.resolveTabId(tabId)).readSessionTaskStatus(sessionId);
+  }
+
+  async createChannelSession(tabId: string | null | undefined, title: string, agentInstanceId: string | null) {
+    return this.runMutation(async () => {
+      await this.ready();
+      const session = await this.getRuntime(this.resolveTabId(tabId)).createSession(title, agentInstanceId);
+      this.options.onTabsChanged(await this.listTabsUnsafe());
+      return session;
+    });
+  }
+
+  async getTabState(tabId?: string | null | undefined): Promise<DesktopAgentTab> {
+    await this.ready();
+    return this.getRuntime(this.resolveTabId(tabId)).getTabState();
   }
 
   async getSession(tabId: string | null | undefined, sessionId: string) {

@@ -13,15 +13,20 @@ import type {
   ChannelAdapter,
   ChannelConfig,
   ChannelConnectionState,
+  ChannelControl,
   ChannelEventHandler,
+  ChannelSessionMapping,
   InboundMessage,
   OutboundMessage,
 } from './channel-types';
 import { ChannelRegistry } from './channel-registry';
 import {
+  clearChannelBinding,
+  recordChannelSelection,
   recordChannelSession,
-  resolveChannelSessionId,
+  resolveChannelBinding,
 } from './channel-config';
+import { parseChannelCommand, runChannelCommand } from './channel-command-router';
 import { ChannelConnectionError } from './channel-errors';
 import { perfLog } from '../utils/perf-logger';
 import { channelDebugLog } from './channel-debug-log';
@@ -32,7 +37,30 @@ export interface ChannelServiceDependencies {
   readonly registry: ChannelRegistry;
   /** Create a new pueblo session for a fresh external conversation */
   readonly createSession: (channelId: string, message: InboundMessage) => Promise<string>;
+  /**
+   * Host control surface for "/" commands (agent/session selection, status).
+   * Optional: without it channels behave as pure pass-through (legacy).
+   */
+  readonly control?: ChannelControl;
 }
+
+/**
+ * Commands allowed while the CLI runtime is busy — they do NOT preempt the
+ * running turn: read-only views, plus tool-approval responses (which the busy
+ * runtime is actively waiting for). Mutating selection commands and plain text
+ * are still blocked (no preemption).
+ */
+const READ_ONLY_CHANNEL_COMMANDS = new Set([
+  'help',
+  'agents',
+  'sessions',
+  'status',
+  'current',
+  'pending',
+  'approve',
+  'approve-all',
+  'deny',
+]);
 
 interface ActiveChannel {
   config: ChannelConfig;
@@ -146,15 +174,64 @@ export class ChannelService {
 
   // ─── Inbound → submitInput → outbound reply ───────────────────────────
 
-  private async handleInbound(message: InboundMessage, config: ChannelConfig): Promise<void> {
+  /** Public so adapters (and tests) can drive the inbound pipeline directly. */
+  async handleInbound(message: InboundMessage, config: ChannelConfig): Promise<void> {
     channelDebugLog(`[handleInbound] RECV channelId=${message.channelId} kind=${config.kind} senderId=${message.externalConversationId} text="${message.text?.slice(0, 80)}"`);
 
-    let sessionId = await resolveChannelSessionId(message.channelId, message.externalConversationId);
+    // Refresh the host snapshot first so busy/binding reflect the latest state.
+    // Best-effort: a refresh failure must not drop the inbound message.
+    try {
+      await this.deps.control?.refresh?.();
+    } catch (err) {
+      channelLogger.warn(`[handleInbound] control.refresh() failed (continuing):`, err);
+    }
+
+    const binding = await resolveChannelBinding(message.channelId, message.externalConversationId);
+    const busy = this.deps.control?.isRuntimeBusy?.() ?? false;
+
+    // "/" control commands operate the CLI runtime selection without the LLM.
+    const commandInvocation = this.deps.control ? parseChannelCommand(message.text ?? '') : null;
+    if (commandInvocation && this.deps.control) {
+      const readOnly = READ_ONLY_CHANNEL_COMMANDS.has(commandInvocation.command);
+      if (busy && !readOnly) {
+        await this.safeReply(
+          message.channelId,
+          message.externalConversationId,
+          '⏸️ CLI 正在执行任务，channel 不能抢占。请稍后重试，或用 /status 查看进度。',
+        );
+        return;
+      }
+      const outcome = await runChannelCommand(commandInvocation, this.deps.control, { binding });
+      if (outcome.handled) {
+        if (outcome.reset) {
+          await clearChannelBinding(message.channelId, message.externalConversationId);
+        } else if (outcome.selection) {
+          await recordChannelSelection(message.channelId, message.externalConversationId, outcome.selection);
+        }
+        if (outcome.reply) {
+          await this.safeReply(message.channelId, message.externalConversationId, outcome.reply);
+        }
+        return;
+      }
+    }
+
+    // Plain text is a task input for the CLI runtime — never preempt a CLI turn.
+    if (busy) {
+      channelDebugLog('[handleInbound] runtime busy (CLI turn in progress) → dropping channel input');
+      await this.safeReply(
+        message.channelId,
+        message.externalConversationId,
+        '⏸️ CLI 正在执行任务，飞书消息已丢弃（暂不排队）。可发 /status 查看进度。',
+      );
+      return;
+    }
+
+    let sessionId = binding?.selectedSessionId ?? binding?.sessionId ?? null;
     channelDebugLog(`[handleInbound] resolveSession: ${sessionId ?? 'null (will create new)'}`);
 
     if (!sessionId) {
       channelDebugLog(`[handleInbound] creating new session...`);
-      sessionId = await this.deps.createSession(message.channelId, message);
+      sessionId = await this.createSessionForConversation(message, binding);
       channelDebugLog(`[handleInbound] new sessionId=${sessionId}`);
       await recordChannelSession(message.channelId, message.externalConversationId, sessionId);
     }
@@ -188,6 +265,24 @@ export class ChannelService {
         err instanceof Error ? err.message : 'Internal error',
       );
     }
+  }
+
+  /**
+   * Create a session for a fresh conversation. When a channel-side agent is
+   * bound (原则 2：飞书只是窗口), create it under that agent instance so the
+   * conversation continues in the agent the user selected.
+   */
+  private async createSessionForConversation(
+    message: InboundMessage,
+    binding: ChannelSessionMapping | null,
+  ): Promise<string> {
+    const agentInstanceId = binding?.agentInstanceId ?? null;
+    if (this.deps.control && agentInstanceId) {
+      const title = message.text ? `Channel: ${message.text.slice(0, 40)}` : 'Channel session';
+      const session = await this.deps.control.createSession(title, agentInstanceId);
+      return session.id;
+    }
+    return this.deps.createSession(message.channelId, message);
   }
 
   private async safeReply(channelId: string, externalConversationId: string, text: string): Promise<void> {

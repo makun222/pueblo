@@ -1,136 +1,91 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 import { ChannelService } from '../../../src/channel/channel-service';
 import { InMemoryChannelAdapter } from '../../../src/channel/channel-adapter';
-import type { ChannelConfig, ChannelType, InboundMessage } from '../../../src/channel/channel-types';
-import { createChannelRegistry } from '../../../src/channel/channel-registry-factory';
+import { ChannelRegistry } from '../../../src/channel/channel-registry';
+import type { ChannelConfig, OutboundMessage } from '../../../src/channel/channel-types';
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-const mockSubmitInput = vi.fn();
-
-function makeConfig(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
-  return {
-    id: 'test-1',
-    type: 'test-type' as ChannelType,
-    enabled: true,
-    credential: 'cred-1',
-    ...overrides,
-  };
+function makeConfig(over: Partial<ChannelConfig> = {}): ChannelConfig {
+  return { id: 'test-1', kind: 'feishu', name: 'test', enabled: true, transport: 'long-connection', options: {}, ...over };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-describe('ChannelService', () => {
-  let service: ChannelService;
-  let adapter: InMemoryChannelAdapter;
+function makeService() {
+  const registry = new ChannelRegistry();
+  registry.register('feishu', (config) => new InMemoryChannelAdapter(config.id, 'feishu'));
+  const runtime = { submitInput: vi.fn().mockResolvedValue(undefined) };
+  const createSession = vi.fn().mockResolvedValue('session-new');
+  const service = new ChannelService({ runtime: runtime as never, registry, createSession });
+  return { service, registry, runtime, createSession };
+}
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const registry = createChannelRegistry();
-    registry.register('test-type', InMemoryChannelAdapter);
-    service = new ChannelService(registry, mockSubmitInput);
-    adapter = new InMemoryChannelAdapter(makeConfig(), mockSubmitInput);
+describe('ChannelService lifecycle', () => {
+  it('startChannel registers the adapter and reports connected status', async () => {
+    const { service } = makeService();
+
+    await service.startChannel(makeConfig());
+
+    const active = service.getChannel('test-1');
+    expect(active?.adapter).toBeInstanceOf(InMemoryChannelAdapter);
+    expect(service.getStatus()).toHaveLength(1);
+    expect(service.getStatus()[0]).toMatchObject({ channelId: 'test-1', status: 'connected' });
   });
 
-  afterEach(async () => {
-    await service.dispose();
-    await adapter.dispose();
-  });
+  it('restarting the same channel keeps a single active adapter', async () => {
+    const { service } = makeService();
+    await service.startChannel(makeConfig());
+    const first = service.getChannel('test-1')!.adapter;
+    const disconnectSpy = vi.spyOn(first, 'disconnect');
 
-  // ---- registration ----
-  it('registers and retrieves a channel adapter', () => {
-    service.registerChannel(adapter);
-    expect(service.getChannel('test-1')).toBe(adapter);
-  });
+    await service.startChannel(makeConfig());
 
-  it('returns undefined for unknown channel', () => {
-    expect(service.getChannel('nonexistent')).toBeUndefined();
-  });
-
-  it('lists all registered channels', () => {
-    service.registerChannel(adapter);
-    const channels = service.listChannels();
-    expect(channels).toHaveLength(1);
-    expect(channels[0].id).toBe('test-1');
-  });
-
-  // ---- lifecycle ----
-  it('connectChannel delegates to adapter connect', async () => {
-    const connectSpy = vi.spyOn(adapter, 'connect');
-    service.registerChannel(adapter);
-    await service.connectChannel('test-1');
-    expect(connectSpy).toHaveBeenCalledOnce();
-  });
-
-  it('disconnectChannel delegates to adapter disconnect', async () => {
-    const disconnectSpy = vi.spyOn(adapter, 'disconnect');
-    service.registerChannel(adapter);
-    await service.disconnectChannel('test-1');
     expect(disconnectSpy).toHaveBeenCalledOnce();
+    expect(service.getStatus()).toHaveLength(1);
+    expect(service.getChannel('test-1')!.adapter).not.toBe(first);
   });
 
-  it('rejects connect for unregistered channel', async () => {
-    await expect(service.connectChannel('ghost')).rejects.toThrow(/not found/i);
+  it('throws when no factory is registered for the kind', async () => {
+    const registry = new ChannelRegistry();
+    const service = new ChannelService({
+      runtime: { submitInput: vi.fn() } as never,
+      registry,
+      createSession: vi.fn(),
+    });
+
+    await expect(service.startChannel(makeConfig())).rejects.toThrow();
+    expect(service.getStatus()).toHaveLength(0);
   });
 
-  // ---- send ----
-  it('send delegates to adapter send', async () => {
-    const sendSpy = vi.spyOn(adapter, 'send');
-    service.registerChannel(adapter);
-    await service.send('test-1', 'hello');
-    expect(sendSpy).toHaveBeenCalledWith('hello');
-  });
+  it('stopChannel returns false when idle and true after start', async () => {
+    const { service } = makeService();
 
-  it('rejects send for unregistered channel', async () => {
-    await expect(service.send('ghost', 'data')).rejects.toThrow(/not found/i);
-  });
+    await expect(service.stopChannel('test-1')).resolves.toBe(false);
 
-  // ---- dispose ----
-  it('dispose disconnects all channels', async () => {
-    const disposeSpy = vi.spyOn(adapter, 'dispose');
-    service.registerChannel(adapter);
-    await service.dispose();
-    expect(disposeSpy).toHaveBeenCalledOnce();
-    expect(service.listChannels()).toHaveLength(0);
-  });
+    await service.startChannel(makeConfig());
+    await expect(service.stopChannel('test-1')).resolves.toBe(true);
 
-  // ---- adapter error handling ----
-  it('handles adapter disconnect event by removing the channel', async () => {
-    service.registerChannel(adapter);
-    expect(service.getChannel('test-1')).toBe(adapter);
-
-    // Simulate adapter disconnecting
-    adapter.emit('disconnected', 'test-1');
+    expect(service.getStatus()).toHaveLength(0);
     expect(service.getChannel('test-1')).toBeUndefined();
   });
 
-  it('forwards inbound messages from adapter to submitInput', async () => {
-    service.registerChannel(adapter);
+  it('send throws before start and records the message after start', async () => {
+    const { service } = makeService();
+    const outbound: OutboundMessage = { externalConversationId: 'conv-1', text: 'hi' };
 
-    const msg: InboundMessage = {
-      channelId: 'test-1',
-      text: 'hi from channel',
-      from: 'user-1',
-      timestamp: Date.now(),
-    };
-    adapter.emit('message', msg);
+    await expect(service.send('test-1', outbound)).rejects.toThrow();
 
-    expect(mockSubmitInput).toHaveBeenCalledWith(msg.text, expect.any(Object));
+    await service.startChannel(makeConfig());
+    await service.send('test-1', outbound);
+
+    const adapter = service.getChannel('test-1')!.adapter as InMemoryChannelAdapter;
+    expect(adapter.sentMessages).toEqual([outbound]);
   });
 
-  // ---- registration with config ----
-  it('creates adapter from config and registers it', () => {
-    const config = makeConfig();
-    const created = service.registerChannelFromConfig(config);
-    expect(created).toBeDefined();
-    expect(created.id).toBe('test-1');
-    expect(service.getChannel('test-1')).toBe(created);
-  });
+  it('dispose stops every active channel', async () => {
+    const { service } = makeService();
+    await service.startChannel(makeConfig());
 
-  it('throws on register with unknown type', () => {
-    const config = makeConfig({ type: 'unknown-type' as ChannelType });
-    expect(() => service.registerChannelFromConfig(config)).toThrow(/no adapter/i);
+    service.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(service.getStatus()).toHaveLength(0);
   });
 });

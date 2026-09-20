@@ -369,6 +369,11 @@ export interface ProviderImagePart {
   readonly mimeType?: string;
   /** 传给上游 vision 请求的 detail 策略：low=低分辨率 / original=原图。 */
   readonly detail?: 'low' | 'original';
+  /**
+   * Optional local provenance label (e.g. `materials/paper-01.png` or the uploaded
+   * file name). Used for local tracing only and never sent to the provider.
+   */
+  readonly sourcePath?: string;
 }
 
 export interface ProviderMessage {

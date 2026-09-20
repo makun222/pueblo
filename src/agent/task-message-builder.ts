@@ -185,6 +185,7 @@ function buildAttachmentImageParts(taskContext: TaskContext): ProviderImagePart[
     parts.push({
       dataUrl: `data:${attachment.source.mimeType};base64,${buffer.toString('base64')}`,
       mimeType: attachment.source.mimeType,
+      sourcePath: attachment.source.fileName,
     });
   }
 
@@ -195,6 +196,7 @@ function buildAttachmentImageParts(taskContext: TaskContext): ProviderImagePart[
       parts.push({
         dataUrl: `data:${material.mimeType};base64,${buffer.toString('base64')}`,
         mimeType: material.mimeType,
+        sourcePath: material.relativePath,
       });
     } catch {
       // 扫描与读取之间存在竞态（文件被删除/移动）：跳过该图，不阻断整轮请求。

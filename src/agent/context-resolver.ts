@@ -36,7 +36,7 @@ const BUDGET_TRUNCATION_TAIL_RATIO = 0.9;
 const PROTECTED_PRIORITY_RANK = 2;
 const DETERMINISTIC_RECALL_SKIP_RATIO = 0.9;
 const DETERMINISTIC_RECALL_MEMORY_KINDS: MemoryRecord['memoryKind'][] = ['turn', 'summary', 'knowledge', 'workflow'];
-import { collectMaterialInjection, commitMaterialInjection } from './material-injector';
+import { collectMaterialInjection } from './material-injector';
 import { createTaskContext, formatSessionMessageForContext, type TaskContext } from './task-context';
 import { PuebloProfileLoader } from './pueblo-profile';
 
@@ -46,6 +46,13 @@ export interface ResolveContextInput {
   readonly explicitModelId?: string | null;
   readonly pendingUserInput?: string;
   readonly uploadedAttachments?: InputAttachmentManifest[];
+  /**
+   * P0: when true, the material-injection plan is attached to the returned task
+   * context for the runner to commit once the request messages are built.
+   * Defaults to false so read-only callers (status / pre-flight) never mutate
+   * `.pueblo/material-manifest.json`.
+   */
+  readonly commitMaterials?: boolean;
    readonly skillId?: string | null;
   readonly puebloWorkingDirectory?: string | null;
   readonly cwd?: string;
@@ -392,10 +399,12 @@ export class ContextResolver {
     const materialPlan = collectMaterialInjection({
       workspaceRoot: input.workspace ?? input.cwd ?? null,
       supportsVision: selection.model?.supportsVision === true,
+      sessionId: session?.id ?? input.activeSessionId ?? null,
     });
-    if (materialPlan.images.length > 0) {
-      commitMaterialInjection(materialPlan);
-    }
+    // P0: material injection is only *planned* here. The manifest commit happens in
+    // AgentTaskRunner right after the request messages are built, so an image is
+    // never recorded as delivered when it was not actually attached and sent.
+    const materialCommit = input.commitMaterials === true ? materialPlan : null;
     const materialIndexText = materialPlan.indexLines.length > 0 ? materialPlan.indexLines.join('\n') : null;
     const taskContext = createTaskContext({
       config: this.dependencies.config,
@@ -420,6 +429,7 @@ export class ContextResolver {
       uploadedAttachments,
       materialImages: [...materialPlan.images],
       materialIndexText,
+      materialCommit,
       backgroundSummaryStatus,
     });
 

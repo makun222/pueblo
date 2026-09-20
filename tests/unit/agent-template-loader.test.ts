@@ -100,6 +100,37 @@ describe('agent template loader', () => {
     expect(loader.get('code-master')?.description).toBe('Focused on shipping code changes and evolving its own runtime profile file.');
   });
 
+  it('parses the avatar field from both english and localized profile keys', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-avatar-'));
+    tempDirs.push(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"test"}');
+    const seedProfilesDir = resolveSeedAgentProfilesDir(tempDir);
+
+    const englishDir = path.join(seedProfilesDir, 'architect');
+    fs.mkdirSync(englishDir, { recursive: true });
+    fs.writeFileSync(path.join(englishDir, 'agent.md'), [
+      '# Profile',
+      '- id: architect',
+      '- name: Architect',
+      '- description: Focused on structure.',
+      '- avatar: 🏛️',
+    ].join('\n'));
+
+    const localizedDir = path.join(seedProfilesDir, 'code-master');
+    fs.mkdirSync(localizedDir, { recursive: true });
+    fs.writeFileSync(path.join(localizedDir, 'agent.md'), [
+      '# Profile',
+      '- 标识: code-master',
+      '- 姓名: Code Master',
+      '- 描述: 重视评估与验证的代码大师.',
+      '- 头像: 💻',
+    ].join('\n'));
+
+    const loader = new AgentTemplateLoader(tempDir);
+    expect(loader.get('architect')?.avatar).toBe('🏛️');
+    expect(loader.get('code-master')?.avatar).toBe('💻');
+  });
+
   it('preserves runtime template edits when the seed template changes later', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pueblo-agent-templates-'));
     tempDirs.push(tempDir);

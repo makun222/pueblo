@@ -10,7 +10,7 @@
   --surface-panel-strong: rgba(251, 253, 255, 0.92);
   --surface-overlay: rgba(238, 243, 249, 0.78);
   --surface-dark: #0f1724;
-  --line-strong: #000;
+  --line-strong: rgba(var(--ink-rgb), 0.14);
   --line-soft: rgba(var(--ink-rgb), 0.08);
   --line-base: rgba(var(--ink-rgb), 0.14);
   --ink-strong: #0d1522;
@@ -50,6 +50,7 @@
   --radius-sm: 14px;
   --radius-md: 20px;
   --radius-lg: 28px;
+  --radius-card: 12px;
   --transition-fast: 140ms ease;
   --transition-base: 220ms ease;
 }
@@ -60,7 +61,6 @@
   --surface-panel-strong: rgba(255, 253, 248, 0.94);
   --surface-overlay: rgba(243, 235, 224, 0.82);
   --surface-dark: #241a12;
-  --line-strong: #241a12;
   --line-soft: rgba(36, 26, 18, 0.08);
   --line-base: rgba(36, 26, 18, 0.14);
   --ink-strong: #241a12;
@@ -116,7 +116,7 @@
   --surface-panel-strong: rgba(36, 43, 54, 0.92);
   --surface-overlay: rgba(24, 30, 39, 0.82);
   --surface-dark: #0a0e14;
-  --line-strong: #eef2f8;
+
   --line-soft: rgba(226, 233, 242, 0.08);
   --line-base: rgba(226, 233, 242, 0.14);
   --ink-strong: #f4f7fb;
@@ -203,6 +203,37 @@
   box-sizing: border-box;
 }
 
+/* Unified slim scrollbars for every scrollable region (all themes). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--ink-rgb), 0.2) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.16);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--ink-rgb), 0.3);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 html,
 body,
 #root {
@@ -275,7 +306,7 @@ select {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 0;
   height: 100vh;
   padding: 10px;
@@ -312,6 +343,7 @@ select {
 .app-toolbar,
 .output-pane,
 .workspace-sidebar,
+.session-rail,
 .status-strip,
 .input-pane,
 .session-modal,
@@ -365,6 +397,17 @@ select {
   flex-shrink: 0;
 }
 
+.app-toolbar-avatar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(var(--ink-rgb), 0.14);
+  background: rgba(var(--ink-rgb), 0.06);
+  box-shadow: var(--shadow-sm);
+}
+
 .app-toolbar-title {
   font-size: 16px;
   font-weight: 800;
@@ -401,103 +444,213 @@ select {
   text-transform: uppercase;
 }
 
-.agent-tab-bar {
-  display: flex;
-  align-items: center;
-  gap: 0;
+.app-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
   min-width: 0;
-  min-height: 30px;
-  overflow-x: auto;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--line-base);
-  background: rgba(231, 235, 241, 0.72);
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.agent-tab {
-  display: inline-flex;
+.app-body-with-rail {
+  --session-rail-width: 216px;
+  --session-rail-toggle-width: 18px;
+  grid-template-columns: var(--session-rail-width) var(--session-rail-toggle-width) minmax(0, 1fr);
+  transition: grid-template-columns 220ms ease;
+}
+
+/* Collapsed rail: the rail track shrinks to zero so the rail slides left and the
+   workspace takes its place, while the centred handle track stays put for re-expanding. */
+.app-body-rail-collapsed {
+  grid-template-columns: 0px var(--session-rail-toggle-width) minmax(0, 1fr);
+}
+
+.session-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 10px;
+  transition:
+    padding 220ms ease,
+    border-color 200ms ease;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, rgba(var(--glass-rgb), 0.62), rgba(var(--glass-rgb), 0.84)),
+    var(--surface-panel);
+  box-shadow: none;
+}
+
+/* Rail content wrapper: slides left + fades while the rail track collapses. */
+.session-rail-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  transition:
+    transform 200ms ease,
+    opacity 160ms ease;
+}
+
+.app-body-rail-collapsed .session-rail {
+  padding: 0;
+  border-color: transparent;
+}
+
+.app-body-rail-collapsed .session-rail-body {
+  transform: translateX(-16px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.session-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.session-rail-item {
+  display: flex;
   align-items: center;
   min-width: 0;
-  height: 30px;
-  border: 0;
-  border-right: 1px solid var(--line-soft);
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
   background: transparent;
 }
 
-.agent-tab-active {
-  position: relative;
-  background: rgba(var(--glass-rgb), 0.78);
+.session-rail-item:hover {
+  background: rgba(var(--glass-rgb), 0.55);
 }
 
-.agent-tab-active::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: var(--accent);
+.session-rail-item-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft-strong);
 }
 
-.agent-tab-select,
-.agent-tab-close,
-.agent-tab-add {
+.session-rail-avatar {
+  display: block;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: rgba(var(--ink-rgb), 0.06);
+}
+
+.session-rail-select,
+.session-rail-close,
+.session-rail-add {
   border: 0;
   background: transparent;
   color: var(--ink-base);
   cursor: pointer;
 }
 
-.agent-tab-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 220px;
-  height: 30px;
-  padding: 0 10px;
+.session-rail-select {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.session-rail-name {
+  max-width: 100%;
   overflow: hidden;
+  color: var(--ink-strong);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.agent-tab-close,
-.agent-tab-add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  font-weight: 800;
-}
-
-.agent-tab-close:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.agent-tab-add {
-  flex: 0 0 auto;
-  margin-left: 4px;
-  border-radius: 4px;
-  font-size: 16px;
-}
-
-.agent-tab-add:hover:not(:disabled) {
-  background: rgba(var(--glass-rgb), 0.72);
-}
-
-.agent-tab-add:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.agent-tab-busy {
+.session-rail-busy {
   color: var(--accent-strong);
   font-size: var(--font-size-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.session-rail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  border-radius: 6px;
+  font-weight: 800;
+}
+
+.session-rail-close:hover:not(:disabled) {
+  background: rgba(var(--glass-rgb), 0.9);
+}
+
+.session-rail-close:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.session-rail-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line-base);
+  border-radius: var(--radius-card);
+  color: var(--ink-base);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-rail-add:hover:not(:disabled) {
+  background: rgba(var(--glass-rgb), 0.72);
+}
+
+.session-rail-add:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Slim vertical handle, vertically centred on the rail ("waist") and always visible
+   so the same button both collapses and restores the rail. */
+.session-rail-toggle {
+  align-self: center;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--session-rail-toggle-width, 18px);
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--line-base);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(var(--glass-rgb), 0.78), rgba(var(--glass-rgb), 0.66));
+  color: var(--ink-base);
+  cursor: pointer;
+}
+
+.session-rail-toggle .app-toolbar-icon-svg {
+  transition: transform 200ms ease;
+}
+
+.app-body-rail-collapsed .session-rail-toggle .app-toolbar-icon-svg {
+  transform: rotate(180deg);
 }
 
 .talk-banner {
@@ -577,6 +730,7 @@ select {
 .app-menu-trigger:hover,
 .app-menu-item:hover:not(:disabled),
 .session-panel-close:hover,
+.session-rail-toggle:hover,
 .agent-picker-cancel:hover,
 .provider-config-close:hover,
 .provider-config-tab:hover,
@@ -598,10 +752,22 @@ select {
   height: 16px;
 }
 
+/* Icon alignment inside compact icon-buttons (tab close/add, chip remove,
+   cancel/submit). Prevents inline-svg baseline gap so the glyph stays centered. */
+.session-rail-close .app-toolbar-icon-svg,
+.session-rail-add .app-toolbar-icon-svg,
+.session-rail-toggle .app-toolbar-icon-svg,
+.input-attachment-chip-remove .app-toolbar-icon-svg,
+.cancel-submit-button .app-toolbar-icon-svg,
+.input-pane button .app-toolbar-icon-svg {
+  display: block;
+}
+
 .workspace-shell {
   min-height: 0;
+  min-width: 0;
   display: grid;
-  gap: 0;
+  gap: 10px;
   grid-template-columns: var(--workspace-columns, minmax(0, 1fr));
 }
 
@@ -674,8 +840,8 @@ select {
 .output-pane,
 .workspace-sidebar {
   min-height: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 0;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-card);
   background:
     linear-gradient(180deg, rgba(var(--glass-rgb), 0.62), rgba(var(--glass-rgb), 0.84)),
     var(--surface-panel);
@@ -948,18 +1114,18 @@ select {
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 4px;
+  width: 2px;
   transform: translateX(-50%);
   border-radius: 999px;
-  background: var(--line-strong);
-  opacity: 1;
+  background: var(--line-base);
+  opacity: 0.5;
   transition: opacity var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 
 .workspace-sidebar-resize-handle:hover::before,
 .workspace-sidebar-approval-resizing .workspace-sidebar-resize-handle::before {
   opacity: 1;
-  background: var(--line-strong);
+  background: var(--accent);
   box-shadow: none;
 }
 
@@ -1085,7 +1251,7 @@ select {
 
 .tool-approval-list > * + *,
 .todo-list > * + * {
-  border-top: 3px solid var(--line-strong);
+  border-top: 1px solid var(--line-soft);
 }
 
 .tool-approval-row-selected {
@@ -1158,8 +1324,8 @@ select {
   flex-direction: column;
   gap: 8px;
   padding: 12px 0;
-  border-top: 3px solid var(--line-strong);
-  border-bottom: 3px solid var(--line-strong);
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .file-review-path {
@@ -1339,7 +1505,7 @@ select {
 .session-panel > * + * {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 3px solid var(--line-strong);
+  border-top: 1px solid var(--line-soft);
 }
 
 .session-panel-header,
@@ -1972,8 +2138,8 @@ select {
   gap: 8px;
   min-width: 0;
   padding: 8px 10px;
-  border: 0px;
-  border-radius: 10px;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-card);
   background: var(--surface-overlay);
   box-shadow: none;
   overflow: visible;
@@ -2240,8 +2406,8 @@ select {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  border: 3px solid var(--line-strong);
-  border-radius: 18px;
+  border: 1px solid var(--line-base);
+  border-radius: var(--radius-card);
   background: var(--surface-overlay);
   box-shadow: none;
 }
@@ -2375,82 +2541,170 @@ select {
   word-break: break-word;
 }
 
-.exec-output-block {
-  border: 1px solid #000;
-  border-radius: 0;
-  background: #fff;
-  color: #000;
-  font-family: 'Bahnschrift', var(--font-sans);
-  box-shadow: none;
+.exec-command-group {
+  align-self: stretch;
+  border: 1px solid rgba(var(--glass-rgb), 0.58);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(var(--glass-rgb), 0.8), rgba(var(--glass-rgb), 0.92)),
+    rgba(var(--glass-rgb), 0.86);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
-.exec-output-trigger {
+.exec-command-group-trigger {
   width: 100%;
-  display: block;
-  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   border: none;
-  background: #fff;
-  color: #000;
-  font-family: 'Bahnschrift', var(--font-sans);
-  font-size: 15px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xs);
   font-weight: 700;
-  line-height: 1.4;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
 
-.exec-output-trigger:hover,
-.exec-output-trigger:focus-visible {
-  background: #fff;
+.exec-command-group-trigger:hover,
+.exec-command-group-trigger:focus-visible {
+  background: rgba(var(--ink-rgb), 0.05);
   outline: none;
 }
 
-.exec-output-trigger-text,
-.exec-output-meta-label,
-.exec-output-meta-value,
-.exec-output-content {
-  color: #000;
-  font-family: 'Bahnschrift', var(--font-sans);
+.exec-command-group-title {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.exec-output-body {
-  padding: 0 14px 14px;
-  border-top: 1px solid #000;
-}
-
-.exec-output-meta {
-  display: grid;
-  gap: 8px;
-  padding-top: 12px;
-}
-
-.exec-output-meta-row {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-}
-
-.exec-output-meta-label {
+.exec-command-group-count {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--ink-strong);
   font-size: var(--font-size-xs);
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.exec-command-group-trigger::after,
+.exec-command-row-trigger::after {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--transition-fast);
+}
+
+.exec-command-group-trigger[aria-expanded='true']::after,
+.exec-command-row-trigger[aria-expanded='true']::after {
+  transform: rotate(45deg);
+}
+
+.exec-command-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-soft);
+}
+
+.exec-command-row + .exec-command-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.exec-command-row-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink-base);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exec-command-row-trigger:hover,
+.exec-command-row-trigger:focus-visible {
+  background: rgba(var(--ink-rgb), 0.05);
+  outline: none;
+}
+
+.exec-command-row-index {
+  flex: none;
+  min-width: 18px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.exec-command-row-command {
+  flex: none;
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+
+.exec-command-row-args {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exec-command-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px 10px 38px;
+}
+
+.exec-command-row-meta {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.exec-command-row-meta-label {
+  flex: none;
+  min-width: 56px;
+  color: var(--ink-soft);
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.exec-output-meta-value {
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
+.exec-command-row-meta-value {
+  min-width: 0;
+  color: var(--ink-base);
+  font-family: var(--font-mono);
   word-break: break-word;
 }
 
-.exec-output-content {
+.exec-command-row-output {
   margin: 0;
-  padding-top: 12px;
-  font-size: 13px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line-soft);
+  color: var(--ink-base);
+  font-family: var(--font-mono);
+  font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2573,6 +2827,18 @@ select {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.chat-entry-avatar {
+  display: block;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  object-fit: cover;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: rgba(var(--ink-rgb), 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-entry-header .chat-entry-label {
@@ -2993,7 +3259,59 @@ select {
   .app {
     min-height: 100vh;
     height: auto;
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+  }
+
+  .app-body-with-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Narrow layout stacks the rail horizontally, so collapsing it is meaningless:
+     force the expanded state and hide the handle. */
+  .app-body-rail-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-body-rail-collapsed .session-rail {
+    padding: 10px;
+    border-color: var(--line-base);
+  }
+
+  .app-body-rail-collapsed .session-rail-body {
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .session-rail-toggle {
+    display: none;
+  }
+
+  .session-rail {
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .session-rail-body {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .session-rail-list {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .session-rail-item {
+    flex: 0 0 auto;
+  }
+
+  .session-rail-add {
+    flex: 0 0 auto;
   }
 
   .workspace-shell {
@@ -3015,12 +3333,13 @@ select {
   .status-strip,
   .input-pane,
   .session-modal {
-    border-radius: 10px;
+    border-radius: var(--radius-card);
   }
 
   .output-pane,
-  .workspace-sidebar {
-    border-radius: 0;
+  .workspace-sidebar,
+  .session-rail {
+    border-radius: var(--radius-card);
   }
 
   .app-toolbar {

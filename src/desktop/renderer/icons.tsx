@@ -1,6 +1,18 @@
 import React from 'react';
 
-export type ToolbarIconName = 'session' | 'approvals' | 'todo' | 'theme';
+export type AppIconName =
+  | 'session'
+  | 'approvals'
+  | 'todo'
+  | 'theme'
+  | 'close'
+  | 'plus'
+  | 'send'
+  | 'remove'
+  | 'chevron';
+
+/** Back-compat alias retained so existing consumers keep compiling. */
+export type ToolbarIconName = AppIconName;
 export type ThemeName = 'legacy' | 'pueblo' | 'dark';
 
 interface IconDef {
@@ -8,7 +20,57 @@ interface IconDef {
   pueblo: React.ReactNode;
 }
 
-const ICONS: Record<ToolbarIconName, IconDef> = {
+/** Shared 24x24 line-icon frame: 1.5px stroke, round caps/joins, currentColor. */
+function Line24({ children }: { children: React.ReactNode }) {
+  return (
+    <g
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </g>
+  );
+}
+
+/* Proposal line art (24x24 grid). Reused for both variants on new glyphs so
+   legacy and pueblo stay visually identical. */
+const closeArt = (
+  <Line24>
+    <rect x="4" y="4" width="16" height="16" rx="3" />
+    <path d="m9 9 6 6M15 9l-6 6" />
+  </Line24>
+);
+
+const plusArt = (
+  <Line24>
+    <path d="M12 5v14M5 12h14" />
+  </Line24>
+);
+
+const sendArt = (
+  <Line24>
+    <path d="M22 2 11 13" />
+    <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
+  </Line24>
+);
+
+const removeArt = (
+  <Line24>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </Line24>
+);
+
+/** Chevron pointing left (rail collapse direction). CSS rotates it 180deg when collapsed. */
+const chevronArt = (
+  <Line24>
+    <path d="M14.5 6 9 12l5.5 6" />
+  </Line24>
+);
+
+const ICONS: Record<AppIconName, IconDef> = {
   session: {
     legacy: (
       <path
@@ -17,18 +79,10 @@ const ICONS: Record<ToolbarIconName, IconDef> = {
       />
     ),
     pueblo: (
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="4" y="5" width="7" height="6.5" rx="1.75" />
-        <rect x="13" y="5" width="7" height="6.5" rx="1.75" />
-        <rect x="4" y="13.5" width="7" height="6.5" rx="1.75" />
-        <rect x="13" y="13.5" width="7" height="6.5" rx="1.75" />
-      </g>
+      <Line24>
+        <path d="M4 17 10 11 4 5" />
+        <path d="M12 19h8" />
+      </Line24>
     ),
   },
   approvals: {
@@ -39,17 +93,9 @@ const ICONS: Record<ToolbarIconName, IconDef> = {
       />
     ),
     pueblo: (
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="4" y="4.5" width="16" height="4.5" rx="1.75" />
-        <rect x="4" y="12.5" width="7" height="7" rx="1.75" />
-        <rect x="13" y="12.5" width="7" height="7" rx="1.75" />
-      </g>
+      <Line24>
+        <path d="M20 6 9 17l-5-5" />
+      </Line24>
     ),
   },
   todo: {
@@ -60,39 +106,48 @@ const ICONS: Record<ToolbarIconName, IconDef> = {
       />
     ),
     pueblo: (
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="4" y="4.5" width="16" height="15" rx="2.5" />
-        <path d="M7.5 9.25h9M7.5 13.25h9M7.5 17.25h5" />
-      </g>
+      <Line24>
+        <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
+      </Line24>
     ),
   },
   theme: {
     legacy: <path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" />,
     pueblo: (
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
+      <Line24>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" />
-      </g>
+      </Line24>
     ),
+  },
+  close: {
+    legacy: closeArt,
+    pueblo: closeArt,
+  },
+  plus: {
+    legacy: plusArt,
+    pueblo: plusArt,
+  },
+  send: {
+    legacy: sendArt,
+    pueblo: sendArt,
+  },
+  remove: {
+    legacy: removeArt,
+    pueblo: removeArt,
+  },
+  chevron: {
+    legacy: chevronArt,
+    pueblo: chevronArt,
   },
 };
 
-export function ToolbarIcon({ name, theme }: { name: ToolbarIconName; theme: ThemeName }) {
+export function ToolbarIcon({ name, theme }: { name: AppIconName; theme: ThemeName }) {
+  const def = ICONS[name];
+  const art = theme === 'legacy' ? def.legacy : def.pueblo;
   return (
     <svg className="app-toolbar-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-      {ICONS[name][theme === 'pueblo' ? 'pueblo' : 'legacy']}
+      {art}
     </svg>
   );
 }
